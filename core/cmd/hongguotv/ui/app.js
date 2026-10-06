@@ -26,6 +26,10 @@
     calendarDays: '.calendar-day',
     calendarItems: '.calendar-row',
     reservationTabs: '.reservation-tab',
+    libraryActions: '.library-toolbar-button',
+    libraryItems: '.library-card',
+    libraryRemovals: '.library-remove',
+    confirmation: '.confirm-button',
     modalActions: '.modal-action',
     episodes: '.detail-episode'
   };
@@ -79,6 +83,19 @@
   var newGeneration = 0;
   var playerReturnPage = null;
   var playerReturnFocus = null;
+  var libraryPage = document.getElementById('library-page');
+  var libraryData = { entries: [] };
+  var libraryLoaded = false;
+  var libraryError = '';
+  var libraryEditing = false;
+  var libraryQueue = Promise.resolve();
+  var libraryReady;
+  var confirmOpen = false;
+  var confirmReturnFocus = null;
+  var confirmOperation = null;
+  var confirmationGeneration = 0;
+  var activePlayback = null;
+  var detailCache = {};
   var keyNames = {
     19: 'ArrowUp', 20: 'ArrowDown', 21: 'ArrowLeft', 22: 'ArrowRight',
     23: 'Enter', 66: 'Enter', 4: 'Escape', 111: 'Escape'
@@ -100,7 +117,8 @@
     Array.prototype.forEach.call(document.querySelectorAll(query), function (element) {
       var style = window.getComputedStyle(element);
       var insideModal = element.closest && element.closest('#detail-modal');
-      if (detailModalOpen ? !insideModal : insideModal) return;
+      if (confirmOpen) { if (!element.closest('#confirm-modal')) return; }
+      else if (detailModalOpen ? !insideModal : insideModal) return;
       if (!element.getClientRects || !element.getClientRects().length) return;
       if (!element.disabled && style.display !== 'none' && style.visibility !== 'hidden') result.push(element);
     });
@@ -139,6 +157,10 @@
     if (element.classList.contains('calendar-day')) return 'calendarDays';
     if (element.classList.contains('calendar-row')) return 'calendarItems';
     if (element.classList.contains('reservation-tab')) return 'reservationTabs';
+    if (element.classList.contains('library-toolbar-button')) return 'libraryActions';
+    if (element.classList.contains('library-card')) return 'libraryItems';
+    if (element.classList.contains('library-remove')) return 'libraryRemovals';
+    if (element.classList.contains('confirm-button')) return 'confirmation';
     if (element.classList.contains('detail-episode')) return 'episodes';
     if (element.classList.contains('modal-action')) return 'modalActions';
     if (element.classList.contains('page-placeholder-action')) return 'placeholder';
@@ -147,10 +169,10 @@
   }
 
   function goFocus(element) {
-    if (!element) return;
+    if (!element || element.disabled) return;
     element.focus({ preventScroll: false });
     markFocus(element);
-    if (!detailModalOpen && zoneOf(element) !== 'sidebar') {
+    if (!detailModalOpen && !confirmOpen && zoneOf(element) !== 'sidebar') {
       lastContentFocus = element;
       lastPageFocus[pageMode()] = element;
     }
@@ -161,6 +183,7 @@
     var remembered = lastPageFocus[pageMode()];
     if (remembered && focusables().indexOf(remembered) >= 0) return remembered;
     if (pageMode() === 'search') return searchInput || document.querySelector('.search-submit');
+    if (isLibraryPage()) return firstVisible('.library-card') || firstVisible('[data-action="library-discover"]') || firstVisible('.library-toolbar-button');
     if (pageMode() === 'rank') return firstVisible('.rank-tab.is-active') || firstRankTab();
     if (pageMode() === 'new') return firstVisible('.new-tab.is-active') || firstNewTab();
     if (pageMode() === 'reservations') return firstVisible('.reservation-tab.is-active');
@@ -198,7 +221,7 @@
   function firstCalendarRow() { return firstVisible('.calendar-row'); }
 
   function hideWorkspacePages() {
-    [rankPage, newPage, reservationPage].forEach(function (page) {
+    [rankPage, newPage, reservationPage, libraryPage].forEach(function (page) {
       if (page) page.classList.add('is-hidden');
     });
   }
@@ -271,8 +294,11 @@
   function moveModalFrom(current, direction) {
     var zone = zoneOf(current);
     if (zone === 'modalActions') {
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction);
-      if (direction === 'down') return document.querySelector('.detail-episode');
+      if (current.id === 'detail-close') return direction === 'down' ? document.getElementById('detail-play') : null;
+      if (direction === 'left') return current.id === 'detail-save' ? document.getElementById('detail-play') : null;
+      if (direction === 'right') return current.id === 'detail-play' ? document.getElementById('detail-save') : null;
+      if (direction === 'up') return document.getElementById('detail-close');
+      if (direction === 'down') return document.querySelector('.detail-episode.is-playing') || document.querySelector('.detail-episode');
       return null;
     }
     if (zone === 'episodes') {
@@ -288,6 +314,7 @@
   }
 
   function moveFrom(current, direction) {
+    if (confirmOpen) return direction === 'left' || direction === 'right' ? moveWithinZone('confirmation', current, direction) : null;
     if (detailModalOpen) return moveModalFrom(current, direction);
     var zone = zoneOf(current);
     if (zone === 'sidebar') {
@@ -334,7 +361,7 @@
     }
     if (zone === 'actions') {
       if (direction === 'up' || direction === 'down') return moveWithinZone(zone, current, direction);
-      if (direction === 'left') return firstVisible('.primary-action') || firstCatalog();
+      if (direction === 'left') return firstVisible('.hero-feed-focus') || firstVisible('.primary-action') || firstCatalog();
       return null;
     }
     if (zone === 'controls') {
@@ -372,6 +399,24 @@
     if (zone === 'searchMore') {
       if (direction === 'up') { var cards = focusables('.search-result-card'); return cards[cards.length - 1] || lastSearchFilter() || searchInput; }
       if (direction === 'left') return activeSidebar();
+      return null;
+    }
+    if (zone === 'libraryActions') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'down') return firstVisible('.library-card') || firstVisible('[data-action="library-discover"]');
+      if (direction === 'up') return firstVisible('.library-card') || activeSidebar();
+      return null;
+    }
+    if (zone === 'libraryItems') {
+      if (direction === 'left' || direction === 'right') return moveGrid('.library-card', current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'up') return moveGrid('.library-card', current, direction) || firstVisible('.library-toolbar-button');
+      if (direction === 'down') return libraryEditing ? current.parentElement.querySelector('.library-remove') : moveGrid('.library-card', current, direction);
+      return null;
+    }
+    if (zone === 'libraryRemovals') {
+      if (direction === 'up') return current.parentElement.querySelector('.library-card');
+      if (direction === 'down') return moveGrid('.library-card', current.parentElement.querySelector('.library-card'), 'down');
+      if (direction === 'left' || direction === 'right') return moveGrid('.library-remove', current, direction) || (direction === 'left' ? activeSidebar() : null);
       return null;
     }
     if (zone === 'rankTabs') {
@@ -455,6 +500,7 @@
     if (current && current.id === 'search-input' && (key === 'ArrowLeft' || key === 'ArrowRight')) return;
 
     if (key === 'Enter') {
+      if (event.repeat) { event.preventDefault(); return; }
       if (current && current.id === 'search-input') {
         submitSearch();
         event.preventDefault();
@@ -469,8 +515,10 @@
       return;
     }
     if (key === 'Escape' || key === 'Backspace') {
-      var handledBack = detailModalOpen || pageMode() === 'player' || zoneOf(current) !== 'sidebar';
-      if (detailModalOpen) {
+      var handledBack = confirmOpen || detailModalOpen || pageMode() === 'player' || zoneOf(current) !== 'sidebar';
+      if (confirmOpen) {
+        closeConfirmation();
+      } else if (detailModalOpen) {
         closeDetail();
       } else if (pageMode() === 'player') {
         leavePlayer();
@@ -505,6 +553,173 @@
     notice.classList.remove('is-hidden');
     clearTimeout(showNotice.timer);
     showNotice.timer = setTimeout(function () { notice.classList.add('is-hidden'); }, 3200);
+  }
+
+  function isLibraryPage() { return ['history', 'favorites', 'likes'].indexOf(pageMode()) >= 0; }
+  function libraryEntry(id) { return libraryData.entries.filter(function (entry) { return entry.drama.series_id === id; })[0] || null; }
+  function libraryTime(entry, kind) { return entry[({ history: 'last_played_at', favorites: 'favorite_at', likes: 'liked_at' })[kind]] || 0; }
+  function resumeEpisode(entry, item) {
+    if (!entry || !entry.last_played_at || !entry.episode) return 1;
+    if (!entry.completed) return entry.episode;
+    return item.episode_count && entry.episode >= item.episode_count ? 1 : entry.episode + 1;
+  }
+  function clockText(value) { value = Math.max(0, Math.floor(value || 0)); return Math.floor(value / 60) + ':' + ('0' + value % 60).slice(-2); }
+  function basicDrama(item) {
+    var result = {};
+    ['series_id', 'title', 'cover', 'cover_fallback', 'intro', 'score', 'episode_count', 'tags'].forEach(function (key) { if (item[key] !== undefined) result[key] = item[key]; });
+    return result;
+  }
+  function updateSavedButtons() {
+    var entry = featuredItem && libraryEntry(featuredItem.series_id);
+    ['favorite', 'like'].forEach(function (kind) {
+      var button = document.querySelector('.round-action[data-action="' + kind + '"]');
+      var saved = !!(entry && (kind === 'favorite' ? entry.favorite_at : entry.liked_at));
+      button.classList.toggle('is-saved', saved);
+      button.setAttribute('aria-pressed', String(saved));
+      button.querySelector('small').textContent = kind === 'favorite' ? saved ? '已收藏' : '收藏' : saved ? '已点赞' : '点赞';
+    });
+    var detailEntry = currentDetail && libraryEntry(currentDetail.series_id);
+    var detailButton = document.getElementById('detail-save');
+    detailButton.textContent = detailEntry && detailEntry.favorite_at ? '已收藏' : '收藏';
+    detailButton.classList.toggle('is-saved', !!(detailEntry && detailEntry.favorite_at));
+    detailButton.setAttribute('aria-pressed', String(!!(detailEntry && detailEntry.favorite_at)));
+  }
+  function loadLibrary() {
+    libraryError = '';
+    return fetch('/api/v1/library')
+      .then(function (response) { if (!response.ok) throw new Error('HTTP ' + response.status); return response.json(); })
+      .then(function (payload) {
+        if (!payload.ok || !payload.data) throw new Error(payload.error || '记录响应无效');
+        libraryData = payload.data;
+        libraryLoaded = true;
+        updateSavedButtons();
+        if (isLibraryPage()) renderLibrary(true);
+        return true;
+      }).catch(function (error) { libraryError = error.message; if (isLibraryPage()) renderLibrary(true); return false; });
+  }
+  function changeLibrary(change, quiet) {
+    var operation = libraryQueue.catch(function () {}).then(function () { return libraryReady; }).then(function () {
+      return fetch('/api/v1/library', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(change) });
+    }).then(function (response) {
+      return response.json().then(function (payload) { if (!response.ok || !payload.ok || !payload.data) throw new Error(payload.error || '记录保存失败'); return payload; });
+    }).then(function (payload) {
+      libraryData = payload.data;
+      libraryLoaded = true;
+      updateSavedButtons();
+      if (isLibraryPage()) renderLibrary(!!quiet);
+      return true;
+    });
+    libraryQueue = operation;
+    return operation.catch(function (error) { showNotice('本机记录未保存：' + error.message); return false; });
+  }
+  function toggleSaved(item, kind, button) {
+    if (!item || !item.series_id || !libraryLoaded || button.disabled) return;
+    var entry = libraryEntry(item.series_id);
+    var saved = !!(entry && (kind === 'favorite' ? entry.favorite_at : entry.liked_at));
+    var wasFocused = document.activeElement === button;
+    button.disabled = true;
+    changeLibrary({ action: kind, drama: basicDrama(item), value: !saved }).then(function (ok) {
+      button.disabled = false;
+      if (wasFocused && document.activeElement === document.body && button.getClientRects().length) goFocus(button);
+      if (ok) showNotice(saved ? kind === 'favorite' ? '已取消收藏' : '已取消点赞' : kind === 'favorite' ? '已收藏到本机' : '已保存到本机点赞');
+    });
+  }
+  function renderLibrary(restoring) {
+    var kind = pageMode();
+    if (!isLibraryPage()) return;
+    var label = ({ history: '历史', favorites: '收藏', likes: '点赞' })[kind];
+    document.getElementById('library-title').textContent = label;
+    document.getElementById('library-hint').textContent = kind === 'history' ? '保存在本机 · 自动记住集数和进度 · 最多 200 部' : '保存在本机 · 最多 300 部';
+    var grid = document.getElementById('library-grid');
+    var entries = libraryData.entries.filter(function (entry) { return libraryTime(entry, kind) > 0; });
+    entries.sort(function (a, b) { return libraryTime(b, kind) - libraryTime(a, kind); });
+    var existing = {};
+    Array.prototype.forEach.call(grid.children, function (tile, index) { existing[tile.dataset.seriesId] = { tile: tile, index: index }; });
+    if (restoring) entries.sort(function (a, b) { return (existing[a.drama.series_id] ? existing[a.drama.series_id].index : 10000) - (existing[b.drama.series_id] ? existing[b.drama.series_id].index : 10000); });
+    var current = document.activeElement;
+    var currentTile = current.closest && current.closest('.library-tile');
+    var priorIndex = currentTile && existing[currentTile.dataset.seriesId] ? existing[currentTile.dataset.seriesId].index : 0;
+    var keep = {};
+    entries.forEach(function (entry, index) {
+      var id = entry.drama.series_id;
+      var tile = existing[id] ? existing[id].tile : document.createElement('div');
+      if (!existing[id]) {
+        tile.className = 'library-tile';
+        tile.dataset.seriesId = id;
+        var card = document.createElement('button');
+        card.className = 'library-card';
+        card.dataset.focus = 'library-' + id;
+        var image = document.createElement('img'); image.loading = 'lazy'; card.appendChild(image);
+        ['title', 'meta', 'time'].forEach(function (name) { var span = document.createElement('span'); span.className = 'library-card-' + name; card.appendChild(span); });
+        var progress = document.createElement('span'); progress.className = 'library-progress'; progress.appendChild(document.createElement('span')); card.appendChild(progress);
+        card.addEventListener('click', function () { if (libraryEditing) goFocus(tile.querySelector('.library-remove')); else startPlayer(tile.__entry.drama, card); });
+        card.addEventListener('focus', function () { card.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });
+        tile.appendChild(card);
+        var remove = document.createElement('button'); remove.className = 'library-remove'; remove.dataset.focus = 'library-remove-' + id; remove.textContent = '移除';
+        remove.addEventListener('click', function () {
+          var kind = pageMode();
+          var index = Array.prototype.indexOf.call(grid.children, tile);
+          var wasFocused = document.activeElement === remove;
+          remove.disabled = true;
+          changeLibrary({ action: 'remove', kind: kind, series_id: id }).then(function (ok) {
+            remove.disabled = false;
+            if (ok && wasFocused && pageMode() === kind && document.activeElement === document.body) {
+              var cards = focusables('.library-card');
+              goFocus(cards[Math.min(index, cards.length - 1)] || firstVisible('[data-action="library-discover"]'));
+            }
+          });
+        });
+        tile.appendChild(remove);
+      }
+      tile.__entry = entry;
+      keep[id] = true;
+      var card = tile.querySelector('.library-card');
+      if (card.querySelector('img').alt !== entry.drama.title) setCover(card.querySelector('img'), entry.drama);
+      card.querySelector('.library-card-title').textContent = entry.drama.title;
+      card.querySelector('.library-card-meta').textContent = entry.last_played_at ? entry.completed && entry.drama.episode_count && entry.episode >= entry.drama.episode_count ? '已看完 · 全' + entry.episode + '集' : '继续第' + resumeEpisode(entry, entry.drama) + '集' + (!entry.completed && entry.position ? ' · ' + clockText(entry.position) : '') : entry.drama.episode_count ? '全' + entry.drama.episode_count + '集' : '从第一集播放';
+      card.querySelector('.library-card-time').textContent = new Date(libraryTime(entry, kind)).toLocaleDateString();
+      card.querySelector('.library-progress').classList.toggle('is-hidden', !entry.last_played_at || !entry.duration);
+      card.querySelector('.library-progress > span').style.width = Math.min(100, entry.duration ? entry.position / entry.duration * 100 : 0) + '%';
+      tile.querySelector('.library-remove').classList.toggle('is-hidden', !libraryEditing);
+      if (grid.children[index] !== tile) grid.insertBefore(tile, grid.children[index] || null);
+    });
+    Array.prototype.slice.call(grid.children).forEach(function (tile) { if (!keep[tile.dataset.seriesId]) tile.remove(); });
+    document.getElementById('library-count').textContent = entries.length ? entries.length + ' 部' : '';
+    document.getElementById('library-manage').textContent = libraryError ? '重试' : libraryEditing ? '完成' : '管理';
+    document.getElementById('library-manage').disabled = !libraryError && !entries.length;
+    document.getElementById('library-clear').disabled = !entries.length;
+    document.getElementById('library-empty').classList.toggle('is-hidden', entries.length > 0);
+    document.getElementById('library-empty-title').textContent = libraryError ? '读取本机记录失败' : !libraryLoaded ? '正在读取本机记录…' : kind === 'history' ? '还没有观看记录' : '还没有' + label + '的短剧';
+    document.getElementById('library-empty-copy').textContent = libraryError || (kind === 'history' ? '开始播放后，会自动保存集数和进度' : '在播放页点' + label + '，以后可从这里继续观看');
+    if (currentTile && !document.contains(current)) {
+      var cards = focusables('.library-card');
+      goFocus(cards[Math.min(priorIndex, cards.length - 1)] || firstVisible('[data-action="library-discover"]'));
+    } else if (currentTile && document.activeElement !== current) {
+      goFocus(current);
+    }
+  }
+  function closeConfirmation() {
+    ++confirmationGeneration;
+    confirmOpen = false;
+    confirmOperation = null;
+    document.getElementById('confirm-modal').classList.add('is-hidden');
+    document.getElementById('confirm-modal').setAttribute('aria-hidden', 'true');
+    var target = confirmReturnFocus;
+    confirmReturnFocus = null;
+    goFocus(target && document.contains(target) && !target.disabled ? target : firstContentFocus());
+  }
+  function confirmClearLibrary() {
+    ++confirmationGeneration;
+    var kind = pageMode();
+    var label = ({ history: '历史', favorites: '收藏', likes: '点赞' })[kind];
+    confirmReturnFocus = document.activeElement;
+    confirmOperation = function () { return changeLibrary({ action: 'clear', kind: kind }); };
+    confirmOpen = true;
+    document.getElementById('confirm-title').textContent = '清空全部' + label + '？';
+    document.getElementById('confirm-copy').textContent = kind === 'history' ? '观看进度也会移除，收藏和点赞会保留。' : '只清空本机' + label + '，观看历史和其它记录会保留。';
+    document.getElementById('confirm-modal').classList.remove('is-hidden');
+    document.getElementById('confirm-modal').setAttribute('aria-hidden', 'false');
+    goFocus(document.getElementById('confirm-cancel'));
   }
 
   function setCatalogHeading(text) {
@@ -547,6 +762,8 @@
     if (placeholderTitle) placeholderTitle.textContent = item.title || '红果短剧';
     if (placeholderSummary) placeholderSummary.textContent = item.intro || '打开详情查看完整集数和播放状态。';
     if (action) action.textContent = '查看详情';
+    updateSavedButtons();
+    document.querySelector('[data-action="episodes"]').textContent = '选集 · ' + (item.episode_count || '--') + ' 集';
   }
 
   function updateFeedCounter() {
@@ -561,12 +778,39 @@
     return '';
   }
 
-  function playFeedItem(index) {
+  function getDetail(item) {
+    if (detailCache[item.series_id]) return Promise.resolve(detailCache[item.series_id]);
+    return fetch('/api/v1/series/detail?series_id=' + encodeURIComponent(item.series_id))
+      .then(function (response) { if (!response.ok) throw new Error('详情 HTTP ' + response.status); return response.json(); })
+      .then(function (payload) {
+        if (!payload.ok || !payload.data) throw new Error(payload.error || '详情响应无效');
+        var keys = Object.keys(detailCache);
+        if (keys.length >= 24) delete detailCache[keys[0]];
+        detailCache[item.series_id] = payload.data;
+        return payload.data;
+      });
+  }
+
+  function saveProgress(force, completed) {
+    var playback = activePlayback;
+    if (!playback || !playback.started) return Promise.resolve(false);
+    var video = document.getElementById('hero-video');
+    var now = Date.now();
+    if (!force && now - playback.lastWrite < 10000) return Promise.resolve(false);
+    playback.lastWrite = now;
+    if (completed) playback.completed = true;
+    return changeLibrary({ action: 'progress', drama: basicDrama(playback.item), episode: playback.episode, video_id: playback.vid,
+      position: Math.max(0, Number(video.currentTime) || 0), duration: Number.isFinite(video.duration) ? video.duration : 0, completed: !!playback.completed }, true);
+  }
+
+  function playFeedItem(index, forcedEpisode, forcedPosition) {
     if (!feedItems.length) return;
     if (index < 0) index = feedItems.length - 1;
     if (index >= feedItems.length) index = 0;
     var item = feedItems[index];
     if (!item || !item.series_id) return;
+    saveProgress(true);
+    activePlayback = null;
     feedIndex = index;
     updateFeedCounter();
     setFeatured(item);
@@ -579,11 +823,28 @@
     video.removeAttribute('src');
     video.load();
     placeholder.classList.remove('is-hidden');
-    showNotice('正在准备第 ' + (item.start_episode || 1) + ' 集…');
-    fetch('/api/v1/play/info?series_id=' + encodeURIComponent(item.series_id) + '&vid=' + encodeURIComponent(firstVid(item)))
-      .then(function (response) { if (!response.ok) throw new Error('播放 HTTP ' + response.status); return response.json(); })
+    showNotice('正在准备播放…');
+    Promise.resolve(libraryReady).then(function () { return libraryQueue.catch(function () {}); }).then(function () {
+      if (generation !== feedGeneration) return null;
+      var entry = libraryEntry(item.series_id);
+      var episode = forcedEpisode || resumeEpisode(entry, item);
+      var position = forcedPosition !== undefined ? forcedPosition : entry && episode === entry.episode && !entry.completed ? entry.position || 0 : 0;
+      var source = episode === 1 && firstVid(item) ? Promise.resolve(item) : getDetail(item);
+      return source.then(function (detail) {
+        if (generation !== feedGeneration) return null;
+        var vid = episode === 1 ? firstVid(detail) : detail.vid_list && detail.vid_list[episode - 1];
+        if (!vid) throw new Error('第' + episode + '集暂无视频数据');
+        var playing = Object.assign({}, item, detail, { start_episode: episode, vid: vid });
+        activePlayback = { item: playing, episode: episode, vid: vid, position: position, generation: generation, started: false, lastWrite: 0, completed: false };
+        setFeatured(playing);
+        showNotice('正在准备第 ' + episode + ' 集…');
+        return fetch('/api/v1/play/info?series_id=' + encodeURIComponent(item.series_id) + '&vid=' + encodeURIComponent(vid));
+      });
+    })
+      .then(function (response) { if (!response) return null; if (!response.ok) throw new Error('播放 HTTP ' + response.status); return response.json(); })
       .then(function (payload) {
         if (generation !== feedGeneration || (pageMode() !== 'recommend' && pageMode() !== 'player')) return;
+        if (!payload) return;
         if (!payload.ok || !payload.data || !payload.data.path) throw new Error(payload.error || '播放服务没有返回地址');
         video.src = payload.data.path;
         video.classList.add('has-source');
@@ -629,7 +890,7 @@
     document.getElementById('hero').classList.add('is-feed');
     feedItems = [item];
     feedIndex = 0;
-    playFeedItem(0);
+    playFeedItem(0, item.__explicitEpisode ? item.start_episode : undefined, item.__explicitEpisode ? 0 : undefined);
     goFocus(document.getElementById('hero-feed-focus'));
   }
 
@@ -1152,7 +1413,9 @@
     setCover(nodes.cover, item);
     nodes.meta.textContent = [item.episode_count ? item.episode_count + ' 集' : '', item.score ? item.score + ' 分' : ''].filter(Boolean).join(' · ');
     nodes.intro.textContent = item.intro || '暂无简介';
-    nodes.play.textContent = '播放第一集';
+    var entry = libraryEntry(item.series_id);
+    var episode = resumeEpisode(entry, item);
+    nodes.play.textContent = entry && entry.last_played_at ? entry.completed && episode === 1 ? '重新播放' : '继续第' + episode + '集' : '播放第一集';
     nodes.play.disabled = false;
     nodes.episodes.innerHTML = '';
     (item.episodes || []).forEach(function (episode) {
@@ -1164,6 +1427,8 @@
       button.addEventListener('click', function () { playEpisode(Number(button.dataset.index)); });
       nodes.episodes.appendChild(button);
     });
+    if (entry && entry.episode) updateEpisodeHighlight(entry.episode - 1);
+    updateSavedButtons();
   }
 
   function openDetail(item) {
@@ -1181,12 +1446,9 @@
     nodes.play.disabled = true;
     nodes.episodes.innerHTML = '';
     goFocus(document.querySelector('.detail-close'));
-    fetch('/api/v1/series/detail?series_id=' + encodeURIComponent(item.series_id))
-      .then(function (response) { if (!response.ok) throw new Error('详情 HTTP ' + response.status); return response.json(); })
-      .then(function (payload) {
+    getDetail(item).then(function (detail) {
         if (!detailModalOpen || generation !== detailGeneration) return;
-        if (!payload.ok || !payload.data) throw new Error(payload.error || '详情响应无效');
-        currentDetail = payload.data;
+        currentDetail = detail;
         renderDetail(currentDetail);
         goFocus(document.querySelector('.detail-play'));
       })
@@ -1218,7 +1480,7 @@
   function playEpisode(index) {
     if (!currentDetail || !currentDetail.episodes || !currentDetail.episodes[index]) return;
     var episode = currentDetail.episodes[index];
-    var item = Object.assign({}, currentDetail, { vid: episode.video_id, start_episode: episode.index });
+    var item = Object.assign({}, currentDetail, { vid: episode.video_id, start_episode: episode.index, __explicitEpisode: true });
     var returnFocus = detailReturnFocus;
     closeDetail();
     startPlayer(item, returnFocus);
@@ -1232,6 +1494,8 @@
   }
 
   function activatePage(item, restoring) {
+    saveProgress(true);
+    activePlayback = null;
     ++catalogGeneration;
     ++feedGeneration;
     document.getElementById('hero-video').pause();
@@ -1269,6 +1533,11 @@
       reservationPage.classList.remove('is-hidden');
       var reservationTab = document.querySelector('.reservation-tab.is-active');
       renderReservations(reservationTab ? reservationTab.dataset.reservationMode : 'online');
+    } else if (['history', 'favorites', 'likes'].indexOf(item.dataset.page) >= 0) {
+      mainSurface.classList.add('has-workspace');
+      libraryPage.classList.remove('is-hidden');
+      if (!restoring) libraryEditing = false;
+      renderLibrary(!!restoring);
     } else {
       mainSurface.classList.add('has-placeholder');
       pagePlaceholder.classList.remove('is-hidden');
@@ -1282,7 +1551,7 @@
   document.addEventListener('keydown', handleKey, true);
   document.addEventListener('focusin', function (event) {
     markFocus(event.target);
-    if (!detailModalOpen && zoneOf(event.target) !== 'sidebar') {
+    if (!detailModalOpen && !confirmOpen && zoneOf(event.target) !== 'sidebar') {
       lastContentFocus = event.target;
       lastPageFocus[pageMode()] = event.target;
     }
@@ -1301,6 +1570,10 @@
         submitSearch();
       } else if (item.dataset.action === 'search-browse') {
         beginBrowse();
+      } else if (item.dataset.action === 'favorite' || item.dataset.action === 'like') {
+        toggleSaved(featuredItem, item.dataset.action, item);
+      } else if (item.dataset.action === 'library-discover') {
+        activatePage(document.querySelector('.side-item[data-page="search"]'));
       } else if (item.dataset.action === 'featured') {
         if (featuredItem) openDetail(featuredItem);
         else showNotice('当前还没有可打开的短剧。');
@@ -1368,24 +1641,73 @@
     });
   }
   document.getElementById('detail-close').addEventListener('click', closeDetail);
-  document.getElementById('detail-play').addEventListener('click', function () { playEpisode(currentDetail && currentDetail.playingIndex >= 0 ? currentDetail.playingIndex : 0); });
+  document.getElementById('detail-play').addEventListener('click', function () {
+    if (!currentDetail) return;
+    var item = Object.assign({}, currentDetail);
+    var returnFocus = detailReturnFocus;
+    closeDetail();
+    startPlayer(item, returnFocus);
+  });
+  document.getElementById('detail-save').addEventListener('click', function () { toggleSaved(currentDetail, 'favorite', this); });
+  document.getElementById('library-manage').addEventListener('click', function () {
+    if (libraryError) { libraryReady = loadLibrary(); return; }
+    libraryEditing = !libraryEditing;
+    renderLibrary(true);
+  });
+  document.getElementById('library-clear').addEventListener('click', confirmClearLibrary);
+  document.getElementById('confirm-cancel').addEventListener('click', closeConfirmation);
+  document.getElementById('confirm-accept').addEventListener('click', function () {
+    if (!confirmOperation || this.disabled) return;
+    var button = this;
+    var generation = confirmationGeneration;
+    button.disabled = true;
+    confirmOperation().then(function (ok) { button.disabled = false; if (ok && confirmOpen && generation === confirmationGeneration) closeConfirmation(); });
+  });
   document.getElementById('hero-feed-focus').addEventListener('click', toggleVideo);
 
   function loadStatus() {
     fetch('/api/v1/status').then(function (response) { return response.json(); }).then(function (data) {
-      status.textContent = data.ok ? 'Go 核心服务已连接' : '核心服务异常';
+      status.textContent = data.ok ? '已连接' : '连接异常';
       status.dataset.ok = data.ok ? 'true' : 'false';
     }).catch(function () {
-      status.textContent = '核心服务未连接';
+      status.textContent = '连接失败';
       status.dataset.ok = 'false';
     });
   }
 
-  document.getElementById('hero-video').addEventListener('ended', function () {
-    if (pageMode() === 'recommend' && feedItems.length) playFeedItem(feedIndex + 1);
+  var media = document.getElementById('hero-video');
+  media.addEventListener('loadedmetadata', function () {
+    if (!activePlayback || activePlayback.generation !== feedGeneration) return;
+    var position = activePlayback.position;
+    if (position > 0 && Number.isFinite(media.duration)) media.currentTime = Math.min(position, Math.max(0, media.duration - .25));
   });
+  media.addEventListener('playing', function () {
+    if (!activePlayback || activePlayback.generation !== feedGeneration) return;
+    activePlayback.started = true;
+    saveProgress(true);
+  });
+  media.addEventListener('timeupdate', function () {
+    if (!activePlayback || !activePlayback.started) return;
+    document.querySelector('.time-label').textContent = clockText(media.currentTime) + ' / ' + clockText(Number.isFinite(media.duration) ? media.duration : 0);
+    document.querySelector('.progress-track > span').style.width = (media.duration ? Math.min(100, media.currentTime / media.duration * 100) : 0) + '%';
+    saveProgress(false);
+  });
+  media.addEventListener('pause', function () { saveProgress(true); });
+  media.addEventListener('ended', function () {
+    var playback = activePlayback;
+    if (!playback || !playback.started || playback.generation !== feedGeneration) return;
+    saveProgress(true, true);
+    getDetail(playback.item).then(function (detail) {
+      if (activePlayback !== playback || playback.generation !== feedGeneration) return;
+      if (detail.vid_list && detail.vid_list[playback.episode]) playFeedItem(feedIndex, playback.episode + 1, 0);
+      else if (pageMode() === 'recommend' && feedItems.length > 1) playFeedItem(feedIndex + 1);
+      else showNotice('本剧已播放完');
+    }).catch(function (error) { if (activePlayback === playback) showNotice('下一集准备失败，可从选集继续：' + error.message); });
+  });
+  document.addEventListener('visibilitychange', function () { if (document.hidden) saveProgress(true); });
 
   goFocus(document.querySelector('.side-item.is-active'));
   loadStatus();
+  libraryReady = loadLibrary();
   loadCatalog('/rank/hot-drama', '热播短剧');
 }());

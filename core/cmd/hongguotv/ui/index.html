@@ -137,6 +137,19 @@
         <div class="reservation-empty" id="reservation-empty" data-focus-zone="reservationItems">没有已上线的预约</div>
       </section>
 
+      <section class="library-page page-workspace is-hidden" id="library-page" aria-label="我的短剧">
+        <div class="library-heading-row">
+          <div><h1 id="library-title">历史</h1><p id="library-hint">保存在本机的观看记录</p></div>
+          <div class="library-toolbar">
+            <button class="library-toolbar-button" id="library-manage" data-focus="library-manage">管理</button>
+            <button class="library-toolbar-button" id="library-clear" data-focus="library-clear">清空</button>
+          </div>
+        </div>
+        <div id="library-count" class="library-count"></div>
+        <div id="library-grid" class="library-grid" aria-live="polite"></div>
+        <div id="library-empty" class="library-empty is-hidden"><svg><use href="#icon-history" xlink:href="#icon-history"></use></svg><strong id="library-empty-title">还没有观看记录</strong><p id="library-empty-copy">开始播放后，会自动保存集数和进度</p><button class="library-toolbar-button" data-action="library-discover" data-focus="library-discover">去找剧</button></div>
+      </section>
+
       <section class="hero" id="hero" aria-label="推荐视频">
         <div class="hero-media">
           <img id="hero-backdrop" class="hero-backdrop" alt="">
@@ -161,7 +174,8 @@
         </div>
 
         <div class="right-actions" data-focus-zone="actions" aria-label="视频操作">
-          <button class="round-action" data-action="favorite" data-focus="hero-favorite"><span>♡</span><small>收藏</small></button>
+          <button class="round-action" data-action="like" data-focus="hero-like" aria-pressed="false"><svg><use href="#icon-like" xlink:href="#icon-like"></use></svg><small>点赞</small></button>
+          <button class="round-action" data-action="favorite" data-focus="hero-favorite" aria-pressed="false"><svg><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><small>收藏</small></button>
           <button class="round-action" data-action="comment" data-focus="hero-comment"><span>☁</span><small>评论</small></button>
           <button class="round-action" data-action="share" data-focus="hero-share"><span>↗</span><small>分享</small></button>
         </div>
@@ -189,13 +203,14 @@
               <h2 id="detail-name">正在加载…</h2>
               <div class="detail-meta" id="detail-meta"></div>
               <p id="detail-intro">正在读取详情…</p>
-              <button class="detail-play modal-action" id="detail-play" data-focus="detail-play">播放第一集</button>
+              <div class="detail-action-row"><button class="detail-play modal-action" id="detail-play" data-focus="detail-play">播放第一集</button><button class="detail-save modal-action" id="detail-save" data-focus="detail-save" aria-pressed="false">收藏</button></div>
             </div>
           </div>
           <div class="detail-episodes" id="detail-episodes" data-focus-zone="episodes" aria-label="集数列表"></div>
         </div>
       </section>
 
+      <section class="confirm-modal is-hidden" id="confirm-modal" aria-hidden="true"><div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><h2 id="confirm-title">清空记录？</h2><p id="confirm-copy"></p><div class="confirm-actions"><button id="confirm-cancel" class="confirm-button" data-focus="confirm-cancel">取消</button><button id="confirm-accept" class="confirm-button confirm-danger" data-focus="confirm-accept">清空</button></div></div></section>
       <div class="notice" id="action-notice" role="status" aria-live="polite">正在连接 Go 核心…</div>
     </section>
   </main>

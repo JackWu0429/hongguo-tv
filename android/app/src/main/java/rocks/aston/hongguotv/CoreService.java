@@ -77,6 +77,8 @@ public class CoreService extends Service {
             File playbackCache = new File(getCacheDir(), "minireel");
             Map<String, String> environment = builder.environment();
             environment.put("MINIREEL_CACHE_DIR", playbackCache.getAbsolutePath());
+            // User records must survive Android reclaiming the media cache.
+            environment.put("HONGGUO_TV_DATA_DIR", new File(getFilesDir(), "hongguo-tv").getAbsolutePath());
             process = builder.start();
             consumeLogs(process);
         } catch (Exception error) {

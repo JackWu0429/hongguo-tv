@@ -22,8 +22,9 @@ var uiFiles embed.FS
 const version = "0.1.0-dev"
 
 type server struct {
-	startedAt time.Time
-	hongguo   *hongguoClient
+	startedAt    time.Time
+	hongguo      *hongguoClient
+	libraryStore *libraryStore
 }
 
 type statusResponse struct {
@@ -37,6 +38,7 @@ type statusResponse struct {
 
 func main() {
 	port := flag.Int("port", 8797, "local HTTP port")
+	dataDir := flag.String("data-dir", defaultLibraryDir(), "persistent local library directory")
 	flag.Parse()
 
 	root, err := fs.Sub(uiFiles, "ui")
@@ -44,10 +46,15 @@ func main() {
 		log.Fatalf("prepare UI: %v", err)
 	}
 
-	s := &server{startedAt: time.Now().UTC(), hongguo: newHongguoClient()}
+	library, err := newLibraryStore(*dataDir)
+	if err != nil {
+		log.Fatalf("prepare local library: %v", err)
+	}
+	s := &server{startedAt: time.Now().UTC(), hongguo: newHongguoClient(), libraryStore: library}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/health", s.health)
 	mux.HandleFunc("/api/v1/status", s.status)
+	mux.HandleFunc("/api/v1/library", s.library)
 	mux.HandleFunc("/api/v1/category", s.category)
 	mux.HandleFunc("/api/v1/Category", s.category)
 	mux.HandleFunc("/api/v1/rank", s.rank)
@@ -75,7 +82,7 @@ func (s *server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Range")
-		w.Header().Set("Access-Control-Allow-Methods", "GET,HEAD,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,HEAD,OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -103,7 +110,7 @@ func (s *server) status(w http.ResponseWriter, r *http.Request) {
 		Version:        version,
 		Implementation: "go-api-adapter+embedded-playback",
 		StartedAt:      s.startedAt.Format(time.RFC3339),
-		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "search", "series-detail", "play-info", "embedded-playback", "cenc-mp4", "range-media"},
+		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "search", "series-detail", "play-info", "embedded-playback", "cenc-mp4", "range-media", "local-history", "local-favorites", "local-likes", "resume-playback", "next-episode"},
 	})
 }
 
