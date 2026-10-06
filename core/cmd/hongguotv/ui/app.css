@@ -39,6 +39,9 @@ button:focus { outline: none; }
 .main-surface.has-search .hero { visibility: hidden; }
 .main-surface.has-search .channel-tabs { visibility: hidden; }
 .main-surface.has-search .page-context { visibility: visible; }
+.main-surface.has-workspace .hero,
+.main-surface.has-workspace .channel-tabs,
+.main-surface.has-workspace .page-placeholder { visibility: hidden; }
 .app-shell.is-player .channel-tabs { visibility: hidden; }
 .app-shell.is-player .page-context { width: 90px; font-weight: 500; }
 .page-placeholder { position: absolute; z-index: 4; inset: 72px 0 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px; text-align: center; background: radial-gradient(circle at 50% 35%, #2b2b34 0, #15161d 52%, #111217 100%); }
@@ -133,6 +136,88 @@ button:focus { outline: none; }
 .search-result-card.is-focused, .search-result-card:focus-visible { border-color: #fff; box-shadow: 0 0 0 3px #fff, 0 12px 25px rgba(0,0,0,.35); transform: translateY(-3px) scale(1.025); }
 .search-result-empty { grid-column: 1 / -1; min-height: 170px; display: grid; place-items: center; padding: 20px; color: #9b9ca7; background: rgba(255,255,255,.035); border: 1px dashed rgba(255,255,255,.14); border-radius: 12px; text-align: center; }
 
+/* Mac-style content pages used by the Android TV build.  These pages keep
+   the same rail, focus ring and dense spacing as the search surface while
+   using larger hit targets for a remote. */
+.page-workspace { position: absolute; z-index: 6; inset: 72px 0 0; overflow-y: auto; padding: 28px 34px 50px; background: #111217; scrollbar-color: rgba(255,255,255,.28) transparent; }
+.page-workspace h1 { margin: 0; font-size: clamp(28px, 3vw, 42px); letter-spacing: .02em; }
+.rank-heading-row, .new-heading-row { display: flex; align-items: center; gap: 34px; margin-bottom: 22px; }
+.rank-tabs, .new-tabs { display: flex; align-items: center; gap: 28px; }
+.rank-tab, .new-tab { min-height: 43px; padding: 0 3px; color: #9c9ca8; background: transparent; border-bottom: 3px solid transparent; font-size: 17px; }
+.rank-tab.is-active, .new-tab.is-active { color: #fff; border-color: var(--accent); }
+.rank-tab.is-focused, .rank-tab:focus-visible, .new-tab.is-focused, .new-tab:focus-visible { color: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,.9); border-radius: 5px; }
+.rank-layout { display: flex; align-items: flex-start; gap: 32px; min-height: 0; }
+.rank-subnav { display: flex; flex: 0 0 160px; flex-direction: column; gap: 6px; }
+.rank-subtab { min-height: 48px; padding: 0 26px; color: #b8b8c2; background: transparent; border-radius: 11px; text-align: left; font-size: 16px; }
+.rank-subtab.is-active { color: var(--accent); background: var(--accent-soft); font-weight: 700; }
+.rank-subtab.is-focused, .rank-subtab:focus-visible { color: #fff; background: rgba(255,255,255,.14); box-shadow: 0 0 0 3px #fff; }
+.rank-main { flex: 1; min-width: 0; }
+.rank-list-heading { display: flex; align-items: baseline; gap: 13px; min-height: 48px; color: #fff; }
+.rank-list-heading strong { font-size: 22px; }
+.rank-list-heading span { color: #767783; font-size: 13px; }
+.rank-period { margin-left: auto; padding: 9px 16px; color: #c7c7d1 !important; background: #20212a; border: 1px solid #3e4050; border-radius: 20px; }
+.rank-list { display: flex; flex-direction: column; gap: 2px; min-height: 200px; padding-bottom: 18px; }
+.rank-row { display: grid; grid-template-columns: 42px 116px minmax(0,1fr) 94px; align-items: center; gap: 18px; min-height: 150px; padding: 12px 10px 12px 0; color: #fff; background: transparent; border: 1px solid transparent; border-bottom-color: rgba(255,255,255,.06); border-radius: 12px; text-align: left; cursor: pointer; scroll-margin: 10px; outline: none; }
+.rank-row-rank { color: #858691; font-size: 28px; font-weight: 700; text-align: center; }
+.rank-row:nth-child(1) .rank-row-rank { color: #ff413e; }
+.rank-row:nth-child(2) .rank-row-rank { color: #ff8c2e; }
+.rank-row:nth-child(3) .rank-row-rank { color: #ffc61c; }
+.rank-row-image { width: 116px; height: 150px; object-fit: cover; background: #2b2c34; border-radius: 10px; }
+.rank-row-copy { min-width: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: center; gap: 7px; }
+.rank-row-title { overflow: hidden; font-size: 19px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.rank-row-meta { overflow: hidden; color: #9e9faa; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.rank-row-intro { display: -webkit-box; overflow: hidden; color: #777985; font-size: 13px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.rank-row-heat { color: #ff8b25; font-size: 15px; font-weight: 700; }
+.rank-row-side { display: flex; flex-direction: column; align-items: center; gap: 13px; }
+.rank-row-play { min-height: 39px; padding: 0 13px; color: #fff; background: var(--accent); border-radius: 9px; font-weight: 700; white-space: nowrap; }
+.rank-row-play.is-focused, .rank-row-play:focus-visible, .rank-row-detail.is-focused, .rank-row-detail:focus-visible { box-shadow: 0 0 0 3px #fff; transform: scale(1.04); }
+.rank-row-detail { padding: 4px 9px; color: #bdbdc7; background: transparent; }
+.rank-row.is-focused, .rank-row:focus-visible { border-color: #fff; box-shadow: 0 0 0 3px #fff, 0 9px 25px rgba(0,0,0,.24); background: rgba(255,255,255,.05); }
+.rank-empty, .calendar-empty { display: grid; place-items: center; min-height: 190px; color: #91929d; border: 1px dashed rgba(255,255,255,.14); border-radius: 12px; }
+
+.new-heading-row { margin-bottom: 18px; }
+.new-heading-row .new-filters { margin-left: auto; }
+.new-filters { display: flex; gap: 10px; }
+.new-filter { min-width: 70px; min-height: 38px; padding: 0 16px; color: #aaaab6; background: #20212a; border: 1px solid #393b49; border-radius: 20px; }
+.new-filter.is-active { color: #fff; background: var(--accent); border-color: var(--accent); }
+.new-filter.is-focused, .new-filter:focus-visible { color: #fff; border-color: #fff; box-shadow: 0 0 0 3px var(--accent); }
+.new-grid { display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 28px 20px; padding-bottom: 18px; }
+.new-card { min-width: 0; padding: 0 0 9px; color: #fff; background: transparent; border: 1px solid transparent; border-radius: 11px; text-align: left; }
+.new-card, .search-result-card { scroll-margin: 14px; }
+.new-card-poster { display: block; position: relative; }
+.new-card-episodes { position: absolute; bottom: 7px; right: 6px; padding: 3px 7px; color: #fff; background: rgba(0,0,0,.65); border-radius: 6px; font-size: 12px; }
+.new-card-image { display: block; width: 100%; aspect-ratio: 2 / 3; object-fit: cover; background: #2d2e36; border-radius: 10px; }
+.new-card-title { display: block; overflow: hidden; padding: 10px 4px 2px; font-size: 15px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.new-card-meta { display: block; overflow: hidden; padding: 0 4px; color: #92939e; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.new-card-score { display: block; padding: 5px 4px 0; color: #f3bb2f; font-size: 14px; font-weight: 700; }
+.new-card.is-focused, .new-card:focus-visible { border-color: #fff; box-shadow: 0 0 0 3px #fff, 0 12px 25px rgba(0,0,0,.35); transform: translateY(-3px) scale(1.025); }
+.new-date-strip { display: flex; gap: 10px; overflow-x: auto; padding: 0 0 20px; scrollbar-width: none; }
+.new-date-strip::-webkit-scrollbar { display: none; }
+.calendar-day { flex: 0 0 88px; min-height: 70px; padding: 8px 6px; color: #9c9da8; background: #1b1c24; border: 1px solid #373846; border-radius: 13px; font-size: 13px; }
+.calendar-day strong, .calendar-day span { display: block; }
+.calendar-day strong { margin-top: 4px; color: #d7d7df; font-size: 16px; }
+.calendar-day.is-active { color: #fff; background: var(--accent); border-color: var(--accent); }
+.calendar-day.is-active strong { color: #fff; }
+.calendar-day.is-focused, .calendar-day:focus-visible { box-shadow: 0 0 0 3px #fff; }
+.calendar-list { display: flex; flex-direction: column; gap: 14px; padding-bottom: 18px; }
+.calendar-row { display: grid; grid-template-columns: 108px minmax(0,1fr) 85px; align-items: center; gap: 18px; min-height: 132px; padding: 12px 17px; color: #fff; background: #1b1c24; border: 1px solid #30313e; border-radius: 13px; text-align: left; }
+.calendar-row-image { width: 82px; height: 108px; object-fit: cover; border-radius: 8px; background: #2d2e36; }
+.calendar-row-copy { min-width: 0; }
+.calendar-row-title { display: block; overflow: hidden; font-size: 18px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-row-meta { display: block; margin-top: 8px; color: #50d69b; font-size: 14px; }
+.calendar-row-intro { display: -webkit-box; overflow: hidden; margin-top: 7px; color: #90919d; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.calendar-row-play { min-height: 40px; padding: 0 13px; color: #fff; background: var(--accent); border-radius: 9px; font-weight: 700; }
+.calendar-row.is-focused, .calendar-row:focus-visible { border-color: #fff; box-shadow: 0 0 0 3px #fff; }
+.calendar-row-play.is-focused, .calendar-row-play:focus-visible { box-shadow: 0 0 0 3px #fff; }
+
+.reservation-page h1 { margin-bottom: 24px; }
+.reservation-tabs { display: flex; gap: 12px; margin-bottom: 18px; }
+.reservation-tab { min-width: 94px; min-height: 42px; padding: 0 20px; color: #aaaab7; background: #20212a; border: 1px solid #3d3e4d; border-radius: 22px; }
+.reservation-tab.is-active { color: #fff; background: var(--accent); border-color: var(--accent); }
+.reservation-tab.is-focused, .reservation-tab:focus-visible { color: #fff; box-shadow: 0 0 0 3px #fff; }
+.reservation-empty { display: grid; place-items: center; min-height: 360px; height: calc(100% - 140px); color: #8d8e9b; font-size: 18px; }
+.calendar-empty { min-height: 260px; padding: 28px; text-align: center; line-height: 1.8; }
+
 .detail-modal { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; padding: 32px; background: rgba(0,0,0,.73); }
 .detail-dialog { display: flex; width: min(980px, 92vw); max-height: 88vh; flex-direction: column; overflow: hidden; background: #202126; border: 1px solid rgba(255,255,255,.15); border-radius: 18px; box-shadow: 0 24px 70px rgba(0,0,0,.55); }
 .detail-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; color: #fff; font-size: 22px; font-weight: 700; border-bottom: 1px solid rgba(255,255,255,.1); }
@@ -152,7 +237,7 @@ button:focus { outline: none; }
 .detail-episode.is-playing { color: #fff; background: var(--accent); }
 .detail-episode.is-focused, .detail-episode:focus-visible { box-shadow: 0 0 0 3px #fff; background: rgba(255,255,255,.3); }
 
-@media (max-width: 1250px) {
+@media (max-width: 1400px) {
   .sidebar { flex-basis: 210px; }
   .top-bar { padding-left: 22px; padding-right: 22px; }
   .right-actions { right: 16px; }
@@ -161,6 +246,12 @@ button:focus { outline: none; }
   .catalog-ribbon { right: 7%; left: 7%; }
   .catalog-card { flex-basis: 125px; width: 125px; }
   .search-results { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .page-workspace { padding-left: 22px; padding-right: 22px; }
+  .new-grid { grid-template-columns: repeat(5, minmax(0,1fr)); }
+  .rank-layout { gap: 18px; }
+  .rank-subnav { flex-basis: 140px; }
+  .rank-row { grid-template-columns: 34px 98px minmax(0,1fr) 82px; gap: 12px; }
+  .rank-row-image { width: 98px; height: 132px; }
 }
 
 @media (max-width: 1080px) {

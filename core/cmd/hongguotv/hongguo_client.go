@@ -29,6 +29,7 @@ type Drama struct {
 	SeriesID             string    `json:"series_id"`
 	Title                string    `json:"title"`
 	Cover                string    `json:"cover"`
+	CoverFallback        string    `json:"cover_fallback,omitempty"`
 	Intro                string    `json:"intro"`
 	Score                string    `json:"score,omitempty"`
 	PlayCount            int64     `json:"play_count,omitempty"`
@@ -37,6 +38,11 @@ type Drama struct {
 	Vid                  string    `json:"vid,omitempty"`
 	VidList              []string  `json:"vid_list,omitempty"`
 	Tags                 []string  `json:"tags,omitempty"`
+	Rank                 int       `json:"rank,omitempty"`
+	Heat                 string    `json:"heat,omitempty"`
+	FavoriteText         string    `json:"favorite_text,omitempty"`
+	LikeText             string    `json:"like_text,omitempty"`
+	StatusTags           []string  `json:"status_tags,omitempty"`
 	Episodes             []Episode `json:"episodes,omitempty"`
 }
 
@@ -68,6 +74,10 @@ type SeriesDetailResult struct {
 
 type SearchResult struct {
 	Items []Drama `json:"items"`
+}
+
+type RankRequest struct {
+	Path string
 }
 
 type PlayInfo struct {
@@ -147,6 +157,22 @@ func categorySpecFor(path string) categorySpec {
 	}
 }
 
+func categorySortFor(path string) string {
+	if strings.HasPrefix(path, "/new/") {
+		return "online_time"
+	}
+	return "hot_score"
+}
+
+func normalizeRankPath(path string) string {
+	switch path {
+	case "/rank/hot-drama", "/rank/hot-real-drama", "/rank/hot-comic-drama", "/rank/hot-ai-drama":
+		return path
+	default:
+		return "/rank/hot-drama"
+	}
+}
+
 func (c *hongguoClient) Category(ctx context.Context, request CategoryRequest) (CategoryResult, error) {
 	spec := categorySpecFor(request.Path)
 	shown := strings.Join(request.Shown, ",")
@@ -162,7 +188,7 @@ func (c *hongguoClient) Category(ctx context.Context, request CategoryRequest) (
 			"gender":             []string{},
 			"category_dim_role":  []string{},
 			"genre":              []string{spec.genre},
-			"sort":               []string{"hot_score"},
+			"sort":               []string{categorySortFor(request.Path)},
 			"category_dim_theme": []string{},
 		},
 		"session_id":      request.SessionID,
@@ -191,6 +217,40 @@ func (c *hongguoClient) Category(ctx context.Context, request CategoryRequest) (
 	}
 	if result.NextOffset == 0 && result.HasMore {
 		result.NextOffset = maxInt(request.Offset, 0) + len(result.Items)
+	}
+	return result, nil
+}
+
+func (c *hongguoClient) Rank(ctx context.Context, request RankRequest) (CategoryResult, error) {
+	path := normalizeRankPath(request.Path)
+	body, err := c.getBytesWithUA(ctx, c.webBase+path, "text/html", "Googlebot")
+	if err != nil {
+		return CategoryResult{}, err
+	}
+	router, err := extractRouterData(body)
+	if err != nil {
+		return CategoryResult{}, err
+	}
+	content, ok := findObjectByKey(router, "content")
+	if !ok {
+		return CategoryResult{Items: []Drama{}}, nil
+	}
+	rows, _ := content["rankList"].([]any)
+	result := CategoryResult{Items: make([]Drama, 0, len(rows))}
+	if pagination, ok := asMap(content["pagination"]); ok {
+		page := asInt(pagination["pageNum"])
+		totalPages := asInt(pagination["totalPages"])
+		result.HasMore = page > 0 && totalPages > page
+		result.NextOffset = page + 1
+	}
+	seen := make(map[string]bool)
+	for _, row := range rows {
+		drama, valid := normalizeDrama(row)
+		if !valid || drama.SeriesID == "" || seen[drama.SeriesID] {
+			continue
+		}
+		seen[drama.SeriesID] = true
+		result.Items = append(result.Items, drama)
 	}
 	return result, nil
 }
@@ -333,11 +393,15 @@ func (c *hongguoClient) doJSON(request *http.Request) (map[string]any, error) {
 }
 
 func (c *hongguoClient) getBytes(ctx context.Context, endpoint, accept string) ([]byte, error) {
+	return c.getBytesWithUA(ctx, endpoint, accept, "Mozilla/5.0 (Android TV; HongguoTV)")
+}
+
+func (c *hongguoClient) getBytesWithUA(ctx context.Context, endpoint, accept, userAgent string) ([]byte, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("User-Agent", "Mozilla/5.0 (Android TV; HongguoTV)")
+	request.Header.Set("User-Agent", userAgent)
 	request.Header.Set("Accept", accept)
 	return c.readResponse(request, accept)
 }
@@ -491,20 +555,57 @@ func normalizeDrama(value any) (Drama, bool) {
 		Title:                title,
 		Cover:                firstNonEmpty(asString(object["series_cover"]), asString(object["cover"]), asString(object["cover_url"])),
 		Intro:                firstNonEmpty(asString(object["series_intro"]), asString(object["video_desc"]), asString(object["description"])),
-		Score:                firstNonEmpty(asString(object["score"]), asString(object["rating"])),
+		Score:                firstNonEmpty(asString(object["score"]), asString(object["rating"]), asString(object["scoreText"])),
 		PlayCount:            asInt64(object["play_cnt"]),
 		EpisodeCount:         firstPositive(asInt(object["episode_cnt"]), asInt(object["episode_total_cnt"])),
 		AccessibleEpisodeCnt: firstPositive(asInt(object["accessible_episode_cnt"]), 0),
 		Vid:                  firstNonEmpty(asString(object["vid"]), asString(object["video_id"])),
 		Tags:                 asStringSlice(object["tags"]),
 		VidList:              asStringSlice(object["vid_list"]),
+		Rank:                 asInt(object["rank"]),
+		Heat:                 asString(object["heatText"]),
+		FavoriteText:         asString(object["favoriteText"]),
+		LikeText:             asString(object["likeText"]),
+		StatusTags:           asStringSlice(object["statusTags"]),
 	}
+	if drama.VidList == nil {
+		drama.VidList = asStringSlice(object["episodeVids"])
+	}
+	if drama.Vid == "" && len(drama.VidList) > 0 {
+		drama.Vid = drama.VidList[0]
+	}
+	if drama.EpisodeCount == 0 {
+		drama.EpisodeCount = len(drama.VidList)
+	}
+	if drama.Score != "" {
+		drama.Score = strings.TrimSpace(strings.TrimPrefix(drama.Score, "评分"))
+	}
+	drama.CoverFallback = browserCoverFallback(drama.Cover)
 	if drama.EpisodeCount == 0 {
 		if info, ok := asMap(object["series_episode_info"]); ok {
 			drama.EpisodeCount = firstPositive(asInt(info["episode_cnt"]), asInt(info["episode_total_cnt"]))
 		}
 	}
 	return drama, true
+}
+
+// The app category API serves signed HEIC covers, which Android WebView and
+// Chromium cannot display. The same novel-pic object is available as JPEG on
+// the website's image CDN. Keep the signed original and expose this verified
+// alternative only for HEIC objects; ordinary images retain their URL.
+func browserCoverFallback(cover string) string {
+	u, err := url.Parse(cover)
+	if err != nil || !strings.HasSuffix(strings.ToLower(u.Path), ".heic") {
+		return ""
+	}
+	host := strings.ToLower(u.Hostname())
+	if !strings.HasSuffix(host, ".fqnovelpic.com") && !strings.HasSuffix(host, ".byteimg.com") {
+		return ""
+	}
+	if !strings.HasPrefix(u.Path, "/novel-pic/") || !strings.Contains(u.Path, "~") {
+		return ""
+	}
+	return "https://p3-novel.byteimg.com" + strings.SplitN(u.Path, "~", 2)[0] + "~tplv-shrink:640:0.image"
 }
 
 func asMap(value any) (map[string]any, bool) {

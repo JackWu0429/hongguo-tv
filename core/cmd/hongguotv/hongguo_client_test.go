@@ -65,6 +65,27 @@ func TestSeriesDetailCreatesLockedEpisodes(t *testing.T) {
 	}
 }
 
+func TestNewDramaRequestsOnlineTimeSort(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode category body: %v", err)
+		}
+		selectItems, _ := asMap(body["select_items"])
+		if sort := asStringSlice(selectItems["sort"]); len(sort) != 1 || sort[0] != "online_time" {
+			t.Errorf("new drama was not sorted by online time: %#v", selectItems)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"video_data":[],"has_more":false}}`))
+	}))
+	defer server.Close()
+	client := newHongguoClient()
+	client.apiBase = server.URL
+	if _, err := client.Category(context.Background(), CategoryRequest{Path: "/new/recommend"}); err != nil {
+		t.Fatalf("new drama category failed: %v", err)
+	}
+}
+
 func TestSearchNormalizesSearchList(t *testing.T) {
 	html := `<!doctype html><script>_ROUTER_DATA = {"loaderData":{"search_(keyword)/page":{"query":"测试","searchList":[{"name":"测试一","keyword":"1234567890123456789","video_data":{"series_id":"1234567890123456789","series_title":"测试一","series_cover":"https://cover/1","episode_cnt":12}},{"name":"测试二","keyword":"2234567890123456789","video_data":{"series_id":"2234567890123456789","series_title":"测试二","series_cover":"https://cover/2","episode_cnt":8}}]}}};</script>`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +106,42 @@ func TestSearchNormalizesSearchList(t *testing.T) {
 	}
 	if len(result.Items) != 2 || result.Items[0].SeriesID != "1234567890123456789" || result.Items[1].EpisodeCount != 8 {
 		t.Fatalf("unexpected search result: %#v", result.Items)
+	}
+}
+
+func TestRankNormalizesCrawlerPayload(t *testing.T) {
+	html := `<!doctype html><script>_ROUTER_DATA = {"loaderData":{"rank_hot-drama/page":{"content":{"isSuccess":true,"rankList":[{"seriesId":"1234567890123456789","title":"榜单短剧","cover":"https://cover","rank":1,"heatText":"995万热度","scoreText":"评分9.3","description":"简介","tags":["玄幻"],"episodeVids":["9988776655443322110"]}],"pagination":{"pageNum":1,"totalPages":2}}}}};</script>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/rank/hot-drama" || r.Header.Get("User-Agent") != "Googlebot" {
+			t.Fatalf("unexpected rank request: %s ua=%s", r.URL.Path, r.Header.Get("User-Agent"))
+		}
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(html))
+	}))
+	defer server.Close()
+
+	client := newHongguoClient()
+	client.webBase = server.URL
+	client.httpClient.Timeout = 2 * time.Second
+	result, err := client.Rank(context.Background(), RankRequest{Path: "/rank/hot-drama"})
+	if err != nil {
+		t.Fatalf("Rank failed: %v", err)
+	}
+	if len(result.Items) != 1 || result.Items[0].Rank != 1 || result.Items[0].Score != "9.3" || result.Items[0].Vid != "9988776655443322110" || !result.HasMore {
+		t.Fatalf("unexpected rank result: %#v", result)
+	}
+}
+
+func TestCoverFallbackPreservesSignedOriginal(t *testing.T) {
+	original := "https://p3-reading-sign.fqnovelpic.com/novel-pic/abc~tplv-superreso:400:0.heic?x-signature=secret"
+	drama, ok := normalizeDrama(map[string]any{"series_id": "123", "cover": original})
+	if !ok || drama.Cover != original || drama.CoverFallback != "https://p3-novel.byteimg.com/novel-pic/abc~tplv-shrink:640:0.image" {
+		t.Fatalf("unexpected HEIC cover: %#v", drama)
+	}
+	for _, ordinary := range []string{"https://p3-reading-sign.fqnovelpic.com/novel-pic/a.jpg?x-signature=keep", "https://example.com/a~b.heic"} {
+		if browserCoverFallback(ordinary) != "" {
+			t.Fatalf("unexpected fallback for %s", ordinary)
+		}
 	}
 }
 

@@ -104,6 +104,63 @@
         <div class="search-results" id="search-results" data-focus-zone="searchResults" aria-live="polite"></div>
       </section>
 
+      <section class="rank-page page-workspace is-hidden" id="rank-page" aria-label="排行榜">
+        <div class="rank-heading-row">
+          <h1>排行榜</h1>
+          <div class="rank-tabs" data-focus-zone="rankTabs">
+            <button class="rank-tab is-active" data-rank-path="/rank/hot-drama" data-focus="rank-tab-all">全部</button>
+            <button class="rank-tab" data-rank-path="/rank/hot-real-drama" data-focus="rank-tab-real">真人剧</button>
+            <button class="rank-tab" data-rank-path="/rank/hot-comic-drama" data-focus="rank-tab-comic">漫剧</button>
+            <button class="rank-tab" data-rank-path="/rank/hot-ai-drama" data-focus="rank-tab-ai">AI剧</button>
+            <button class="rank-tab" data-rank-unavailable="演员榜" data-focus="rank-tab-actor">演员</button>
+            <button class="rank-tab" data-rank-unavailable="系列剧榜" data-focus="rank-tab-series">系列剧</button>
+          </div>
+        </div>
+        <div class="rank-layout">
+          <nav class="rank-subnav" data-focus-zone="rankSubnav" aria-label="榜单类型">
+            <button class="rank-subtab" data-rank-label="推荐榜" data-focus="rank-sub-recommend">推荐榜</button>
+            <button class="rank-subtab is-active" data-rank-label="热播榜" data-focus="rank-sub-hot">热播榜</button>
+            <button class="rank-subtab" data-rank-label="臻果榜" data-focus="rank-sub-premium">臻果榜</button>
+            <button class="rank-subtab" data-rank-label="预约榜" data-focus="rank-sub-reserve">预约榜</button>
+            <button class="rank-subtab" data-rank-label="新剧榜" data-focus="rank-sub-new">新剧榜</button>
+            <button class="rank-subtab" data-rank-label="热搜榜" data-focus="rank-sub-search">热搜榜</button>
+            <button class="rank-subtab" data-rank-label="必看榜" data-focus="rank-sub-must">必看榜</button>
+            <button class="rank-subtab" data-rank-label="收藏榜" data-focus="rank-sub-favorite">收藏榜</button>
+          </nav>
+          <div class="rank-main">
+            <div class="rank-list-heading"><strong id="rank-list-title">热播榜</strong><span id="rank-list-update">红果热播榜</span><span class="rank-period">总榜</span></div>
+            <div class="rank-list" id="rank-list" data-focus-zone="rankItems" aria-live="polite"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="new-page page-workspace is-hidden" id="new-page" aria-label="新剧">
+        <div class="new-heading-row">
+          <h1>新剧</h1>
+          <div class="new-tabs" data-focus-zone="newTabs">
+            <button class="new-tab is-active" data-new-mode="recommend" data-focus="new-tab-recommend">新剧推荐</button>
+            <button class="new-tab" data-new-mode="calendar" data-focus="new-tab-calendar">上新日历</button>
+          </div>
+          <div class="new-filters" data-focus-zone="newFilters">
+            <button class="new-filter is-active" data-new-gender="all" data-focus="new-filter-all">全部</button>
+            <button class="new-filter" data-new-gender="male" data-focus="new-filter-male">男频</button>
+            <button class="new-filter" data-new-gender="female" data-focus="new-filter-female">女频</button>
+          </div>
+        </div>
+        <div class="new-date-strip is-hidden" id="new-date-strip" data-focus-zone="calendarDays" aria-label="上新日期"></div>
+        <div class="new-grid" id="new-grid" data-focus-zone="newItems" aria-live="polite"></div>
+        <div class="calendar-list is-hidden" id="calendar-list" data-focus-zone="calendarItems" aria-live="polite"></div>
+      </section>
+
+      <section class="reservation-page page-workspace is-hidden" id="reservation-page" aria-label="我的预约">
+        <h1>我的预约</h1>
+        <div class="reservation-tabs" data-focus-zone="reservationTabs">
+          <button class="reservation-tab is-active" data-reservation-mode="online" data-focus="reservation-online">已上线</button>
+          <button class="reservation-tab" data-reservation-mode="upcoming" data-focus="reservation-upcoming">待上线</button>
+        </div>
+        <div class="reservation-empty" id="reservation-empty" data-focus-zone="reservationItems">没有已上线的预约</div>
+      </section>
+
       <section class="hero" id="hero" aria-label="推荐视频">
         <div class="hero-media">
           <img id="hero-backdrop" class="hero-backdrop" alt="">

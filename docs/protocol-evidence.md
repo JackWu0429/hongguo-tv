@@ -74,7 +74,8 @@ json:"is_multi_season"
 
 | 功能 | 已知线索 | 仍需确认 |
 | --- | --- | --- |
-| 分类、榜单、推荐 | Go 已接入 `/reading/distribution/category/landpage/v/`，已验证真实热播分类响应 | 分页、频道、筛选参数仍需扩展验收 |
+| 分类、榜单、推荐 | Go 已接入 `/reading/distribution/category/landpage/v/`；四个 `/rank/hot-*` 官网页面有真实 `rankList`，Go 已提取排名、评分和集列表 | 其它榜单类型、分页和筛选参数仍需扩展验收 |
+| 新剧 | 已实测分类 API 的 `select_items.sort=["online_time"]` 返回最新上架列表 | 按日期的上新日历、预约状态和男频/女频筛选尚未接入 |
 | 搜索 | `Search` 方法、搜索路径 | 远程搜索与本地剧库搜索的组合方式 |
 | 详情和集列表 | Go 已解析网页 `_ROUTER_DATA`，已验证完整 `vid_list` 与锁定状态 | 同系列季关系仍需扩展 |
 | 下一季 | `NextSeason`、SeasonRef 模型 | 实际请求、关联关系及末季行为 |
@@ -91,3 +92,13 @@ json:"is_multi_season"
 常规代理只能记录程序实际经过代理的请求；是否使用代理、是否接受其证书需先验证。代理不可见时再评估运行时插桩。不能保证某个工具一定能直接挂钩 Go 方法。
 
 只提交脱敏请求及响应样本。账号凭证、设备身份、原始抓包和媒体文件留在仓库外。
+
+## 排行榜与新剧页面（2026-10-06）
+
+本地 `GET /api/v1/rank?path=/rank/hot-drama` 支持 `hot-drama`、`hot-real-drama`、`hot-comic-drama` 和 `hot-ai-drama`。官网普通 UA 的榜单内容可能为空，本次以 Googlebot UA 实测返回 `_ROUTER_DATA` 中 `content.rankList`。这是一条当前可用的网页数据路径，不等于已复刻 Mac 客户端全部榜单接口。
+
+本地 `GET /api/v1/category?path=/new/recommend` 复用分类 JSON API，只将排序设置为 `online_time`。返回最新列表不表示其中所有剧都在今天上架，因此上新日历只提供日期条和待接入状态，不把新剧列表分配到任意日期。
+
+分类 API 的 HEIC 封面无法由 Chromium / Android WebView 直接显示。本次实测四张封面在官网图片 CDN 的 `/novel-pic/<object>~tplv-shrink:640:0.image` 上返回 JPEG；模型同时保留 `cover` 和 HEIC 专用 `cover_fallback`，普通签名图片地址不变。
+
+本轮验证覆盖 Go 测试与 vet、JS 语法、真实四个热播榜和最新剧 API、1920×1080 / 1280×720 浏览器焦点路径、详情关闭与播放返回、海报加载。Android TV 实体遥控器和长时间播放验收仍未进行。
