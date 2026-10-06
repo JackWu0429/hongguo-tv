@@ -44,6 +44,8 @@ type Drama struct {
 	LikeText             string    `json:"like_text,omitempty"`
 	StatusTags           []string  `json:"status_tags,omitempty"`
 	Episodes             []Episode `json:"episodes,omitempty"`
+	SeasonIndex          int       `json:"season_index,omitempty"`
+	MultiSeason          bool      `json:"is_multi_season,omitempty"`
 }
 
 type Episode struct {
@@ -371,8 +373,8 @@ func (c *hongguoClient) SeriesDetail(ctx context.Context, seriesID string) (Seri
 	if !ok || drama.SeriesID == "" {
 		return SeriesDetailResult{}, errors.New("详情响应缺少剧集信息")
 	}
-	if drama.SeriesID == "" {
-		drama.SeriesID = seriesID
+	if drama.SeriesID != seriesID {
+		return SeriesDetailResult{}, errors.New("详情返回的剧集与请求不一致")
 	}
 	if drama.EpisodeCount == 0 {
 		drama.EpisodeCount = len(drama.VidList)
@@ -663,6 +665,8 @@ func normalizeDrama(value any) (Drama, bool) {
 		FavoriteText:         asString(object["favoriteText"]),
 		LikeText:             asString(object["likeText"]),
 		StatusTags:           asStringSlice(object["statusTags"]),
+		SeasonIndex:          asInt(object["season_index"]),
+		MultiSeason:          asBool(object["is_multi_season"]),
 	}
 	if drama.VidList == nil {
 		drama.VidList = asStringSlice(object["episodeVids"])

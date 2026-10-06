@@ -6,7 +6,7 @@
 
 1. 发布版嵌入前端：能够确认前端调用的方法、参数和模型。
 2. 二进制符号及字符串：能够确认部分 Go 方法、JSON 标签和 HTTP 路径。
-3. 运行时请求与响应：才能确认某个方法实际使用的接口、参数、签名和组合算法。
+3. 方法定点反汇编及实际请求与响应：用于核对某个方法的接口、参数、签名和组合算法；涉及账号的成功行为仍需真实登录会话验证。
 
 前两种证据不能代替第三种。数据模型存在不代表已确认红果服务端会提供所有对应字段。
 
@@ -51,9 +51,9 @@ json:"season_index"
 json:"is_multi_season"
 ```
 
-尚未确认 `NextSeason` 底层使用哪个 HTTP 路径，也未确认是服务端季关系、多个请求组合还是本地算法。因此不能宣称它已经证明比标题识别更可靠，也不能宣称它完全不使用标题。
+2026-10-06 补充：已通过 Go `__gopclntab` 恢复函数范围，定点反汇编确认该方法使用注册项 `plan_v`，对应 `GET /reading/bookapi/plan/v`。已在红果 API 主机成功请求并取得真实 `season_index` 关系；该方法内未调用标题解析或搜索。完整请求和验证范围见下方“账号登录与下一季专项核对”。
 
-现有 Lampa 插件已经实现标题规则、搜索建议和详情验证驱动的同系列与下一季。该行为可作为参考，但本项目复刻原版内部季关系前仍需运行时证据。
+现有 Lampa 插件已经实现标题规则、搜索建议和详情验证驱动的同系列与下一季。TV APK 现已接入已验证的官方季关系接口，不依赖标题猜测；下面记录实现边界和验收方式。
 
 ## 候选上游路径
 
@@ -78,12 +78,12 @@ json:"is_multi_season"
 | 新剧 | 已实测分类 API 的 online_time 排序，男频/女频使用 gender 参数 | 按日期的上新日历、预约状态尚未接入 |
 | 搜索 | `Search` 方法、搜索路径 | 远程搜索与本地剧库搜索的组合方式 |
 | 详情和集列表 | Go 已解析网页 `_ROUTER_DATA`，已验证完整 `vid_list` 与锁定状态 | 同系列季关系仍需扩展 |
-| 下一季 | `NextSeason`、SeasonRef 模型 | 实际请求、关联关系及末季行为 |
+| 下一季 | 签名 `plan/v` 请求、当前季反查及自动跨季已接入；浏览器验证历史、选集、返回及退出竞态 | 更多系列样本、实体 TV 与真实跨季媒体验收 |
 | 播放 | APK 内置签名 `video_model`、`spade_a` 解码、CENC AES-CTR 清晰化、MP4 Range 路由已接入并实测 | 清晰度策略和地址过期重试仍需 Android TV 长时间验收；不依赖 8787/57828 回退 |
 | 弹幕 | `Danmaku` 及时间段参数 | 实际上游地址、鉴权、颜色、时间基准 |
 | 评论、点赞 | 方法与部分 comment 路径 | 读写参数、登录限制、分页 |
 | 历史、收藏、进度 | 已实现设备上的持久记录和断点恢复；playing 后写历史，按集保存时间 | 账号数据合并/同步与原版云端删除语义 |
-| 登录、预约、下载 | 前端入口和内部方法 | 完整协议、状态恢复、错误行为 |
+| 登录、预约、下载 | 登录三条 HTTP 路径、主要参数、上行短信分支与会话保存方法已定位；预约/下载仍为前端入口和内部方法线索 | 登录成功会话与云端同步实测；预约/下载完整协议 |
 
 ## 请求分析方法
 
@@ -92,6 +92,80 @@ json:"is_multi_season"
 常规代理只能记录程序实际经过代理的请求；是否使用代理、是否接受其证书需先验证。代理不可见时再评估运行时插桩。不能保证某个工具一定能直接挂钩 Go 方法。
 
 只提交脱敏请求及响应样本。账号凭证、设备身份、原始抓包和媒体文件留在仓库外。
+
+## 账号登录与下一季专项核对（2026-10-06）
+
+本轮只分析发布包并进行无需登录的季关系读取，没有发送验证码、尝试登录或写入账号数据。已发布 APK 的行为仍是本机历史/收藏/点赞和单季自动下一集；本轮没有生成新 APK。
+
+发布包版本为 v1.1.5，通用 Mac 可执行文件 SHA256：`72d00b6af7bb69ea9cfb61344ce4592c9f5ba8c404fde5029aaf89a7713dd22d`。从 x86_64 的 Go 函数表恢复方法地址，核对调用、API 静态注册结构及 Go 反射字段；证据保存于 Lampa 工作区 `tmp/hongguo-account-season-evidence-20261006/`。
+
+### 下一季：已验证真实季关系接口
+
+```text
+GET https://api5-normal-sinfonlineb.fqnovel.com/reading/bookapi/plan/v
+```
+
+除设备/应用参数外，`NextSeason` 构造以下查询参数：
+
+```text
+scene=10
+offset=0
+limit=0
+from=series_short_play_info
+total_chapter_num=0
+current_chapter_num=0
+post_id=0
+is_horizontal_screen=false
+bookstore_tab=0
+bookstore_tab_type=0
+book_id=<当前 series_id>
+filter_ids=<当前 series_id>
+```
+
+返回 `data:[{video_data:[...]}]`。条目含 `series_id`、`vid`、`season_index`、`episode_cnt`、`disable_play`、`title`、`cover`。当前季在本轮两个样本中被排除。原版方法将非正数的当前季按 1 处理，遍历返回条目，只保留季号大于当前季、集数大于 0、`vid` 非空且未禁播的条目，选择季号最小的一项，映射为 `SeasonRef`；没有候选返回空。
+
+本轮沿用现有播放签名函数生成 `X-Gorgon`、`X-Khronos` 等头，随机设备身份，不带账号 Cookie：
+
+| 当前剧 | 实测结果 |
+| --- | --- |
+| 万妖图录传第一季 `7621200213801176126` | `code=0`；第二季为 `7628202881140657177`，接口提供的首集 `vid=7628204794481495065` |
+| 万妖图录传第十三季 `7690163276214176792` | `code=0`；第十四季 `7691518344146455576` 有季关系，但 `episode_cnt=0`、`vid=""`，应排除；没有可播放的下一季 |
+
+不签名的第十三季请求返回 HTTP 200、空响应体，不能当成“没有下一季”。接口返回失败、无效 JSON、有效响应无候选这三种情况必须分开。此轮只验证季关系和选择规则，未播放第二季媒体，也未验证所有剧都具有服务端季关系。
+
+该接口不返回当前剧自己的 `season_index`。补充实测第二季的关系响应含第一季 `season_index=1`，因此 TV 核心通过另一季的官方关系反查当前剧。当前剧必须以精确字符串 ID 匹配；无法确认当前季时返回错误，不将未知季号当成第一季。此方法保留已稳定的网页详情实现。
+
+本地 `GET /api/v1/series/next-season?series_id=<id>` 返回 `{current_season,next}`，`next` 为精简 Drama 或 `null`。有效空列表代表没有下一季；HTTP 错误、空体、缺少成功状态、错误列表结构、重复 ID 的季号冲突均返回失败。请求总时限 20 秒，并随页面请求的 context 取消。没有永久缓存空结果或失败。
+
+播放器只在当前季最后一集结束后请求关系；确认成功后替换播放对象，从下一季第 1 集、0 秒开始，即使该季已有旧进度。解析与媒体下载仍由 APK 内置链路执行。当前选集面板若打开，会更新为下一季的标题、完整集列表、继续按钮与高亮。关系失败不会误当作“全剧播完”或推荐下一部。无候选时独立播放页停止，推荐页才按既有规则转下一部。
+
+已验证：Go 真实上游第一季 → 第二季、第十三季 → `next:null`；测试 fixture 覆盖禁播/零集/空首集、未知当前季、签名、ID 精度、响应异常、重试和取消。浏览器使用真实官方详情、VID 和季关系，媒体替换为 Range 测试 MP4，验证第一季第 81 集自然结束 → 第二季第 1 集，分剧历史、第二季选集和继续按钮、高亮、原卡片返回及向右移动。也验证请求延迟期间退出页面、退后台后回前台均不会自动起播，API 失败会暂停连续播放。尚未宣称完成实体 TV 或真实 CENC 跨季长播放验收。
+
+### 登录与账号同步：定位到具体协议，尚未登录实测
+
+用户提供的界面确认“手机号 + 验证码”，以及可能出现的上行短信验证弹窗。发布包中的 API 注册表和 `flow/login.go` 调用关系与之吻合：
+
+| 功能 | 内部方法 / HTTP 路径 |
+| --- | --- |
+| 获取验证码 | `App.SendCode(phone)` → `Login.SendCode` → `POST /passport/mobile/send_code/v1/` |
+| 短信登录 | `App.Login(phone, code)` → `Login.LoginFull` → `POST /passport/mobile/sms_login/` |
+| 上行短信验证 | `Login.UpsmsVerify` → `POST /passport/upsms/verify/` |
+| 当前用户 | 静态注册项 `user_info` → `GET /reading/user/info/v1/` |
+| 历史读取 / 更新 | `GET /reading/bookapi/read_history/list/v`、`POST /reading/bookapi/read_history/update/v` |
+| 进度读取 / 上传 | `POST /reading/bookapi/read_progress/get/v`、`GET /reading/bookapi/read_progress/list/v`、`POST /reading/bookapi/read_progress/upload/v` |
+| 收藏读取 / 更新 | `GET /reading/bookapi/bookshelf/video/list/v`、`POST /reading/bookapi/bookshelf/video/update/v` |
+
+发送验证码的字段包含 `mobile`、`type`、`mix_mode`、`auto_read`、`account_sdk_source`、`passport_support_flow`、`unbind_exist`。手机号加 `+86` 后调用 XOR 编码；静态注册说明指定 XOR `0x05` 后转 hex。短信登录还包含编码后的 `code`，MFA 重试添加 `passport_mfa_retry_tag` 和 `sms_code_key`。这些参数已在注册表及方法指令中定位，不能将表单替换成只有手机号/验证码的 JSON 请求。
+
+`parseMFA` 解析 `encrypt_uid`、`sms_code_key`、`mobile_ticket`、`passport_scene` 以及验证方式里的 `sms_content`、`channel_mobile`。界面监听 `auth:mfa`，显示 `sendTo` 和 `content`。发送目标还可能被原版远程配置 `login.upsms_number_fix` 调整，因此不能把截图里的号码和 `YZ` 写死到 TV APK。
+
+`LoginFull` 首次调用短信登录，收到 MFA 要求后提示用户，并调用上行验证；默认间隔 3 秒、最多 30 次，等待状态线索为 `error_code=1045`。验证通过取得 ticket 后再次短信登录。成功链路调用会话 Cookie/Token 捕获及 `Store.SaveAccount`；后端持久化与界面“下次启动自动恢复”一致。
+
+登录接口注册的签名模式是 0，季关系/历史等注册为模式 1。数值本身不说明两种模式等价；当前播放签名成功不能证明登录签名已满足要求。登录主机选择、设备身份、完整头/表单、MFA ticket 和会话恢复，以及云端进度/收藏读写仍需真实会话验证。这里的静态 `WithSession=false` 也不能理解成历史/收藏无需账号：通用发送函数仍会附加已保存的 Cookie 和 `x-tt-token`。
+
+进一步定点分析 `SignMode.String` 确认 0 为 `full`、1 为 `minimal`、2 为 `registration`。原版 `Signer.Sign` 的 full/minimal 均调用 `HeliosFor` 与 `BuildMedusaFor`，full 还调用 `xgorgonWith`，`Values.Headers` 映射为 `X-Helios`、`X-Medusa`、`X-Gorgon` 等头。TV 当前签名不包含前两项，不能将季关系请求成功扩大为账号登录验证成功。相关算法还涉及设备 protobuf、哈希变换及自定义 AES；公开搜索未取得可直接复用并校验的本地实现，发现的外部签名服务不作为本 APK 的依赖。本轮未启用未经验证的登录入口，也没有发送验证码或写入任何红果账号。
+
+账号同步接入还需明确本机与云端的合并、失败重试、取消收藏及切换账号行为；当前本机“清空历史/收藏”不能直接改成删除云端数据。
 
 ## 排行榜与新剧页面（2026-10-06）
 

@@ -44,6 +44,7 @@
   var detailModalOpen = false;
   var detailGeneration = 0;
   var detailReturnFocus = null;
+  var detailSeriesID = '';
   var currentDetail = null;
   var lastContentFocus = null;
   var lastPageFocus = {};
@@ -52,6 +53,7 @@
   var feedItems = [];
   var feedIndex = -1;
   var feedGeneration = 0;
+  var continuationGeneration = 0;
   var searchGeneration = 0;
   var searchInput = document.getElementById('search-input');
   var searchPage = document.getElementById('search-page');
@@ -736,6 +738,8 @@
   }
   function pauseForBackground() {
     applicationInBackground = true;
+    ++continuationGeneration;
+    if (activePlayback && activePlayback.continuationPending) setPlayerStatus('');
     saveProgress(true);
     document.getElementById('hero-video').pause();
     clearTimeout(controlsTimer);
@@ -762,7 +766,7 @@
   function clockText(value) { value = Math.max(0, Math.floor(value || 0)); return Math.floor(value / 60) + ':' + ('0' + value % 60).slice(-2); }
   function basicDrama(item) {
     var result = {};
-    ['series_id', 'title', 'cover', 'cover_fallback', 'intro', 'score', 'episode_count', 'tags'].forEach(function (key) { if (item[key] !== undefined) result[key] = item[key]; });
+    ['series_id', 'title', 'cover', 'cover_fallback', 'intro', 'score', 'episode_count', 'tags', 'season_index', 'is_multi_season'].forEach(function (key) { if (item[key] !== undefined) result[key] = item[key]; });
     return result;
   }
   function updateSavedButtons() {
@@ -998,6 +1002,73 @@
     if (completed) playback.completed = true;
     return changeLibrary({ action: 'progress', drama: basicDrama(playback.item), episode: playback.episode, video_id: playback.vid,
       position: Math.max(0, Number(video.currentTime) || 0), duration: Number.isFinite(video.duration) ? video.duration : 0, completed: !!playback.completed }, true);
+  }
+
+  function canContinuePlayback(playback) {
+    return activePlayback === playback && playback.generation === feedGeneration && isPlaybackPage() &&
+      (!playback.continuationToken || playback.continuationToken === continuationGeneration) && !applicationInBackground && !document.hidden;
+  }
+
+  function continueAfterEpisode(playback) {
+    if (!canContinuePlayback(playback) || playback.continuationPending) return;
+    playback.continuationPending = true;
+    playback.continuationToken = ++continuationGeneration;
+    setPlayerStatus('正在读取下一集…');
+    getDetail(playback.item).then(function (detail) {
+      if (!canContinuePlayback(playback)) return;
+      if (detail.vid_list && detail.vid_list[playback.episode]) {
+        playFeedItem(feedIndex, playback.episode + 1, 0);
+        return;
+      }
+      // Missing/incomplete episode data must not be mistaken for season end.
+      if (!detail.vid_list || !detail.vid_list.length || playback.episode < Math.max(detail.episode_count || 0, detail.vid_list.length)) {
+        throw new Error('本季集列表不完整');
+      }
+      setPlayerStatus('正在确认下一季…');
+      return fetch('/api/v1/series/next-season?series_id=' + encodeURIComponent(playback.item.series_id))
+        .then(function (response) { return response.json().then(function (payload) {
+          if (!response.ok || !payload.ok || !payload.data || !Object.prototype.hasOwnProperty.call(payload.data, 'next')) throw new Error(payload.error || '季关系响应无效');
+          return payload.data;
+        }); })
+        .then(function (result) {
+          if (!canContinuePlayback(playback)) return;
+          var next = result.next;
+          if (next) {
+            if (!next.series_id || next.series_id === playback.item.series_id || !next.vid || !(result.current_season > 0) || !(next.season_index > result.current_season) || !(next.episode_count > 0)) throw new Error('下一季数据无效');
+            // Keep the original page/card return target, but start the new
+            // series from episode 1 even when that series has old progress.
+            feedItems[feedIndex] = next;
+            playFeedItem(feedIndex, 1, 0);
+            refreshDetailAfterSeason(playback.item.series_id, next);
+            showNotice('继续播放第' + next.season_index + '季');
+          } else if (pageMode() === 'recommend' && feedItems.length > 1) {
+            playFeedItem(feedIndex + 1);
+          } else {
+            setPlayerStatus(''); revealControls(); showNotice('本剧已播放完，暂无可播放的下一季');
+          }
+        });
+    }).catch(function (error) {
+      if (!canContinuePlayback(playback)) return;
+      setPlayerStatus(''); revealControls();
+      showNotice('连续播放已暂停：' + error.message);
+    }).finally(function () { playback.continuationPending = false; playback.continuationToken = 0; });
+  }
+
+  function refreshDetailAfterSeason(previousID, next) {
+    if (!detailModalOpen || detailSeriesID !== previousID) return;
+    var focused = document.activeElement;
+    var index = focused && focused.classList.contains('detail-episode') ? 0 : -1;
+    var generation = ++detailGeneration;
+    detailSeriesID = next.series_id;
+    currentDetail = next;
+    renderDetail(next);
+    if (index >= 0) goFocus(detailElements().play);
+    getDetail(next).then(function (detail) {
+      if (!detailModalOpen || generation !== detailGeneration || !currentDetail || currentDetail.series_id !== next.series_id) return;
+      currentDetail = Object.assign({}, next, detail);
+      renderDetail(currentDetail);
+      if (index >= 0 && document.activeElement === detailElements().play && detailElements().episodes.firstElementChild) goFocus(detailElements().episodes.firstElementChild);
+    }).catch(function () { if (detailModalOpen && generation === detailGeneration) showNotice('下一季选集暂时读取失败，可关闭后重试'); });
   }
 
   function playFeedItem(index, forcedEpisode, forcedPosition) {
@@ -1648,6 +1719,7 @@
     closePlayerOptions(false); clearTimeout(controlsTimer); revealControls();
     detailReturnFocus = document.activeElement;
     detailModalOpen = true;
+    detailSeriesID = item.series_id;
     currentDetail = null;
     var generation = ++detailGeneration;
     detailModal.classList.remove('is-hidden');
@@ -1661,7 +1733,7 @@
     goFocus(document.querySelector('.detail-close'));
     getDetail(item).then(function (detail) {
         if (!detailModalOpen || generation !== detailGeneration) return;
-        currentDetail = detail;
+        currentDetail = Object.assign({}, item, detail);
         renderDetail(currentDetail);
         goFocus(document.querySelector('.detail-play'));
       })
@@ -1676,6 +1748,7 @@
 
   function closeDetail() {
     detailModalOpen = false;
+    detailSeriesID = '';
     currentDetail = null;
     detailModal.classList.add('is-hidden');
     detailModal.setAttribute('aria-hidden', 'true');
@@ -1950,12 +2023,7 @@
     var playback = activePlayback;
     if (!playback || !playback.started || playback.generation !== feedGeneration) return;
     saveProgress(true, true);
-    getDetail(playback.item).then(function (detail) {
-      if (activePlayback !== playback || playback.generation !== feedGeneration) return;
-      if (detail.vid_list && detail.vid_list[playback.episode]) playFeedItem(feedIndex, playback.episode + 1, 0);
-      else if (pageMode() === 'recommend' && feedItems.length > 1) playFeedItem(feedIndex + 1);
-      else { revealControls(); showNotice('本剧已播放完'); }
-    }).catch(function (error) { if (activePlayback === playback) showNotice('下一集准备失败，可从选集继续：' + error.message); });
+    continueAfterEpisode(playback);
   });
   document.addEventListener('visibilitychange', function () { if (document.hidden) pauseForBackground(); else resumeFromBackground(); });
 

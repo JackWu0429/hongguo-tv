@@ -61,6 +61,7 @@ func main() {
 	mux.HandleFunc("/api/v1/Rank", s.rank)
 	mux.HandleFunc("/api/v1/series/detail", s.seriesDetail)
 	mux.HandleFunc("/api/v1/SeriesDetail", s.seriesDetail)
+	mux.HandleFunc("/api/v1/series/next-season", s.nextSeason)
 	mux.HandleFunc("/api/v1/search", s.search)
 	mux.HandleFunc("/api/v1/Search", s.search)
 	mux.HandleFunc("/api/v1/play/info", s.playInfo)
@@ -110,7 +111,7 @@ func (s *server) status(w http.ResponseWriter, r *http.Request) {
 		Version:        version,
 		Implementation: "go-api-adapter+embedded-playback",
 		StartedAt:      s.startedAt.Format(time.RFC3339),
-		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "search", "series-detail", "play-info", "embedded-playback", "cenc-mp4", "range-media", "local-history", "local-favorites", "local-likes", "resume-playback", "next-episode"},
+		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "search", "series-detail", "play-info", "embedded-playback", "cenc-mp4", "range-media", "local-history", "local-favorites", "local-likes", "resume-playback", "next-episode", "next-season"},
 	})
 }
 

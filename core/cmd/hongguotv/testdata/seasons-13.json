@@ -1,0 +1,126 @@
+{
+  "code": 0,
+  "data": [
+    {
+      "video_data": [
+        {
+          "series_id": "7621200213801176126",
+          "vid": "7621226646028160024",
+          "title": "万妖图录传第一季",
+          "cover": "https://p3-novel.byteimg.com/novel-pic/d276704b9a05ee371eb1a1c0e42ca581~tplv-shrink:640:0.image",
+          "season_index": 1,
+          "episode_cnt": 81,
+          "disable_play": false
+        },
+        {
+          "series_id": "7628202881140657177",
+          "vid": "7628204794481495065",
+          "title": "万妖图录传第二季",
+          "cover": "https://p6-novel.byteimg.com/novel-pic/46689889a06d34aa70aa1a876d429553~tplv-shrink:640:0.image",
+          "season_index": 2,
+          "episode_cnt": 53,
+          "disable_play": false
+        },
+        {
+          "series_id": "7633436713011907608",
+          "vid": "7633438369229327384",
+          "title": "万妖图录传第三季",
+          "cover": "https://p3-novel.byteimg.com/novel-pic/6fcd8cc23692a3fb0de181eb1b5eb284~tplv-shrink:640:0.image",
+          "season_index": 3,
+          "episode_cnt": 58,
+          "disable_play": false
+        },
+        {
+          "series_id": "7637517119122312254",
+          "vid": "7637519370570173465",
+          "title": "万妖图录传第四季",
+          "cover": "https://p6-novel.byteimg.com/novel-pic/a2af210ab4f8423941711da3c7a226f2~tplv-shrink:640:0.image",
+          "season_index": 4,
+          "episode_cnt": 70,
+          "disable_play": false
+        },
+        {
+          "series_id": "7642602521285889048",
+          "vid": "7642604249657904153",
+          "title": "万妖图录传第五季",
+          "cover": "https://p3-novel.byteimg.com/novel-pic/70de07276dc75022a80cbd5a2c4bdc03~tplv-shrink:640:0.image",
+          "season_index": 5,
+          "episode_cnt": 64,
+          "disable_play": false
+        },
+        {
+          "series_id": "7645616042022014014",
+          "vid": "7645617907740724286",
+          "title": "万妖图录传第六季",
+          "cover": "https://p3-novel.byteimg.com/novel-pic/51a0e8330198ac5de8b439b7ca419fc0~tplv-shrink:640:0.image",
+          "season_index": 6,
+          "episode_cnt": 90,
+          "disable_play": false
+        },
+        {
+          "series_id": "7651944586545220633",
+          "vid": "7651946191340440601",
+          "title": "万妖图录传第七季",
+          "cover": "https://p3-novel.byteimg.com/novel-pic/e241529553db044d89340e5591a25132~tplv-shrink:640:0.image",
+          "season_index": 7,
+          "episode_cnt": 90,
+          "disable_play": false
+        },
+        {
+          "series_id": "7660437812851788862",
+          "vid": "7660440306743004184",
+          "title": "万妖图录传第八季",
+          "cover": "https://p3-novel.byteimg.com/novel-pic/9e9aebda41e6a03596387bb42cc3a141~tplv-shrink:640:0.image",
+          "season_index": 8,
+          "episode_cnt": 109,
+          "disable_play": false
+        },
+        {
+          "series_id": "7663319902001843225",
+          "vid": "7663320684344380441",
+          "title": "万妖图录传第九季",
+          "cover": "https://p6-novel.byteimg.com/novel-pic/ce76573ec338fdb742c9c9000fa59040~tplv-shrink:640:0.image",
+          "season_index": 9,
+          "episode_cnt": 107,
+          "disable_play": false
+        },
+        {
+          "series_id": "7669384046295649342",
+          "vid": "7669391993209883673",
+          "title": "万妖图录传第十季",
+          "cover": "https://p6-novel.byteimg.com/novel-pic/67a5138d71e61d2088c975c3933f9250~tplv-shrink:640:0.image",
+          "season_index": 10,
+          "episode_cnt": 116,
+          "disable_play": false
+        },
+        {
+          "series_id": "7673810791547538494",
+          "vid": "7673813850805767230",
+          "title": "万妖图录传第十一季",
+          "cover": "https://p6-novel.byteimg.com/novel-pic/d64412cef9caca52e6a65d55857ae958~tplv-shrink:640:0.image",
+          "season_index": 11,
+          "episode_cnt": 164,
+          "disable_play": false
+        },
+        {
+          "series_id": "7681495327056071704",
+          "vid": "7681497259883645977",
+          "title": "万妖图录传第十二季",
+          "cover": "https://p6-novel.byteimg.com/novel-pic/335cde75307dedacb0e0978bf8bc3522~tplv-shrink:640:0.image",
+          "season_index": 12,
+          "episode_cnt": 200,
+          "disable_play": false
+        },
+        {
+          "series_id": "7691518344146455576",
+          "vid": "",
+          "title": "万妖图录传第十四季",
+          "cover": "https://p6-novel.byteimg.com/novel-pic/3b66e7e419ffe90c3f89f60662cbd6db~tplv-shrink:640:0.image",
+          "season_index": 14,
+          "episode_cnt": 0,
+          "disable_play": false
+        }
+      ]
+    }
+  ]
+}
