@@ -66,6 +66,10 @@ type SeriesDetailResult struct {
 	Related []Drama `json:"related,omitempty"`
 }
 
+type SearchResult struct {
+	Items []Drama `json:"items"`
+}
+
 type PlayInfo struct {
 	Path    string `json:"path"`
 	Quality string `json:"quality,omitempty"`
@@ -229,6 +233,39 @@ func (c *hongguoClient) SeriesDetail(ctx context.Context, seriesID string) (Seri
 		})
 	}
 	return SeriesDetailResult{Drama: drama}, nil
+}
+
+func (c *hongguoClient) Search(ctx context.Context, query string) (SearchResult, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return SearchResult{}, errors.New("搜索关键词为空")
+	}
+	if len([]rune(query)) > 80 {
+		return SearchResult{}, errors.New("搜索关键词过长")
+	}
+	body, err := c.getBytes(ctx, c.webBase+"/search/"+url.PathEscape(query), "text/html")
+	if err != nil {
+		return SearchResult{}, err
+	}
+	router, err := extractRouterData(body)
+	if err != nil {
+		return SearchResult{}, err
+	}
+	rows, ok := findArrayByKey(router, "searchList")
+	if !ok {
+		return SearchResult{Items: []Drama{}}, nil
+	}
+	result := SearchResult{Items: make([]Drama, 0, len(rows))}
+	seen := make(map[string]bool)
+	for _, row := range rows {
+		drama, valid := normalizeDrama(row)
+		if !valid || drama.SeriesID == "" || seen[drama.SeriesID] {
+			continue
+		}
+		seen[drama.SeriesID] = true
+		result.Items = append(result.Items, drama)
+	}
+	return result, nil
 }
 
 func (c *hongguoClient) PlayInfo(ctx context.Context, seriesID, vid string) (PlayInfo, error) {
@@ -406,6 +443,27 @@ func findObjectByKey(value any, key string) (map[string]any, bool) {
 	case []any:
 		for _, nested := range typed {
 			if found, ok := findObjectByKey(nested, key); ok {
+				return found, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func findArrayByKey(value any, key string) ([]any, bool) {
+	switch typed := value.(type) {
+	case map[string]any:
+		if candidate, ok := typed[key].([]any); ok {
+			return candidate, true
+		}
+		for _, nested := range typed {
+			if found, ok := findArrayByKey(nested, key); ok {
+				return found, true
+			}
+		}
+	case []any:
+		for _, nested := range typed {
+			if found, ok := findArrayByKey(nested, key); ok {
 				return found, true
 			}
 		}

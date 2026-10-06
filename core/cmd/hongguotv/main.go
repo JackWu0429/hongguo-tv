@@ -52,6 +52,8 @@ func main() {
 	mux.HandleFunc("/api/v1/Category", s.category)
 	mux.HandleFunc("/api/v1/series/detail", s.seriesDetail)
 	mux.HandleFunc("/api/v1/SeriesDetail", s.seriesDetail)
+	mux.HandleFunc("/api/v1/search", s.search)
+	mux.HandleFunc("/api/v1/Search", s.search)
 	mux.HandleFunc("/api/v1/play/info", s.playInfo)
 	mux.HandleFunc("/api/v1/PlayInfo", s.playInfo)
 	// The TV APK owns the MiniReel resolver and media cache.  These routes are
@@ -99,7 +101,7 @@ func (s *server) status(w http.ResponseWriter, r *http.Request) {
 		Version:        version,
 		Implementation: "go-api-adapter+embedded-playback",
 		StartedAt:      s.startedAt.Format(time.RFC3339),
-		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "series-detail", "play-info", "embedded-playback", "cenc-mp4", "range-media"},
+		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "search", "series-detail", "play-info", "embedded-playback", "cenc-mp4", "range-media"},
 	})
 }
 
@@ -129,6 +131,19 @@ func (s *server) seriesDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	seriesID := r.URL.Query().Get("series_id")
 	result, err := s.hongguo.SeriesDetail(r.Context(), seriesID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": result})
+}
+
+func (s *server) search(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	result, err := s.hongguo.Search(r.Context(), r.URL.Query().Get("q"))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return

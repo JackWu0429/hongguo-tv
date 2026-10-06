@@ -65,6 +65,29 @@ func TestSeriesDetailCreatesLockedEpisodes(t *testing.T) {
 	}
 }
 
+func TestSearchNormalizesSearchList(t *testing.T) {
+	html := `<!doctype html><script>_ROUTER_DATA = {"loaderData":{"search_(keyword)/page":{"query":"测试","searchList":[{"name":"测试一","keyword":"1234567890123456789","video_data":{"series_id":"1234567890123456789","series_title":"测试一","series_cover":"https://cover/1","episode_cnt":12}},{"name":"测试二","keyword":"2234567890123456789","video_data":{"series_id":"2234567890123456789","series_title":"测试二","series_cover":"https://cover/2","episode_cnt":8}}]}}};</script>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/search/") {
+			t.Fatalf("unexpected search path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(html))
+	}))
+	defer server.Close()
+
+	client := newHongguoClient()
+	client.webBase = server.URL
+	client.httpClient.Timeout = 2 * time.Second
+	result, err := client.Search(context.Background(), "测试")
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(result.Items) != 2 || result.Items[0].SeriesID != "1234567890123456789" || result.Items[1].EpisodeCount != 8 {
+		t.Fatalf("unexpected search result: %#v", result.Items)
+	}
+}
+
 func TestPlayInfoUsesEmbeddedPlaybackOnly(t *testing.T) {
 	client := newHongguoClient()
 	client.internalPlayback = func(_ context.Context, seriesID, vid string) (PlayInfo, error) {
