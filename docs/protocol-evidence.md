@@ -74,8 +74,8 @@ json:"is_multi_season"
 
 | 功能 | 已知线索 | 仍需确认 |
 | --- | --- | --- |
-| 分类、榜单、推荐 | Go 已接入 `/reading/distribution/category/landpage/v/`；四个 `/rank/hot-*` 官网页面有真实 `rankList`，Go 已提取排名、评分和集列表 | 其它榜单类型、分页和筛选参数仍需扩展验收 |
-| 新剧 | 已实测分类 API 的 `select_items.sort=["online_time"]` 返回最新上架列表 | 按日期的上新日历、预约状态和男频/女频筛选尚未接入 |
+| 分类、榜单、推荐 | Go 已接入分类 JSON API；找剧动态筛选和游标分页已验证；四个 `/rank/hot-*` 官网真实榜单已提取 | 其它榜单类型、榜单分页仍需扩展验收 |
+| 新剧 | 已实测分类 API 的 online_time 排序，男频/女频使用 gender 参数 | 按日期的上新日历、预约状态尚未接入 |
 | 搜索 | `Search` 方法、搜索路径 | 远程搜索与本地剧库搜索的组合方式 |
 | 详情和集列表 | Go 已解析网页 `_ROUTER_DATA`，已验证完整 `vid_list` 与锁定状态 | 同系列季关系仍需扩展 |
 | 下一季 | `NextSeason`、SeasonRef 模型 | 实际请求、关联关系及末季行为 |
@@ -102,3 +102,26 @@ json:"is_multi_season"
 分类 API 的 HEIC 封面无法由 Chromium / Android WebView 直接显示。本次实测四张封面在官网图片 CDN 的 `/novel-pic/<object>~tplv-shrink:640:0.image` 上返回 JPEG；模型同时保留 `cover` 和 HEIC 专用 `cover_fallback`，普通签名图片地址不变。
 
 本轮验证覆盖 Go 测试与 vet、JS 语法、真实四个热播榜和最新剧 API、1920×1080 / 1280×720 浏览器焦点路径、详情关闭与播放返回、海报加载。Android TV 实体遥控器和长时间播放验收仍未进行。
+
+## 找剧筛选（2026-10-06 实测）
+
+继续使用客户端分类 JSON 接口 `POST /reading/distribution/category/landpage/v/`。请求 `need_selector_panel=true`、`req_type="default"` 时，响应 `data.selector_rows` 提供各组的 `type`、`row_name` 和 `items[].selector_item_id/show_name`，同时返回第一页内容。`only_content` 不返回面板，`req_type="all"` 实测返回空内容，不能用它请求完整面板。
+
+| 维度 | select_items 字段 | 已验证的示例值 |
+| --- | --- | --- |
+| 体裁 | genre | short_play / comic_series / ai_series |
+| 主题 | category_dim_theme | cate_165（悬疑） |
+| 设定 | category_dim_role | cate_36（重生） |
+| 背景 | category_dim_epoch | cate_758（古代） |
+| 推荐 | sort | hot_score / online_time / hot_collect |
+| 受众 | gender | 1（男频）/ 0（女频） |
+| 时间 | online_time | days_7 / days_14 / days_30 / days_90 |
+| 状态（漫剧）| creation_status | creation_status_0（已完结）/ creation_status_1（连载中） |
+
+选项由上游面板生成，不维护网页 slug 到客户端标签 ID 的猜测映射。真人剧/全部面板实测 7 组，主题 29 项、设定 42 项；漫剧面板实测 8 组，主题/设定各 8 项，并增加状态。AI剧实测 7 组。Mac 截图中的长度条件尚未取得已验证的参数，不提供虚假按钮。
+
+选择“全部”传递空数组；特别是 `genre=[]` 才表示全部体裁。省略字段与显式空值有区别：现有频道仍保留默认体裁和热度排序，找剧页面则明确传入所选条件。选择体裁时同步切换 `req_scene`；主题、设定、背景、状态清空后重新请求面板，避免沿用其它体裁的标签。
+
+本地 `/api/v1/category` 增加与表中同名的单值查询参数，以及 `selectors=1`。返回 `filters:[{type,label,options:[{id,label}]}]`。不合格式的筛选值返回 400。分页继续传上次的 `next_offset`、`session_id` 与已显示的字符串 ID 列表 `shown`；客户端追加、去重并在游标不前进时停止继续请求。
+
+实测悬疑、重生、古代、男频、女频、7 天内上新、最高收藏、漫剧、AI剧均返回不同的有效内容；悬疑第二页返回 15 个新条目。UI 验证追加后原卡片 DOM 保留。关键词搜索仍使用已确认的官网搜索实现，单独展示结果，筛选条件不假装作用于关键词搜索。

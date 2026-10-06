@@ -15,6 +15,7 @@
     searchActions: '.search-action',
     searchFilters: '.search-filter',
     searchResults: '.search-result-card',
+    searchMore: '.search-more',
     rankTabs: '.rank-tab',
     rankSubnav: '.rank-subtab',
     rankItems: '.rank-row',
@@ -49,6 +50,18 @@
   var searchInput = document.getElementById('search-input');
   var searchPage = document.getElementById('search-page');
   var searchResults = document.getElementById('search-results');
+  var searchMore = document.getElementById('search-more');
+  var filterRows = [];
+  var searchPanelPending = false;
+  var searchFilters = { genre: '', sort: 'hot_score' };
+  var searchKind = 'browse';
+  var searchItems = [];
+  var searchNextOffset = 0;
+  var searchSession = '';
+  var searchHasMore = false;
+  var searchBusy = false;
+  var searchLoaded = false;
+  var searchFailed = false;
   var rankPage = document.getElementById('rank-page');
   var rankList = document.getElementById('rank-list');
   var newPage = document.getElementById('new-page');
@@ -115,6 +128,7 @@
     if (element.classList.contains('search-action')) return 'searchActions';
     if (element.classList.contains('search-filter')) return 'searchFilters';
     if (element.classList.contains('search-result-card')) return 'searchResults';
+    if (element.classList.contains('search-more')) return 'searchMore';
     if (element.classList.contains('rank-tab')) return 'rankTabs';
     if (element.classList.contains('rank-subtab')) return 'rankSubnav';
     if (element.classList.contains('rank-row')) return 'rankItems';
@@ -197,14 +211,14 @@
       var index = items.indexOf(current);
       if (index < 0) return items[0] || null;
       index += direction === 'left' ? -1 : 1;
-      return items[index] || null;
+      return items[index] || (direction === 'left' ? activeSidebar() : null);
     }
     var rows = [];
     document.querySelectorAll('.filter-row[data-filter-group]').forEach(function (node) { rows.push(node); });
     var rowIndex = rows.indexOf(row);
     var targetRowIndex = rowIndex + (direction === 'up' ? -1 : 1);
     if (targetRowIndex < 0) return searchInput;
-    if (targetRowIndex >= rows.length) return firstSearchResult();
+    if (targetRowIndex >= rows.length) return firstSearchResult() || firstVisible('.search-more');
     var targetItems = focusables('.filter-row[data-filter-group="' + rows[targetRowIndex].dataset.filterGroup + '"] .search-filter');
     if (!targetItems.length) return null;
     var currentRect = current.getBoundingClientRect();
@@ -338,7 +352,7 @@
       return null;
     }
     if (zone === 'searchActions') {
-      if (direction === 'left') return searchInput;
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? searchInput : null);
       if (direction === 'up') return activeSidebar();
       if (direction === 'down') return firstSearchFilter() || firstSearchResult();
       return null;
@@ -351,8 +365,13 @@
         var resultTarget = moveGrid('.search-result-card', current, direction);
         return resultTarget || (direction === 'left' ? activeSidebar() : null);
       }
-      if (direction === 'up') return moveGrid('.search-result-card', current, direction) || firstSearchFilter() || searchInput;
-      if (direction === 'down') return moveGrid('.search-result-card', current, direction);
+      if (direction === 'up') return moveGrid('.search-result-card', current, direction) || lastSearchFilter() || searchInput;
+      if (direction === 'down') return moveGrid('.search-result-card', current, direction) || firstVisible('.search-more');
+      return null;
+    }
+    if (zone === 'searchMore') {
+      if (direction === 'up') { var cards = focusables('.search-result-card'); return cards[cards.length - 1] || lastSearchFilter() || searchInput; }
+      if (direction === 'left') return activeSidebar();
       return null;
     }
     if (zone === 'rankTabs') {
@@ -659,14 +678,21 @@
     if (visibleItems.length) setFeatured(visibleItems[0]);
   }
 
-  function renderSearchResults(items) {
-    searchResults.innerHTML = '';
-    var list = (items || []).filter(function (item) { return item && item.series_id; });
-    document.getElementById('search-result-count').textContent = list.length ? list.length + ' 部' : '';
-    if (!list.length) {
+  function renderSearchResults(items, append) {
+    if (!append) { searchResults.innerHTML = ''; searchItems = []; }
+    var seen = {};
+    searchItems.forEach(function (item) { seen[item.series_id] = true; });
+    var list = (items || []).filter(function (item) {
+      if (!item || !item.series_id || seen[item.series_id]) return false;
+      seen[item.series_id] = true;
+      return true;
+    });
+    searchItems = searchItems.concat(list);
+    document.getElementById('search-result-count').textContent = searchItems.length ? '已加载 ' + searchItems.length + ' 部' : '';
+    if (!searchItems.length) {
       var empty = document.createElement('div');
       empty.className = 'search-result-empty';
-      empty.textContent = '没有找到匹配的短剧，换个关键词试试。';
+      empty.textContent = searchKind === 'browse' ? '没有符合这些条件的短剧，试试放宽筛选。' : '没有找到匹配的短剧，换个关键词试试。';
       searchResults.appendChild(empty);
       return;
     }
@@ -677,6 +703,7 @@
       card.dataset.focus = 'search-result-' + item.series_id;
       var image = document.createElement('img');
       image.className = 'search-result-card-image';
+      image.loading = 'lazy';
       setCover(image, item);
       var title = document.createElement('span');
       title.className = 'search-result-card-title';
@@ -693,6 +720,138 @@
       });
       searchResults.appendChild(card);
     });
+    return list;
+  }
+
+  function lastSearchFilter() {
+    var rows = document.querySelectorAll('.filter-row[data-filter-group]');
+    var row = rows[rows.length - 1];
+    return row && !document.getElementById('filter-panel').classList.contains('is-hidden') ? row.querySelector('.is-active') || row.querySelector('button') : null;
+  }
+
+  function updateSearchPagination(message) {
+    searchMore.classList.toggle('is-hidden', !(searchHasMore || searchFailed || searchBusy));
+    searchMore.setAttribute('aria-busy', searchBusy ? 'true' : 'false');
+    searchMore.textContent = searchBusy ? '正在加载…' : searchFailed ? '重试' : '加载更多';
+    document.getElementById('search-page-status').textContent = message || (searchHasMore ? '在最后一行向下可继续加载' : searchItems.length ? '已显示全部结果' : '');
+  }
+
+  function filterSummary() {
+    var labels = [];
+    filterRows.forEach(function (row) {
+      var value = searchFilters[row.type];
+      row.options.forEach(function (option) { if (value === option.id) labels.push(option.label); });
+    });
+    return labels.join(' · ') || '全部短剧';
+  }
+
+  function renderFilterRows(rows) {
+    var current = document.activeElement;
+    var focusKey = zoneOf(current) === 'searchFilters' ? current.dataset.focus : '';
+    filterRows = rows;
+    var container = document.getElementById('filter-rows');
+    container.innerHTML = '';
+    rows.forEach(function (row) {
+      var line = document.createElement('div');
+      line.className = 'filter-row';
+      line.dataset.filterGroup = row.type;
+      var label = document.createElement('strong');
+      label.textContent = row.label;
+      line.appendChild(label);
+      var options = document.createElement('div');
+      options.className = 'filter-options';
+      [{ id: '', label: '全部' }].concat(row.options).forEach(function (option) {
+        var button = document.createElement('button');
+        button.className = 'search-filter';
+        button.dataset.filterType = row.type;
+        button.dataset.filterValue = option.id;
+        button.dataset.focus = 'filter-' + row.type + '-' + (option.id || 'all');
+        button.textContent = option.label;
+        var active = (searchFilters[row.type] || '') === option.id;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', String(active));
+        button.addEventListener('click', function () { selectSearchFilter(button); });
+        button.addEventListener('focus', function () { button.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });
+        options.appendChild(button);
+      });
+      line.appendChild(options);
+      container.appendChild(line);
+    });
+    if (focusKey) goFocus(container.querySelector('[data-focus="' + focusKey + '"]') || firstSearchFilter());
+    document.getElementById('filter-state').textContent = filterSummary();
+  }
+
+  function loadBrowse(append, refreshFilters) {
+    if (append && (searchBusy || !searchHasMore && !searchFailed)) return;
+    var generation = ++searchGeneration;
+    var oldOffset = searchNextOffset;
+    var oldCount = searchItems.length;
+    var path = ({ comic_series: '/category/comic-drama', ai_series: '/category/ai-drama' })[searchFilters.genre] || '/category/real-drama';
+    var params = new URLSearchParams({ path: path });
+    Object.keys(searchFilters).forEach(function (kind) { params.set(kind, searchFilters[kind]); });
+    if (refreshFilters || !filterRows.length) searchPanelPending = true;
+    var needsPanel = searchPanelPending;
+    if (needsPanel) params.set('selectors', '1');
+    document.querySelectorAll('.search-filter').forEach(function (button) {
+      button.disabled = needsPanel && ['category_dim_theme', 'category_dim_role', 'category_dim_epoch', 'creation_status'].indexOf(button.dataset.filterType) >= 0;
+    });
+    if (append) {
+      params.set('offset', String(searchNextOffset));
+      params.set('session_id', searchSession);
+      params.set('shown', searchItems.map(function (item) { return item.series_id; }).join(','));
+    } else {
+      searchItems = [];
+      searchNextOffset = 0;
+      searchSession = '';
+      searchHasMore = false;
+      document.getElementById('search-result-count').textContent = '';
+      renderMessage(searchResults, 'search-result-empty', '正在读取短剧…');
+    }
+    searchKind = 'browse';
+    searchBusy = true;
+    searchFailed = false;
+    searchLoaded = true;
+    document.getElementById('filter-panel').classList.remove('is-hidden');
+    document.getElementById('search-browse').classList.add('is-hidden');
+    document.getElementById('search-result-title').textContent = filterSummary();
+    updateSearchPagination();
+    fetch('/api/v1/category?' + params.toString())
+      .then(function (response) { if (!response.ok) throw new Error('HTTP ' + response.status); return response.json(); })
+      .then(function (payload) {
+        if (generation !== searchGeneration) return;
+        if (!payload.ok || !payload.data) throw new Error(payload.error || '分类响应无效');
+        var data = payload.data;
+        if (needsPanel && (!data.filters || !data.filters.length)) throw new Error('筛选条件未返回');
+        if (data.filters && data.filters.length) { searchPanelPending = false; renderFilterRows(data.filters); }
+        var added = renderSearchResults(data.items || [], append) || [];
+        searchNextOffset = data.next_offset || 0;
+        searchSession = data.session_id || searchSession;
+        // Stop a stalled cursor instead of requesting the same page forever.
+        searchHasMore = !!data.has_more && searchNextOffset > (append ? oldOffset : 0);
+        searchBusy = false;
+        document.getElementById('search-result-title').textContent = filterSummary();
+        document.getElementById('filter-state').textContent = filterSummary();
+        var wasOnMore = document.activeElement === searchMore;
+        updateSearchPagination();
+        if (wasOnMore && pageMode() === 'search') {
+          var cards = focusables('.search-result-card');
+          if (append && added.length) goFocus(cards[oldCount]);
+          else if (searchMore.classList.contains('is-hidden')) goFocus(cards[cards.length - 1] || firstSearchFilter() || searchInput);
+        }
+      })
+      .catch(function (error) {
+        if (generation !== searchGeneration) return;
+        searchBusy = false;
+        searchFailed = true;
+        if (!append) renderMessage(searchResults, 'search-result-empty', '短剧加载失败，请重试。');
+        updateSearchPagination('加载失败：' + error.message);
+      });
+  }
+
+  function beginBrowse() {
+    searchInput.value = '';
+    loadBrowse(false, !filterRows.length);
+    goFocus(firstSearchFilter() || searchInput);
   }
 
   function dramaMeta(item) {
@@ -859,7 +1018,6 @@
     newGrid.classList.toggle('is-hidden', calendar);
     calendarList.classList.toggle('is-hidden', !calendar);
     if (calendar) renderCalendar();
-    else if (newGender !== 'all') renderMessage(newGrid, 'search-result-empty', '男频 / 女频筛选数据接入中');
     else renderNew(newItems);
   }
 
@@ -867,13 +1025,14 @@
     var generation = ++newGeneration;
     newGrid.innerHTML = '<div class="search-result-empty">正在读取新剧…</div>';
     showNotice('正在读取新剧…');
-    fetch('/api/v1/category?path=' + encodeURIComponent('/new/recommend'))
+    var gender = ({ male: '1', female: '0' })[newGender] || '';
+    fetch('/api/v1/category?path=' + encodeURIComponent('/new/recommend') + '&gender=' + gender)
       .then(function (response) { if (!response.ok) throw new Error('新剧 HTTP ' + response.status); return response.json(); })
       .then(function (payload) {
         if (generation !== newGeneration || pageMode() !== 'new') return;
         if (!payload.ok || !payload.data) throw new Error(payload.error || '新剧响应无效');
         newItems = payload.data.items || [];
-        if (newMode === 'recommend' && newGender === 'all') renderNew(newItems);
+        if (newMode === 'recommend') renderNew(newItems);
         showNotice(newItems.length ? '已加载 ' + newItems.length + ' 部新剧。' : '暂时没有新剧内容。');
       })
       .catch(function (error) { if (generation !== newGeneration || pageMode() !== 'new') return; newItems = []; if (newMode === 'recommend') renderMessage(newGrid, 'search-result-empty', '新剧加载失败：' + error.message); showNotice('新剧加载失败：' + error.message); });
@@ -899,6 +1058,16 @@
       return;
     }
     var generation = ++searchGeneration;
+    var returnTarget = document.activeElement;
+    searchKind = 'keyword';
+    searchLoaded = true;
+    searchItems = [];
+    searchBusy = true;
+    searchHasMore = false;
+    searchFailed = false;
+    document.getElementById('filter-panel').classList.add('is-hidden');
+    document.getElementById('search-browse').classList.remove('is-hidden');
+    updateSearchPagination('');
     document.getElementById('search-result-title').textContent = '搜索：' + query;
     document.getElementById('search-result-count').textContent = '';
     searchResults.innerHTML = '<div class="search-result-empty">正在读取红果剧库…</div>';
@@ -906,27 +1075,40 @@
     fetch('/api/v1/search?q=' + encodeURIComponent(query))
       .then(function (response) { if (!response.ok) throw new Error('搜索 HTTP ' + response.status); return response.json(); })
       .then(function (payload) {
-        if (generation !== searchGeneration || pageMode() !== 'search') return;
+        if (generation !== searchGeneration) return;
         if (!payload.ok || !payload.data) throw new Error(payload.error || '搜索响应无效');
         renderSearchResults(payload.data.items || []);
+        searchBusy = false;
+        updateSearchPagination();
         showNotice(payload.data.items && payload.data.items.length ? '已找到 ' + payload.data.items.length + ' 部短剧。' : '没有找到匹配的短剧。');
         var first = firstSearchResult();
-        if (first) goFocus(first);
+        if (pageMode() === 'search' && document.activeElement === returnTarget) goFocus(first || searchInput);
       })
       .catch(function (error) {
-        if (generation !== searchGeneration || pageMode() !== 'search') return;
+        if (generation !== searchGeneration) return;
+        searchBusy = false;
+        searchFailed = true;
+        updateSearchPagination('搜索失败，请重试');
         renderMessage(searchResults, 'search-result-empty', '搜索失败：' + error.message);
         showNotice('搜索失败：' + error.message);
       });
   }
 
   function selectSearchFilter(item) {
-    var row = item && item.parentElement;
+    var row = item && item.closest('.filter-row');
     if (!row) return;
-    row.querySelectorAll('.search-filter').forEach(function (node) { node.classList.toggle('is-active', node === item); });
-    var label = item.textContent || '全部';
-    document.getElementById('filter-state').textContent = label;
-    showNotice('已选择：' + label + '。输入关键词后按搜索。');
+    var kind = item.dataset.filterType;
+    var value = item.dataset.filterValue;
+    if ((searchFilters[kind] || '') === value) return;
+    searchFilters[kind] = value;
+    if (kind === 'genre') {
+      ['category_dim_theme', 'category_dim_role', 'category_dim_epoch', 'creation_status'].forEach(function (key) { delete searchFilters[key]; });
+      renderFilterRows(filterRows);
+    } else {
+      row.querySelectorAll('.search-filter').forEach(function (node) { node.classList.toggle('is-active', node === item); node.setAttribute('aria-pressed', String(node === item)); });
+    }
+    document.getElementById('filter-state').textContent = filterSummary();
+    loadBrowse(false, kind === 'genre');
   }
 
   function loadCatalog(path, title) {
@@ -1073,6 +1255,7 @@
       pagePlaceholder.classList.add('is-hidden');
       mainSurface.classList.add('has-search');
       searchPage.classList.remove('is-hidden');
+      if (!restoring && !searchLoaded) loadBrowse(false, true);
     } else if (item.dataset.page === 'rank') {
       mainSurface.classList.add('has-workspace');
       rankPage.classList.remove('is-hidden');
@@ -1116,6 +1299,8 @@
     item.addEventListener('click', function () {
       if (item.dataset.action === 'search-submit') {
         submitSearch();
+      } else if (item.dataset.action === 'search-browse') {
+        beginBrowse();
       } else if (item.dataset.action === 'featured') {
         if (featuredItem) openDetail(featuredItem);
         else showNotice('当前还没有可打开的短剧。');
@@ -1141,8 +1326,10 @@
       loadCatalog(channelPaths[item.dataset.focus] || '/rank/hot-drama', item.textContent);
     });
   });
-  document.querySelectorAll('.search-filter').forEach(function (item) {
-    item.addEventListener('click', function () { selectSearchFilter(item); });
+  searchMore.addEventListener('click', function () {
+    if (searchBusy) return;
+    if (searchKind === 'keyword') submitSearch();
+    else loadBrowse(searchItems.length > 0, searchFailed || !filterRows.length);
   });
   document.querySelectorAll('.rank-tab').forEach(function (item) {
     item.addEventListener('click', function () {
@@ -1162,8 +1349,11 @@
   document.querySelectorAll('.new-filter').forEach(function (item) {
     item.addEventListener('click', function () {
       newGender = item.dataset.newGender;
+      newItems = [];
+      ++newGeneration;
       document.querySelectorAll('.new-filter').forEach(function (node) { node.classList.toggle('is-active', node === item); });
-      renderNewMode();
+      if (newMode === 'recommend') loadNew();
+      else renderNewMode();
     });
   });
   document.querySelectorAll('.reservation-tab').forEach(function (item) {

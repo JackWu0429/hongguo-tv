@@ -63,45 +63,21 @@
         <div class="search-heading-row">
           <div>
             <h1>找剧</h1>
-            <p>按剧名或关键词查找红果短剧</p>
+            <p>选择分类浏览，或输入剧名搜索</p>
           </div>
           <div class="search-box">
             <input id="search-input" class="search-input" type="search" autocomplete="off" placeholder="输入剧名 / 关键词" aria-label="输入剧名或关键词">
             <button class="search-submit search-action" data-action="search-submit" data-focus="search-submit">搜索</button>
+            <button id="search-browse" class="search-browse search-action is-hidden" data-action="search-browse" data-focus="search-browse">按分类找剧</button>
           </div>
         </div>
         <div class="filter-panel" id="filter-panel" data-focus-zone="searchFilters">
-          <div class="filter-row" data-filter-group="genre">
-            <strong>体裁</strong>
-            <button class="search-filter is-active" data-focus="filter-genre-all">全部</button>
-            <button class="search-filter" data-focus="filter-genre-real">真人剧</button>
-            <button class="search-filter" data-focus="filter-genre-comic">漫剧</button>
-            <button class="search-filter" data-focus="filter-genre-ai">AI剧</button>
-          </div>
-          <div class="filter-row" data-filter-group="theme">
-            <strong>主题</strong>
-            <button class="search-filter is-active" data-focus="filter-theme-all">全部</button>
-            <button class="search-filter" data-focus="filter-theme-modern">现代</button>
-            <button class="search-filter" data-focus="filter-theme-growth">女性成长</button>
-            <button class="search-filter" data-focus="filter-theme-brain">脑洞</button>
-            <button class="search-filter" data-focus="filter-theme-fantasy">奇幻</button>
-            <button class="search-filter" data-focus="filter-theme-xuanhuan">玄幻</button>
-            <button class="search-filter" data-focus="filter-theme-ancient">古言</button>
-            <button class="search-filter" data-focus="filter-theme-wuxia">仙侠</button>
-            <button class="search-filter" data-focus="filter-theme-suspense">悬疑</button>
-            <button class="search-filter" data-focus="filter-theme-youth">青春</button>
-          </div>
-          <div class="filter-row" data-filter-group="recommend">
-            <strong>推荐</strong>
-            <button class="search-filter is-active" data-focus="filter-recommend-all">全部</button>
-            <button class="search-filter" data-focus="filter-recommend-new">最新上架</button>
-            <button class="search-filter" data-focus="filter-recommend-hot">最高热度</button>
-            <button class="search-filter" data-focus="filter-recommend-favorite">最高收藏</button>
-          </div>
-          <div class="filter-row filter-row-note"><span>筛选条件会保留在当前找剧页面</span><span id="filter-state">全部</span></div>
+          <div id="filter-rows"><div class="filter-status">正在读取筛选条件…</div></div>
+          <div class="filter-row filter-row-note"><span>左右选择，上下切换筛选项</span><span id="filter-state">全部</span></div>
         </div>
-        <div class="search-result-head"><strong id="search-result-title">搜索结果</strong><span id="search-result-count"></span></div>
+        <div class="search-result-head"><strong id="search-result-title">全部短剧</strong><span id="search-result-count"></span></div>
         <div class="search-results" id="search-results" data-focus-zone="searchResults" aria-live="polite"></div>
+        <div class="search-pagination"><button id="search-more" class="search-more is-hidden" data-focus="search-more">加载更多</button><span id="search-page-status" role="status"></span></div>
       </section>
 
       <section class="rank-page page-workspace is-hidden" id="rank-page" aria-label="排行榜">

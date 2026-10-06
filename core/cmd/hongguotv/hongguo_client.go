@@ -58,13 +58,27 @@ type CategoryRequest struct {
 	Offset    int
 	SessionID string
 	Shown     []string
+	Filters   map[string]string
+	Selectors bool
+}
+
+type CategoryFilterOption struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+type CategoryFilterRow struct {
+	Type    string                 `json:"type"`
+	Label   string                 `json:"label"`
+	Options []CategoryFilterOption `json:"options"`
 }
 
 type CategoryResult struct {
-	Items      []Drama `json:"items"`
-	HasMore    bool    `json:"has_more"`
-	NextOffset int     `json:"next_offset"`
-	SessionID  string  `json:"session_id,omitempty"`
+	Items      []Drama             `json:"items"`
+	HasMore    bool                `json:"has_more"`
+	NextOffset int                 `json:"next_offset"`
+	SessionID  string              `json:"session_id,omitempty"`
+	Filters    []CategoryFilterRow `json:"filters,omitempty"`
 }
 
 type SeriesDetailResult struct {
@@ -175,25 +189,26 @@ func normalizeRankPath(path string) string {
 
 func (c *hongguoClient) Category(ctx context.Context, request CategoryRequest) (CategoryResult, error) {
 	spec := categorySpecFor(request.Path)
+	selection, err := categorySelection(request)
+	if err != nil {
+		return CategoryResult{}, err
+	}
+	// The app returns selector_rows with default, not only_content or all.
+	reqType := "only_content"
+	if request.Selectors {
+		reqType = "default"
+	}
 	shown := strings.Join(request.Shown, ",")
 	body := map[string]any{
 		"filter_ids":          shown,
 		"req_scene":           spec.scene,
 		"offset":              maxInt(request.Offset, 0),
-		"need_selector_panel": false,
+		"need_selector_panel": request.Selectors,
 		"limit":               15,
-		"select_items": map[string]any{
-			"category_dim_epoch": []string{},
-			"online_time":        []string{},
-			"gender":             []string{},
-			"category_dim_role":  []string{},
-			"genre":              []string{spec.genre},
-			"sort":               []string{categorySortFor(request.Path)},
-			"category_dim_theme": []string{},
-		},
-		"session_id":      request.SessionID,
-		"req_type":        "only_content",
-		"client_req_type": 3,
+		"select_items":        selection,
+		"session_id":          request.SessionID,
+		"req_type":            reqType,
+		"client_req_type":     3,
 	}
 	payload, err := c.postJSON(ctx, c.apiBase+"/reading/distribution/category/landpage/v/?"+c.appQuery(), body)
 	if err != nil {
@@ -209,6 +224,7 @@ func (c *hongguoClient) Category(ctx context.Context, request CategoryRequest) (
 		NextOffset: asInt(data["next_offset"]),
 		SessionID:  asString(data["session_id"]),
 		Items:      make([]Drama, 0, len(rows)),
+		Filters:    normalizeCategoryFilters(data["selector_rows"]),
 	}
 	for _, row := range rows {
 		if drama, ok := normalizeDrama(row); ok {
@@ -219,6 +235,86 @@ func (c *hongguoClient) Category(ctx context.Context, request CategoryRequest) (
 		result.NextOffset = maxInt(request.Offset, 0) + len(result.Items)
 	}
 	return result, nil
+}
+
+var categoryFilterNames = map[string]string{
+	"genre": "体裁", "category_dim_theme": "主题", "category_dim_role": "设定",
+	"category_dim_epoch": "背景", "sort": "推荐", "gender": "受众",
+	"online_time": "时间", "creation_status": "状态",
+}
+
+var categoryTagID = regexp.MustCompile(`^cate_[0-9]{1,8}$`)
+
+func validCategoryFilter(kind, value string) bool {
+	if _, ok := categoryFilterNames[kind]; !ok {
+		return false
+	}
+	if value == "" { // An explicit empty selection means 全部, including genre.
+		return true
+	}
+	switch kind {
+	case "genre":
+		return value == "short_play" || value == "comic_series" || value == "ai_series"
+	case "category_dim_theme", "category_dim_role", "category_dim_epoch":
+		return categoryTagID.MatchString(value)
+	case "sort":
+		return value == "hot_score" || value == "online_time" || value == "hot_collect"
+	case "gender":
+		return value == "0" || value == "1"
+	case "online_time":
+		return value == "days_7" || value == "days_14" || value == "days_30" || value == "days_90"
+	case "creation_status":
+		return value == "creation_status_0" || value == "creation_status_1"
+	}
+	return false
+}
+
+func categorySelection(request CategoryRequest) (map[string][]string, error) {
+	selection := map[string][]string{}
+	for kind := range categoryFilterNames {
+		selection[kind] = []string{}
+	}
+	selection["genre"] = []string{categorySpecFor(request.Path).genre}
+	selection["sort"] = []string{categorySortFor(request.Path)}
+	for kind, value := range request.Filters {
+		if !validCategoryFilter(kind, value) {
+			return nil, fmt.Errorf("分类筛选参数无效: %s", kind)
+		}
+		selection[kind] = []string{}
+		if value != "" {
+			selection[kind] = []string{value}
+		}
+	}
+	return selection, nil
+}
+
+func normalizeCategoryFilters(raw any) []CategoryFilterRow {
+	rows, _ := raw.([]any)
+	result := make([]CategoryFilterRow, 0, len(rows))
+	for _, value := range rows {
+		row, ok := asMap(value)
+		kind := asString(row["type"])
+		label, supported := categoryFilterNames[kind]
+		if !ok || !supported {
+			continue
+		}
+		filter := CategoryFilterRow{Type: kind, Label: label, Options: []CategoryFilterOption{}}
+		items, _ := row["items"].([]any)
+		seen := map[string]bool{}
+		for _, item := range items {
+			option, _ := asMap(item)
+			id, name := asString(option["selector_item_id"]), asString(option["show_name"])
+			if id == "" || name == "" || seen[id] || !validCategoryFilter(kind, id) {
+				continue
+			}
+			seen[id] = true
+			filter.Options = append(filter.Options, CategoryFilterOption{ID: id, Label: name})
+		}
+		if len(filter.Options) > 0 {
+			result = append(result, filter)
+		}
+	}
+	return result
 }
 
 func (c *hongguoClient) Rank(ctx context.Context, request RankRequest) (CategoryResult, error) {

@@ -117,6 +117,17 @@ func (s *server) category(w http.ResponseWriter, r *http.Request) {
 		Offset:    parseQueryInt(r, "offset"),
 		SessionID: r.URL.Query().Get("session_id"),
 		Shown:     splitQueryList(r.URL.Query().Get("shown")),
+		Selectors: r.URL.Query().Get("selectors") == "1",
+		Filters:   map[string]string{},
+	}
+	for kind := range categoryFilterNames {
+		if r.URL.Query().Has(kind) {
+			request.Filters[kind] = r.URL.Query().Get(kind)
+		}
+	}
+	if _, err := categorySelection(request); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	result, err := s.hongguo.Category(r.Context(), request)
 	if err != nil {

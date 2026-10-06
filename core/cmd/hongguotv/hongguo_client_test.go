@@ -42,6 +42,61 @@ func TestCategoryNormalizesMacCompatiblePayload(t *testing.T) {
 	}
 }
 
+func TestCategoryFiltersSelectorsAndPagination(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		selected, _ := asMap(body["select_items"])
+		if len(asStringSlice(selected["genre"])) != 0 || strings.Join(asStringSlice(selected["category_dim_theme"]), ",") != "cate_165" || strings.Join(asStringSlice(selected["gender"]), ",") != "0" {
+			t.Errorf("explicit all / theme / female selection was lost: %#v", selected)
+		}
+		if asInt(body["offset"]) != 15 || body["session_id"] != "session-1" || body["filter_ids"] != "7690163276214176792,7546488656639314968" {
+			t.Errorf("pagination context was lost: %#v", body)
+		}
+		if body["req_type"] != "default" || !asBool(body["need_selector_panel"]) {
+			t.Errorf("selector panel request needs default: %#v", body)
+		}
+		_, _ = w.Write([]byte(`{"code":0,"data":{"has_more":true,"next_offset":30,"session_id":"session-2","video_data":[],"selector_rows":[{"type":"category_dim_theme","row_name":"全部主题","items":[{"selector_item_id":"cate_165","show_name":"悬疑"},{"selector_item_id":"cate_165","show_name":"重复"},{"selector_item_id":"not-a-tag","show_name":"坏值"}]},{"type":"creation_status","items":[{"selector_item_id":"creation_status_0","show_name":"已完结"}]},{"type":"unknown","items":[{"selector_item_id":"fake","show_name":"未知"}]}]}}`))
+	}))
+	defer upstream.Close()
+	client := newHongguoClient()
+	client.apiBase = upstream.URL
+	result, err := client.Category(context.Background(), CategoryRequest{
+		Path: "/category/real-drama", Offset: 15, SessionID: "session-1",
+		Shown: []string{"7690163276214176792", "7546488656639314968"}, Selectors: true,
+		Filters: map[string]string{"genre": "", "category_dim_theme": "cate_165", "gender": "0"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.NextOffset != 30 || !result.HasMore || result.SessionID != "session-2" {
+		t.Fatalf("incorrect cursor: %#v", result)
+	}
+	if len(result.Filters) != 2 || result.Filters[0].Label != "主题" || len(result.Filters[0].Options) != 1 || result.Filters[1].Type != "creation_status" {
+		t.Fatalf("incorrect selector normalization: %#v", result.Filters)
+	}
+}
+
+func TestInvalidCategoryFilterDoesNotReachUpstream(t *testing.T) {
+	for _, filters := range []map[string]string{
+		{"gender": "2"}, {"sort": "fake"}, {"category_dim_theme": "cate_165,cate_36"},
+		{"online_time": "days_1"}, {"creation_status": "fake"}, {"unknown": "x"},
+	} {
+		if _, err := categorySelection(CategoryRequest{Filters: filters}); err == nil {
+			t.Errorf("accepted invalid filters: %#v", filters)
+		}
+	}
+	s := &server{hongguo: newHongguoClient()}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/category?gender=bad", nil)
+	response := httptest.NewRecorder()
+	s.category(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid filter status = %d", response.Code)
+	}
+}
+
 func TestSeriesDetailCreatesLockedEpisodes(t *testing.T) {
 	html := `<!doctype html><script>window._ROUTER_DATA = {"loaderData":{"detail_page":{"seriesDetail":{"series_id":"1234567890123456789","series_name":"分季测试","series_cover":"https://cover","series_intro":"简介","episode_cnt":5,"accessible_episode_cnt":3,"vid_list":["11","22","33","44","55"],"tags":["爱情"]}}}};</script>`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
