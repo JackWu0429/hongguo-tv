@@ -150,6 +150,24 @@
         <div id="library-empty" class="library-empty is-hidden"><svg><use href="#icon-history" xlink:href="#icon-history"></use></svg><strong id="library-empty-title">还没有观看记录</strong><p id="library-empty-copy">开始播放后，会自动保存集数和进度</p><button class="library-toolbar-button" data-action="library-discover" data-focus="library-discover">去找剧</button></div>
       </section>
 
+      <section class="account-page page-workspace is-hidden" id="account-page" aria-label="我的账号">
+        <div class="account-heading"><h1>我的账号</h1><p>登录红果账号，同步收藏与观看进度</p></div>
+        <div class="account-layout">
+          <div class="account-card">
+            <div id="account-login-form">
+              <h2>手机号登录</h2>
+              <label for="account-phone">手机号</label><input class="account-input" id="account-phone" data-focus="account-phone" type="tel" inputmode="tel" maxlength="11" autocomplete="off" placeholder="请输入手机号">
+              <div class="account-code-field is-hidden" id="account-code-field"><label for="account-code">短信验证码</label><input class="account-input" id="account-code" data-focus="account-code" type="text" inputmode="numeric" maxlength="8" autocomplete="one-time-code" placeholder="请输入验证码"></div>
+              <div class="account-form-actions"><button class="account-action" id="account-send-code" data-focus="account-send">获取验证码</button><button class="account-action account-primary is-hidden" id="account-login" data-focus="account-login">登录</button><button class="account-action is-hidden" id="account-change-phone" data-focus="account-change-phone">换手机号</button></div>
+            </div>
+            <div id="account-mfa" class="is-hidden"><h2>还需要短信验证</h2><p>请用登录的手机号，发送以下短信：</p><dl><dt>收件号码</dt><dd id="account-sms-number"></dd><dt>短信内容</dt><dd id="account-sms-content"></dd></dl><p>发送后点击“我已发送”。最多等待 90 秒，可以随时取消。</p><div class="account-form-actions"><button class="account-action account-primary" id="account-verify" data-focus="account-verify">我已发送</button><button class="account-action" id="account-cancel" data-focus="account-cancel">取消验证</button></div></div>
+            <div id="account-profile" class="is-hidden"><div class="account-avatar"><svg><use href="#icon-user" xlink:href="#icon-user"></use></svg></div><h2 id="account-name"></h2><p id="account-phone-mask"></p><button class="account-action" id="account-logout" data-focus="account-logout">退出账号</button></div>
+            <p id="account-message" class="account-message" role="status" aria-live="polite"></p>
+          </div>
+          <div class="account-card account-sync-card"><h2>云同步</h2><p class="account-sync-state" id="account-sync-state">未登录 · 记录保存在本机</p><p id="account-sync-detail">收藏、观看历史和播放进度会与红果账号同步。</p><button class="account-action account-primary" id="account-sync" data-focus="account-sync" disabled>立即同步</button><p class="account-footnote">登录前的记录保留在本机；登录后使用当前账号的记录。退出账号会返回登录前的本机记录。点赞暂时只保存在本机。</p></div>
+        </div>
+      </section>
+
       <section class="hero" id="hero" aria-label="推荐视频">
         <div class="hero-media">
           <img id="hero-backdrop" class="hero-backdrop" alt="">

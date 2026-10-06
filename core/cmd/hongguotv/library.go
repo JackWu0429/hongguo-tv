@@ -32,11 +32,14 @@ type LibraryEntry struct {
 }
 
 type LibraryData struct {
-	Version int            `json:"version"`
-	Entries []LibraryEntry `json:"entries"`
+	Version int                `json:"version"`
+	Entries []LibraryEntry     `json:"entries"`
+	OwnerID string             `json:"owner_id,omitempty"`
+	Cloud   *cloudLibraryState `json:"cloud,omitempty"`
 }
 
 type LibraryChange struct {
+	OwnerID   *string `json:"owner_id,omitempty"`
 	Action    string  `json:"action"`
 	Kind      string  `json:"kind,omitempty"`
 	SeriesID  string  `json:"series_id,omitempty"`
@@ -233,13 +236,25 @@ func (s *libraryStore) apply(change LibraryChange) (LibraryData, error) {
 		}
 	}
 	trimLibrary(&data)
+	if data.OwnerID != "" {
+		if err := recordCloudChange(&data, change, s.data); err != nil {
+			return LibraryData{}, err
+		}
+	}
+	if err := s.persistLocked(data); err != nil {
+		return LibraryData{}, err
+	}
+	return cloneLibrary(data), nil
+}
+
+func (s *libraryStore) persistLocked(data LibraryData) error {
 	body, err := json.Marshal(data)
 	if err != nil {
-		return LibraryData{}, err
+		return err
 	}
 	file, err := os.CreateTemp(filepath.Dir(s.path), ".library-*.tmp")
 	if err != nil {
-		return LibraryData{}, fmt.Errorf("%w: %v", errLibrarySave, err)
+		return fmt.Errorf("%w: %v", errLibrarySave, err)
 	}
 	temp := file.Name()
 	defer os.Remove(temp)
@@ -254,10 +269,10 @@ func (s *libraryStore) apply(change LibraryChange) (LibraryData, error) {
 		err = os.Rename(temp, s.path)
 	}
 	if err != nil {
-		return LibraryData{}, fmt.Errorf("%w: %v", errLibrarySave, err)
+		return fmt.Errorf("%w: %v", errLibrarySave, err)
 	}
 	s.data = data // Publish only after persistence succeeds.
-	return cloneLibrary(data), nil
+	return nil
 }
 
 func (s *server) library(w http.ResponseWriter, r *http.Request) {
@@ -267,7 +282,12 @@ func (s *server) library(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodGet {
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": s.libraryStore.snapshot()})
+		data := s.libraryStore.snapshot()
+		if s.accounts != nil {
+			data = s.accounts.librarySnapshot()
+		}
+		data.Cloud = nil
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": data})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -285,7 +305,13 @@ func (s *server) library(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "记录请求包含多余内容")
 		return
 	}
-	data, err := s.libraryStore.apply(change)
+	var data LibraryData
+	var err error
+	if s.accounts != nil {
+		data, err = s.accounts.changeLibrary(change)
+	} else {
+		data, err = s.libraryStore.apply(change)
+	}
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, errLibrarySave) {
@@ -294,5 +320,6 @@ func (s *server) library(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, err.Error())
 		return
 	}
+	data.Cloud = nil
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": data})
 }

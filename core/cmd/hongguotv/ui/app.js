@@ -30,6 +30,8 @@
     libraryActions: '.library-toolbar-button',
     libraryItems: '.library-card',
     libraryRemovals: '.library-remove',
+    accountInputs: '.account-input',
+    accountActions: '.account-action',
     confirmation: '.confirm-button',
     playerOptions: '.player-option',
     modalActions: '.modal-action',
@@ -88,6 +90,18 @@
   var playerReturnPage = null;
   var playerReturnFocus = null;
   var libraryPage = document.getElementById('library-page');
+  var accountPage = document.getElementById('account-page');
+  var accountData = null;
+  var accountBusy = false;
+  var accountNotice = '';
+  var accountLeftFocus = null;
+  var accountPollBusy = false;
+  var accountEpoch = 0;
+  var accountRequestGeneration = 0;
+  var accountPollTimer = null;
+  var accountVerifyTimer = null;
+  var accountVerifyGeneration = 0;
+  var accountCountdownUntil = 0;
   var libraryData = { entries: [] };
   var libraryLoaded = false;
   var libraryError = '';
@@ -177,6 +191,8 @@
     if (element.classList.contains('library-toolbar-button')) return 'libraryActions';
     if (element.classList.contains('library-card')) return 'libraryItems';
     if (element.classList.contains('library-remove')) return 'libraryRemovals';
+    if (element.classList.contains('account-input')) return 'accountInputs';
+    if (element.classList.contains('account-action')) return 'accountActions';
     if (element.classList.contains('confirm-button')) return 'confirmation';
     if (element.classList.contains('player-option')) return 'playerOptions';
     if (element.classList.contains('detail-episode')) return 'episodes';
@@ -202,6 +218,7 @@
     var remembered = lastPageFocus[pageMode()];
     if (remembered && focusables().indexOf(remembered) >= 0) return remembered;
     if (pageMode() === 'search') return searchInput || document.querySelector('.search-submit');
+    if (pageMode() === 'account') return firstVisible('.account-input') || firstVisible('.account-action');
     if (isLibraryPage()) return firstVisible('.library-card') || firstVisible('[data-action="library-discover"]') || firstVisible('.library-toolbar-button');
     if (pageMode() === 'rank') return firstVisible('.rank-tab.is-active') || firstRankTab();
     if (pageMode() === 'new') return firstVisible('.new-tab.is-active') || firstNewTab();
@@ -240,7 +257,7 @@
   function firstCalendarRow() { return firstVisible('.calendar-row'); }
 
   function hideWorkspacePages() {
-    [rankPage, newPage, reservationPage, libraryPage].forEach(function (page) {
+    [rankPage, newPage, reservationPage, libraryPage, accountPage].forEach(function (page) {
       if (page) page.classList.add('is-hidden');
     });
   }
@@ -430,6 +447,14 @@
       if (direction === 'up') return firstVisible('.library-card') || activeSidebar();
       return null;
     }
+    if (zone === 'accountInputs' || zone === 'accountActions') {
+      var leftSelector = '#account-login-form .account-input, #account-login-form .account-action, #account-mfa .account-action, #account-profile .account-action';
+      if (current.id === 'account-sync') return direction === 'left' ? (focusables(leftSelector).indexOf(accountLeftFocus) >= 0 ? accountLeftFocus : firstVisible(leftSelector)) : null;
+      var target = moveGrid(leftSelector, current, direction);
+      if (target) return target;
+      if (direction === 'right' && firstVisible('#account-sync')) { accountLeftFocus = current; return document.getElementById('account-sync'); }
+      return direction === 'left' || direction === 'up' ? activeSidebar() : null;
+    }
     if (zone === 'libraryItems') {
       if (direction === 'left' || direction === 'right') return moveGrid('.library-card', current, direction) || (direction === 'left' ? activeSidebar() : null);
       if (direction === 'up') return moveGrid('.library-card', current, direction) || firstVisible('.library-toolbar-button');
@@ -518,6 +543,16 @@
   function handleKey(event) {
     var key = normalizedKey(event);
     var current = document.activeElement;
+    if (current && current.classList.contains('account-input')) {
+      if (key === 'Backspace' || key === 'Delete' || key === 'ArrowLeft' || key === 'ArrowRight') return;
+      if (key === 'Enter') {
+        event.preventDefault(); event.stopPropagation();
+        if (current.id === 'account-code') accountLogin();
+        else if (accountData && accountData.phase === 'code') goFocus(document.getElementById('account-code'));
+        else accountSendCode();
+        return;
+      }
+    }
     var direction = ({ ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' })[key];
 
     var command = ({ MediaPlayPause: 'toggle', MediaPlay: 'play', MediaPause: 'pause', MediaFastForward: 'forward', MediaRewind: 'rewind', ' ': 'toggle' })[key];
@@ -717,6 +752,7 @@
     if (confirmOpen) closeConfirmation();
     else if (playerOptionsOpen) closePlayerOptions();
     else if (detailModalOpen) closeDetail();
+    else if (pageMode() === 'account' && accountData && accountData.phase === 'mfa') { cancelAccountVerification(true); }
     else if (isPlaybackPage() && zoneOf(document.activeElement) !== 'sidebar' && !shell.classList.contains('is-controls-hidden')) hideControls();
     else if (shell.classList.contains('is-cinema')) { exitCinema(true); hideControls(); }
     else if (pageMode() === 'player') leavePlayer();
@@ -785,10 +821,12 @@
     detailButton.setAttribute('aria-pressed', String(!!(detailEntry && detailEntry.favorite_at)));
   }
   function loadLibrary() {
+    var ownerEpoch = accountEpoch;
     libraryError = '';
     return fetch('/api/v1/library')
       .then(function (response) { if (!response.ok) throw new Error('HTTP ' + response.status); return response.json(); })
       .then(function (payload) {
+        if (ownerEpoch !== accountEpoch) return false;
         if (!payload.ok || !payload.data) throw new Error(payload.error || '记录响应无效');
         libraryData = payload.data;
         libraryLoaded = true;
@@ -798,17 +836,23 @@
       }).catch(function (error) { libraryError = error.message; if (isLibraryPage()) renderLibrary(true); return false; });
   }
   function changeLibrary(change, quiet) {
-    var operation = libraryQueue.catch(function () {}).then(function () { return libraryReady; }).then(function () {
-      return fetch('/api/v1/library', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(change) });
-    }).then(function (response) {
-      return response.json().then(function (payload) { if (!response.ok || !payload.ok || !payload.data) throw new Error(payload.error || '记录保存失败'); return payload; });
-    }).then(function (payload) {
-      libraryData = payload.data;
-      libraryLoaded = true;
-      updateSavedButtons();
-      updateDetailProgress();
-      if (isLibraryPage()) renderLibrary(!!quiet);
-      return true;
+    change.owner_id = libraryData.owner_id || '';
+    var ownerEpoch = accountEpoch;
+    var ready = libraryReady;
+    var operation = libraryQueue.catch(function () {}).then(function () { return ready; }).then(function () {
+      if (ownerEpoch !== accountEpoch) return false;
+      return fetch('/api/v1/library', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(change) })
+        .then(function (response) {
+          return response.json().then(function (payload) { if (!response.ok || !payload.ok || !payload.data) throw new Error(payload.error || '记录保存失败'); return payload; });
+        }).then(function (payload) {
+          if (ownerEpoch !== accountEpoch || (payload.data.owner_id || '') !== (libraryData.owner_id || '')) return false;
+          libraryData = payload.data;
+          libraryLoaded = true;
+          updateSavedButtons();
+          updateDetailProgress();
+          if (isLibraryPage()) renderLibrary(!!quiet);
+          return true;
+        });
     });
     libraryQueue = operation;
     return operation.catch(function (error) { showNotice('本机记录未保存：' + error.message); return false; });
@@ -830,7 +874,8 @@
     if (!isLibraryPage()) return;
     var label = ({ history: '历史', favorites: '收藏', likes: '点赞' })[kind];
     document.getElementById('library-title').textContent = label;
-    document.getElementById('library-hint').textContent = kind === 'history' ? '保存在本机 · 自动记住集数和进度 · 最多 200 部' : '保存在本机 · 最多 300 部';
+    var storageLabel = libraryData.owner_id && kind !== 'likes' ? '当前账号 · 云同步' : '保存在本机';
+    document.getElementById('library-hint').textContent = storageLabel + (kind === 'history' ? ' · 自动记住集数和进度 · 最多 200 部' : ' · 最多 300 部');
     var grid = document.getElementById('library-grid');
     var entries = libraryData.entries.filter(function (entry) { return libraryTime(entry, kind) > 0; });
     entries.sort(function (a, b) { return libraryTime(b, kind) - libraryTime(a, kind); });
@@ -907,7 +952,7 @@
     document.getElementById('confirm-modal').setAttribute('aria-hidden', 'true');
     var target = confirmReturnFocus;
     confirmReturnFocus = null;
-    goFocus(target && document.contains(target) && !target.disabled ? target : firstContentFocus());
+    goFocus(target && focusables().indexOf(target) >= 0 ? target : firstContentFocus());
   }
   function confirmClearLibrary() {
     ++confirmationGeneration;
@@ -917,6 +962,7 @@
     confirmOperation = function () { return changeLibrary({ action: 'clear', kind: kind }); };
     confirmOpen = true;
     document.getElementById('confirm-title').textContent = '清空全部' + label + '？';
+    document.getElementById('confirm-accept').textContent = '清空';
     document.getElementById('confirm-copy').textContent = kind === 'history' ? '观看进度也会移除，收藏和点赞会保留。' : '只清空本机' + label + '，观看历史和其它记录会保留。';
     document.getElementById('confirm-modal').classList.remove('is-hidden');
     document.getElementById('confirm-modal').setAttribute('aria-hidden', 'false');
@@ -925,6 +971,159 @@
 
   function setCatalogHeading(text) {
     document.getElementById('catalog-heading').textContent = text || '热播短剧';
+  }
+
+  function acceptAccountStatus(data) {
+    var previous = accountData;
+    var owner = data.profile && data.profile.uid || '';
+    var previousOwner = previous && previous.profile && previous.profile.uid || '';
+    accountData = data;
+    accountCountdownUntil = Date.now() + (data.retry_after || 0) * 1000;
+    if (owner !== previousOwner || owner !== (libraryData.owner_id || '')) {
+      ++accountEpoch;
+      libraryData = { entries: [], owner_id: owner };
+      libraryLoaded = false;
+      libraryReady = libraryQueue.catch(function () {}).then(loadLibrary);
+      updateSavedButtons();
+      updateDetailProgress();
+    } else if (data.logged_in && data.sync && previous && previous.sync && data.sync.last_sync !== previous.sync.last_sync) {
+      libraryQueue.catch(function () {}).then(loadLibrary);
+    }
+    renderAccount();
+  }
+  function renderAccount() {
+    var data = accountData || { phase: 'phone', logged_in: false, sync: { state: 'local' } };
+    var logged = !!data.logged_in;
+    var mfa = !logged && data.phase === 'mfa';
+    document.getElementById('account-login-form').classList.toggle('is-hidden', logged || mfa);
+    document.getElementById('account-profile').classList.toggle('is-hidden', !logged);
+    document.getElementById('account-mfa').classList.toggle('is-hidden', !mfa);
+    document.getElementById('account-code-field').classList.toggle('is-hidden', data.phase !== 'code');
+    document.getElementById('account-login').classList.toggle('is-hidden', data.phase !== 'code');
+    document.getElementById('account-change-phone').classList.toggle('is-hidden', data.phase !== 'code');
+    var phoneInput = document.getElementById('account-phone');
+    phoneInput.readOnly = accountBusy || data.phase === 'code' && /^1[3-9]\d{9}$/.test(phoneInput.value);
+    phoneInput.placeholder = data.phase === 'code' && !phoneInput.value && data.phone ? '请重新输入 ' + data.phone + ' 的完整手机号' : '请输入手机号';
+    document.querySelectorAll('.account-input').forEach(function (node) { node.disabled = accountBusy; });
+    document.querySelectorAll('.account-action').forEach(function (node) { node.disabled = accountBusy; });
+    document.getElementById('account-cancel').disabled = false;
+    document.getElementById('account-change-phone').disabled = false;
+    var remaining = Math.max(0, Math.ceil((accountCountdownUntil - Date.now()) / 1000));
+    var send = document.getElementById('account-send-code');
+    send.disabled = accountBusy || remaining > 0;
+    send.textContent = remaining > 0 ? remaining + ' 秒后重发' : data.phase === 'code' ? '重新发送' : '获取验证码';
+    document.getElementById('account-sync').disabled = !logged || accountBusy || data.sync && data.sync.state === 'syncing';
+    if (logged) {
+      document.getElementById('account-name').textContent = data.profile.name;
+      document.getElementById('account-phone-mask').textContent = data.profile.phone || '';
+    }
+    document.getElementById('account-sms-number').textContent = data.sms_number || '';
+    document.getElementById('account-sms-content').textContent = data.sms_content || '';
+    var sync = data.sync || {};
+    var syncLabel = !logged ? '未登录 · 记录保存在本机' : ({ syncing: '正在同步…', pending: '等待同步', error: '同步暂未完成', idle: sync.last_sync ? '已同步' : '尚未同步' })[sync.state] || '等待同步';
+    document.getElementById('account-sync-state').textContent = syncLabel;
+    document.getElementById('account-sync-detail').textContent = sync.error || (logged ? (sync.pending ? sync.pending + ' 项记录待同步。' : '收藏与观看进度会自动同步。') + (sync.last_sync ? ' 最近同步：' + new Date(sync.last_sync).toLocaleTimeString() : '') : '收藏、观看历史和播放进度会与红果账号同步。');
+    document.getElementById('account-message').textContent = accountBusy ? '正在连接红果，请稍候…' : accountNotice || data.error || '';
+    document.querySelector('.side-item[data-page="account"] span:last-child').textContent = logged ? '我的账号' : '我的 / 登录';
+    if (pageMode() === 'account') document.getElementById('page-context').textContent = logged ? '我的账号' : '我的 / 登录';
+    var current = document.activeElement;
+    if (!accountBusy && !confirmOpen && pageMode() === 'account' && current && /accountInputs|accountActions/.test(zoneOf(current)) && focusables().indexOf(current) < 0) goFocus(firstContentFocus());
+  }
+  function setAccountMessage(message) { accountNotice = message; renderAccount(); }
+  function pollAccount() {
+    if (accountPollBusy || accountBusy) return Promise.resolve();
+    accountPollBusy = true;
+    var epoch = accountEpoch;
+    var generation = accountRequestGeneration;
+    return fetch('/api/v1/account').then(function (response) { return response.json(); }).then(function (payload) {
+      if (epoch !== accountEpoch || generation !== accountRequestGeneration || accountBusy) return;
+      if (!payload.ok || !payload.data) throw new Error(payload.error || '账号状态读取失败');
+      acceptAccountStatus(payload.data);
+    }).catch(function (error) { if (pageMode() === 'account') setAccountMessage(error.message); })
+      .then(function () { accountPollBusy = false; });
+  }
+  function accountRequest(action, value) {
+    if (accountBusy && action !== 'cancel') return Promise.resolve(false);
+    var returnFocus = document.activeElement;
+    function restoreRequestFocus() {
+      if (pageMode() === 'account' && !confirmOpen && document.activeElement === document.body) goFocus(focusables().indexOf(returnFocus) >= 0 ? returnFocus : firstContentFocus());
+    }
+    accountBusy = true;
+    accountNotice = '';
+    var generation = ++accountRequestGeneration;
+    renderAccount();
+    return fetch('/api/v1/account/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value || {}) })
+      .then(function (response) { return response.json(); }).then(function (payload) {
+        if (generation !== accountRequestGeneration) return false;
+        accountBusy = false;
+        if (payload.data) acceptAccountStatus(payload.data);
+        restoreRequestFocus();
+        if (!payload.ok) throw new Error(payload.error || '账号请求失败');
+        return true;
+      }).catch(function (error) {
+        if (generation !== accountRequestGeneration) return false;
+        accountBusy = false; renderAccount();
+        setAccountMessage(error.message);
+        restoreRequestFocus();
+        return false;
+      });
+  }
+  function accountSendCode() {
+    var phone = document.getElementById('account-phone').value.trim();
+    if (!/^1[3-9]\d{9}$/.test(phone)) { setAccountMessage('请输入正确的手机号'); goFocus(document.getElementById('account-phone')); return; }
+    accountRequest('send-code', { phone: phone }).then(function (ok) {
+      if (pageMode() === 'account') goFocus(ok ? document.getElementById('account-code') : firstVisible('.account-input'));
+    });
+  }
+  function accountLogin() {
+    var phone = document.getElementById('account-phone').value.trim();
+    var code = document.getElementById('account-code').value.trim();
+    if (!/^\d{4,8}$/.test(code)) { setAccountMessage('请输入短信验证码'); goFocus(document.getElementById('account-code')); return; }
+    accountRequest('login', { phone: phone, code: code }).then(function (ok) {
+      if (!ok) { if (pageMode() === 'account') goFocus(document.getElementById('account-code')); return; }
+      document.getElementById('account-code').value = '';
+      if (pageMode() === 'account') goFocus(accountData.logged_in ? document.getElementById('account-logout') : document.getElementById('account-verify'));
+    });
+  }
+  function cancelAccountVerification(returnToSidebar) {
+    ++accountVerifyGeneration;
+    clearTimeout(accountVerifyTimer);
+    return accountRequest('cancel').then(function () {
+      document.getElementById('account-code').value = '';
+      if (pageMode() === 'account') goFocus(returnToSidebar === true ? activeSidebar() : document.getElementById('account-phone'));
+    });
+  }
+  function verifyAccountSMS() {
+    if (accountBusy) return;
+    var generation = ++accountVerifyGeneration;
+    var deadline = Date.now() + 90000;
+    var count = 0;
+    function verify() {
+      if (generation !== accountVerifyGeneration || pageMode() !== 'account' || document.hidden) return;
+      accountRequest('verify').then(function (ok) {
+        if (generation !== accountVerifyGeneration) return;
+        if (!ok || accountData.logged_in) { if (pageMode() === 'account') goFocus(accountData.logged_in ? document.getElementById('account-logout') : document.getElementById('account-verify')); return; }
+        if (++count >= 30 || Date.now() >= deadline) { setAccountMessage('暂未确认短信，请检查收件号码和内容后重试'); goFocus(document.getElementById('account-verify')); return; }
+        setAccountMessage('正在等待短信验证，可以按返回取消');
+        accountVerifyTimer = setTimeout(verify, 3000);
+      });
+    }
+    verify();
+  }
+  function confirmAccountLogout() {
+    ++confirmationGeneration;
+    confirmReturnFocus = document.activeElement;
+    confirmOperation = function () {
+      ++accountVerifyGeneration; clearTimeout(accountVerifyTimer);
+      return accountRequest('logout').then(function (ok) { if (ok) { document.getElementById('account-phone').value = ''; document.getElementById('account-code').value = ''; } return ok; });
+    };
+    confirmOpen = true;
+    document.getElementById('confirm-title').textContent = '退出当前账号？';
+    document.getElementById('confirm-accept').textContent = '退出';
+    document.getElementById('confirm-copy').textContent = '云端记录会保留。待同步记录留在当前账号的本机目录，再次登录这个账号后继续同步。退出后显示登录前的本机记录。';
+    document.getElementById('confirm-modal').classList.remove('is-hidden');
+    document.getElementById('confirm-modal').setAttribute('aria-hidden', 'false');
+    goFocus(document.getElementById('confirm-cancel'));
   }
 
   function catalogMeta(item) {
@@ -1828,6 +2027,11 @@
       libraryPage.classList.remove('is-hidden');
       if (!restoring) libraryEditing = false;
       renderLibrary(!!restoring);
+    } else if (item.dataset.page === 'account') {
+      mainSurface.classList.add('has-workspace');
+      accountPage.classList.remove('is-hidden');
+      renderAccount();
+      pollAccount();
     } else {
       mainSurface.classList.add('has-placeholder');
       pagePlaceholder.classList.remove('is-hidden');
@@ -1941,6 +2145,14 @@
     });
   }
   document.getElementById('detail-close').addEventListener('click', closeDetail);
+  document.getElementById('account-send-code').addEventListener('click', accountSendCode);
+  document.getElementById('account-login').addEventListener('click', accountLogin);
+  document.getElementById('account-verify').addEventListener('click', verifyAccountSMS);
+  document.getElementById('account-cancel').addEventListener('click', cancelAccountVerification);
+  document.getElementById('account-change-phone').addEventListener('click', cancelAccountVerification);
+  document.getElementById('account-logout').addEventListener('click', confirmAccountLogout);
+  document.getElementById('account-sync').addEventListener('click', function () { accountRequest('sync').then(function () { if (pageMode() === 'account') goFocus(document.getElementById('account-logout')); }); });
+  setInterval(function () { if (pageMode() === 'account' && !accountBusy) renderAccount(); }, 1000);
   document.getElementById('detail-play').addEventListener('click', function () {
     if (!currentDetail) return;
     var item = Object.assign({}, currentDetail);
@@ -2033,5 +2245,7 @@
   restorePlaybackPreferences();
   loadStatus();
   libraryReady = loadLibrary();
+  pollAccount();
+  accountPollTimer = setInterval(function () { if (!document.hidden) pollAccount(); }, 8000);
   loadCatalog('/rank/hot-drama', '热播短剧');
 }());

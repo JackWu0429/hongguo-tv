@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +28,7 @@ type server struct {
 	startedAt    time.Time
 	hongguo      *hongguoClient
 	libraryStore *libraryStore
+	accounts     *accountManager
 }
 
 type statusResponse struct {
@@ -51,10 +55,17 @@ func main() {
 		log.Fatalf("prepare local library: %v", err)
 	}
 	s := &server{startedAt: time.Now().UTC(), hongguo: newHongguoClient(), libraryStore: library}
+	s.accounts, err = newAccountManager(*dataDir, library, s.hongguo)
+	if err != nil {
+		log.Fatalf("prepare account: %v", err)
+	}
+	go s.accounts.run(context.Background())
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/health", s.health)
 	mux.HandleFunc("/api/v1/status", s.status)
 	mux.HandleFunc("/api/v1/library", s.library)
+	mux.HandleFunc("/api/v1/account", s.account)
+	mux.HandleFunc("/api/v1/account/", s.account)
 	mux.HandleFunc("/api/v1/category", s.category)
 	mux.HandleFunc("/api/v1/Category", s.category)
 	mux.HandleFunc("/api/v1/rank", s.rank)
@@ -72,7 +83,7 @@ func main() {
 	mux.HandleFunc("/minireel-proxy/media/", handleMiniReelMedia)
 	mux.Handle("/", http.FileServer(http.FS(root)))
 
-	addr := ":" + strconv.Itoa(*port)
+	addr := "127.0.0.1:" + strconv.Itoa(*port)
 	log.Printf("hongguo-tv core %s listening on %s", version, addr)
 	if err := http.ListenAndServe(addr, s.withCORS(mux)); err != nil {
 		log.Fatal(err)
@@ -81,6 +92,19 @@ func main() {
 
 func (s *server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/v1/account") || r.URL.Path == "/api/v1/library" {
+			if !privateLocalRequest(r) {
+				writeError(w, http.StatusForbidden, "只允许应用本身访问账号和记录")
+				return
+			}
+			w.Header().Set("Cache-Control", "no-store")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Range")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,HEAD,OPTIONS")
@@ -90,6 +114,42 @@ func (s *server) withCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func privateLocalRequest(r *http.Request) bool {
+	requestURL, err := url.Parse("http://" + r.Host)
+	if err != nil || requestURL.User != nil {
+		return false
+	}
+	requestHost := requestURL.Hostname()
+	requestIP := net.ParseIP(requestHost)
+	if requestHost != "localhost" && (requestIP == nil || !requestIP.IsLoopback()) {
+		return false
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return false
+	}
+	if site := r.Header.Get("Sec-Fetch-Site"); site == "cross-site" {
+		return false
+	}
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Scheme != "http" || u.Host != r.Host {
+			return false
+		}
+	}
+	if ref := r.Header.Get("Referer"); ref != "" {
+		u, err := url.Parse(ref)
+		if err != nil || u.Host != r.Host {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *server) health(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +171,7 @@ func (s *server) status(w http.ResponseWriter, r *http.Request) {
 		Version:        version,
 		Implementation: "go-api-adapter+embedded-playback",
 		StartedAt:      s.startedAt.Format(time.RFC3339),
-		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "search", "series-detail", "play-info", "embedded-playback", "cenc-mp4", "range-media", "local-history", "local-favorites", "local-likes", "resume-playback", "next-episode", "next-season"},
+		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "search", "series-detail", "play-info", "embedded-playback", "cenc-mp4", "range-media", "local-history", "local-favorites", "local-likes", "resume-playback", "next-episode", "next-season", "account-login", "account-mfa", "cloud-library"},
 	})
 }
 

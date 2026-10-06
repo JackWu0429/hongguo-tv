@@ -336,3 +336,22 @@ button:focus { outline: none; }
   .search-heading-row { display: block; }
   .search-box { margin-top: 16px; max-width: 680px; }
 }
+.account-page { padding: 1.5rem 2.3rem; overflow-y: auto; }
+.account-heading h1 { margin: 0 0 .6rem; font-size: 2rem; }
+.account-heading p, .account-card p { color: #a9a9b5; line-height: 1.6; }
+.account-layout { display: flex; gap: 1.5rem; max-width: 70rem; margin-top: 2rem; }
+.account-card { flex: 1; min-width: 0; padding: 2rem; border: 1px solid #30303a; border-radius: 1rem; background: #181820; }
+.account-card h2 { font-size: 1.45rem; margin: 0 0 1.3rem; }
+.account-card label { display: block; margin: 1rem 0 .6rem; color: #bbbcc8; }
+.account-input { width: 100%; padding: .9rem 1rem; box-sizing: border-box; border: 2px solid #41414c; border-radius: .6rem; background: #101016; color: #fff; font-size: 1.3rem; }
+.account-input:focus { border-color: #fff; outline: none; background: #242432; }
+.account-form-actions { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 1.5rem; }
+.account-action { padding: .9rem 1.3rem; font: inherit; font-size: 1.15rem; color: #fff; border: 2px solid transparent; border-radius: .6rem; background: #333340; cursor: pointer; }
+.account-primary { background: #e64254; }
+.account-action:focus { outline: none; border-color: #fff; box-shadow: 0 0 0 3px #ffffff26; }
+.account-action:disabled { opacity: .45; cursor: default; }
+.account-message { min-height: 1.5em; margin-bottom: 0; color: #f3b6bf !important; overflow-wrap: anywhere; }
+.account-sync-state { font-size: 1.25rem; color: #fff !important; }
+.account-footnote { margin-top: 2rem; font-size: 1rem; }
+.account-avatar svg { width: 3.5rem; height: 3.5rem; margin-bottom: 1rem; }
+.account-card dd { margin: .5rem 0 1.2rem; padding: .6rem; background: #101016; font-size: 1.35rem; letter-spacing: .08em; overflow-wrap: anywhere; }
