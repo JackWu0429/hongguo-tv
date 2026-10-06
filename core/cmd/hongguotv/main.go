@@ -22,7 +22,7 @@ import (
 //go:embed ui
 var uiFiles embed.FS
 
-const version = "0.2.0-dev"
+var version = "0.2.0-dev"
 
 type server struct {
 	startedAt    time.Time
