@@ -1,0 +1,61 @@
+# GitHub Actions 构建方案
+
+日期：2026-10-06。本项目在 GitHub Actions 编译 APK，参考 [vidsrc-local-proxy](https://github.com/aston314/vidsrc-local-proxy) 的 Android 壳与 Go 构建流程。
+
+## 已核对的参考流程
+
+现有 8787 项目的构建流程使用：
+
+| 项目 | 参考配置 |
+| --- | --- |
+| Runner | `ubuntu-latest` |
+| Go | `1.25.x` |
+| Java | Temurin 17 |
+| Android compile/target SDK | 35 |
+| Android 最低版本 | API 23 |
+| Build Tools | 35.0.0 |
+| NDK | 27.2.12479018 |
+| Gradle | 8.10.2 |
+| Android Gradle Plugin | 8.7.3 |
+| ABI | arm64-v8a、armeabi-v7a、x86_64 |
+
+上述是现有项目的基线，新客户端的依赖与播放器加入后需重新验证，不能只复制版本号就认为构建和播放已兼容。
+
+## 构建链路
+
+```text
+源码推送 / Pull Request / 手动触发
+    → 安装 Go、Java、Android SDK、NDK、Gradle
+    → Go 检查和行为测试
+    → 交叉编译三个 Android ABI
+    → Gradle 构建 APK
+    → 上传 GitHub Actions Artifact
+
+版本标签
+    → 构建 release
+    → 使用新项目的签名配置
+    → 上传私有 GitHub Release
+```
+
+Android 壳启动 Go 二进制的参考做法：Go 按 `GOOS=android` 编译 PIE 可执行文件，打包进 `jniLibs/<abi>/`，使用 `.so` 文件名携带，由壳通过进程启动。这不同于 JNI 共享库，具体进程、权限、缓存路径和退出逻辑需在新项目实现。
+
+新应用使用独立的 applicationId、本地通信端口和签名配置，方便与 8787 APK 同时安装。具体命名和端口在实现前确定。
+
+## 签名与下载
+
+现有 release 流程参考的 Secrets 为：
+
+```text
+ANDROID_KEYSTORE_BASE64
+ANDROID_KEYSTORE_PASSWORD
+ANDROID_KEY_ALIAS
+ANDROID_KEY_PASSWORD
+```
+
+项目签名材料保存在 GitHub Secrets，不写入代码。私有仓库的 Artifact 和 Release 下载需要有仓库访问权限，不能假定 APK 可以匿名访问私有 Release 实现自动更新。
+
+## 当前状态
+
+仓库初始化阶段只有设计与协议文档。Android 工程、Go 核心、构建脚本及 workflow 尚未添加，因此当前没有 APK 构建结果。
+
+Android 工程与 Go 入口就绪后接入真实构建，再以 GitHub Actions 运行结果验证三个 ABI。编译通过和 Android TV 真机功能通过分别记录。
