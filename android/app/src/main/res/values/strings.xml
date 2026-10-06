@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">红果短剧 TV</string>
+    <string name="notification_title">红果短剧 TV 核心服务</string>
+    <string name="notification_running">本地服务运行中</string>
+</resources>

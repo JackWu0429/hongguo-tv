@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>红果短剧 TV</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <main class="app-shell" data-mode="recommend">
+    <aside class="sidebar" aria-label="主导航">
+      <div class="brand"><span class="brand-mark">▶</span><span>红果短剧</span></div>
+      <nav class="side-nav" id="side-nav">
+        <button class="side-item is-active" data-page="recommend" data-focus="sidebar-recommend"><span class="side-icon">🎬</span><span>推荐</span></button>
+        <button class="side-item" data-page="search" data-focus="sidebar-search"><span class="side-icon">🔍</span><span>找剧</span></button>
+        <button class="side-item" data-page="rank" data-focus="sidebar-rank"><span class="side-icon">🏆</span><span>排行榜</span></button>
+        <button class="side-item" data-page="new" data-focus="sidebar-new"><span class="side-icon">🆕</span><span>新剧</span></button>
+        <button class="side-item" data-page="history" data-focus="sidebar-history"><span class="side-icon">◷</span><span>历史</span></button>
+        <button class="side-item" data-page="favorites" data-focus="sidebar-favorites"><span class="side-icon">☆</span><span>收藏</span></button>
+        <button class="side-item" data-page="likes" data-focus="sidebar-likes"><span class="side-icon">👍</span><span>点赞</span></button>
+        <button class="side-item" data-page="reservations" data-focus="sidebar-reservations"><span class="side-icon">🔔</span><span>预约</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="author">作者：洋演</div>
+        <button class="side-item side-item-secondary" data-page="account" data-focus="sidebar-account"><span class="side-icon">👤</span><span>我的 / 登录</span></button>
+      </div>
+    </aside>
+
+    <section class="main-surface" id="main-surface" tabindex="-1">
+      <div class="top-bar">
+        <div class="page-context" id="page-context">推荐</div>
+        <div class="channel-tabs" id="channel-tabs" aria-label="推荐频道">
+          <button class="channel-tab" data-focus="channel-follow">关注</button>
+          <button class="channel-tab" data-focus="channel-comic">漫剧</button>
+          <button class="channel-tab" data-focus="channel-real">真人剧</button>
+          <button class="channel-tab is-active" data-focus="channel-recommend">推荐</button>
+        </div>
+        <div class="top-status" id="core-status">连接核心服务…</div>
+      </div>
+
+      <section class="hero" aria-label="推荐视频">
+        <div class="hero-media">
+          <div class="hero-placeholder">
+            <div class="placeholder-kicker">红果短剧 TV</div>
+            <h1>推荐视频界面已就绪</h1>
+            <p>真实推荐数据、视频地址和弹幕接口将在协议验证后接入。</p>
+            <button class="primary-action" data-action="play" data-focus="hero-play">开始接入播放</button>
+          </div>
+          <div class="hero-gradient"></div>
+          <div class="hero-title">推荐内容</div>
+          <div class="hero-episode">接口接入中</div>
+          <div class="hero-summary">当前版本先验证 Mac 布局、TV 遥控器焦点和本地 Go 服务通信。</div>
+        </div>
+
+        <div class="right-actions" aria-label="视频操作">
+          <button class="round-action" data-action="favorite" data-focus="hero-favorite"><span>♡</span><small>收藏</small></button>
+          <button class="round-action" data-action="comment" data-focus="hero-comment"><span>☁</span><small>评论</small></button>
+          <button class="round-action" data-action="share" data-focus="hero-share"><span>↗</span><small>分享</small></button>
+        </div>
+
+        <div class="bottom-controls" aria-label="播放控制">
+          <button class="control-button" data-action="pause" data-focus="control-pause">▶/Ⅱ</button>
+          <span class="time-label">00:00 / --:--</span>
+          <div class="progress-track"><span></span></div>
+          <button class="control-button" data-action="episodes" data-focus="control-episodes">选集 · -- 集</button>
+          <button class="control-button" data-action="quality" data-focus="control-quality">清晰度</button>
+          <button class="control-button" data-action="speed" data-focus="control-speed">1.0x</button>
+          <button class="control-button" data-action="fullscreen" data-focus="control-fullscreen">全屏</button>
+        </div>
+      </section>
+
+      <div class="notice" id="action-notice" role="status" aria-live="polite">当前为 TV 界面骨架，未调用假数据。</div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
