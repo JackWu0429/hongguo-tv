@@ -16,6 +16,8 @@
   var status = document.getElementById('core-status');
   var notice = document.getElementById('action-notice');
   var shell = document.querySelector('.app-shell');
+  var mainSurface = document.getElementById('main-surface');
+  var pagePlaceholder = document.getElementById('page-placeholder');
   var detailModal = document.getElementById('detail-modal');
   var detailModalOpen = false;
   var detailReturnFocus = null;
@@ -23,6 +25,7 @@
   var lastContentFocus = null;
   var lastPageFocus = {};
   var catalogGeneration = 0;
+  var featuredItem = null;
   var keyNames = {
     19: 'ArrowUp', 20: 'ArrowDown', 21: 'ArrowLeft', 22: 'ArrowRight',
     23: 'Enter', 66: 'Enter', 4: 'Escape', 111: 'Escape'
@@ -45,9 +48,14 @@
       var style = window.getComputedStyle(element);
       var insideModal = element.closest && element.closest('#detail-modal');
       if (detailModalOpen ? !insideModal : insideModal) return;
+      if (!element.getClientRects || !element.getClientRects().length) return;
       if (!element.disabled && style.display !== 'none' && style.visibility !== 'hidden') result.push(element);
     });
     return result;
+  }
+
+  function firstVisible(selector) {
+    return focusables(selector)[0] || null;
   }
 
   function markFocus(element) {
@@ -64,6 +72,7 @@
     if (element.classList.contains('control-button')) return 'controls';
     if (element.classList.contains('detail-episode')) return 'episodes';
     if (element.classList.contains('modal-action')) return 'modalActions';
+    if (element.classList.contains('page-placeholder-action')) return 'placeholder';
     if (element.classList.contains('primary-action')) return 'hero';
     return '';
   }
@@ -79,9 +88,10 @@
   }
 
   function firstContentFocus() {
+    if (pageMode() !== 'recommend') return document.querySelector('.page-placeholder-action');
     var remembered = lastPageFocus[pageMode()];
     if (remembered && document.contains(remembered) && !remembered.disabled) return remembered;
-    return document.querySelector('.channel-tab.is-active') || document.querySelector('.catalog-card') || document.querySelector('.primary-action');
+    return document.querySelector('.channel-tab.is-active') || document.querySelector('.catalog-card') || firstVisible('.primary-action');
   }
 
   function activeSidebar() {
@@ -136,14 +146,19 @@
         var channelTarget = moveWithinZone(zone, current, direction);
         return channelTarget || (direction === 'left' ? activeSidebar() : null);
       }
-      if (direction === 'down') return firstCatalog() || document.querySelector('.primary-action');
+      if (direction === 'down') return firstCatalog() || firstVisible('.primary-action');
       if (direction === 'up') return activeSidebar();
       return null;
     }
     if (zone === 'hero') {
       if (direction === 'right') return document.querySelector('.round-action');
-      if (direction === 'down') return firstCatalog() || document.querySelector('.control-button');
+      if (direction === 'down') return firstCatalog() || firstVisible('.control-button');
       if (direction === 'up') return activeChannel();
+      if (direction === 'left') return activeSidebar();
+      return null;
+    }
+    if (zone === 'placeholder') {
+      if (direction === 'up') return activeSidebar();
       if (direction === 'left') return activeSidebar();
       return null;
     }
@@ -152,13 +167,13 @@
         var cardTarget = moveWithinZone(zone, current, direction);
         return cardTarget || (direction === 'left' ? activeSidebar() : null);
       }
-      if (direction === 'up') return document.querySelector('.primary-action') || activeChannel();
+      if (direction === 'up') return firstVisible('.primary-action') || activeChannel();
       if (direction === 'down') return document.querySelector('.control-button');
       return null;
     }
     if (zone === 'actions') {
       if (direction === 'up' || direction === 'down') return moveWithinZone(zone, current, direction);
-      if (direction === 'left') return document.querySelector('.primary-action');
+      if (direction === 'left') return firstVisible('.primary-action') || firstCatalog();
       return null;
     }
     if (zone === 'controls') {
@@ -166,7 +181,7 @@
         var controlTarget = moveWithinZone(zone, current, direction);
         return controlTarget || (direction === 'left' ? activeSidebar() : null);
       }
-      if (direction === 'up') return firstCatalog() || document.querySelector('.primary-action');
+      if (direction === 'up') return firstCatalog() || firstVisible('.primary-action');
       return null;
     }
     return direction === 'right' ? firstContentFocus() : activeSidebar();
@@ -217,7 +232,7 @@
     notice.textContent = message;
     notice.classList.remove('is-hidden');
     clearTimeout(showNotice.timer);
-    showNotice.timer = setTimeout(function () { notice.textContent = '分类、详情和播放接口已接入 Go 核心。'; }, 3200);
+    showNotice.timer = setTimeout(function () { notice.textContent = 'Go 核心已连接，选择短剧开始播放。'; }, 3200);
   }
 
   function setCatalogHeading(text) {
@@ -231,10 +246,34 @@
     return values.join(' · ') || '红果短剧';
   }
 
+  function setFeatured(item) {
+    if (!item || !item.series_id) return;
+    featuredItem = item;
+    var backdrop = document.getElementById('hero-backdrop');
+    var title = document.querySelector('.hero-title');
+    var episode = document.querySelector('.hero-episode');
+    var summary = document.querySelector('.hero-summary');
+    var placeholderTitle = document.getElementById('hero-placeholder-title');
+    var placeholderSummary = document.getElementById('hero-placeholder-summary');
+    var action = document.querySelector('[data-action="featured"]');
+    if (backdrop) {
+      backdrop.src = item.cover || '';
+      backdrop.alt = item.title || '';
+    }
+    if (title) title.textContent = item.title || '红果短剧';
+    if (episode) episode.textContent = item.episode_count ? item.episode_count + ' 集' : '短剧';
+    if (summary) summary.textContent = item.intro || '打开详情查看完整集数。';
+    if (placeholderTitle) placeholderTitle.textContent = item.title || '红果短剧';
+    if (placeholderSummary) placeholderSummary.textContent = item.intro || '打开详情查看完整集数和播放状态。';
+    if (action) action.textContent = '查看详情';
+  }
+
   function renderCatalog(items) {
     var track = document.getElementById('catalog-track');
+    document.getElementById('hero-placeholder').classList.remove('is-hidden');
     track.innerHTML = '';
-    (items || []).slice(0, 9).forEach(function (item) {
+    var visibleItems = (items || []).slice(0, 9);
+    visibleItems.forEach(function (item) {
       if (!item || !item.series_id) return;
       var card = document.createElement('button');
       card.className = 'catalog-card';
@@ -255,8 +294,13 @@
       card.appendChild(title);
       card.appendChild(meta);
       card.addEventListener('click', function () { openDetail(item); });
+      card.addEventListener('focus', function () {
+        setFeatured(item);
+        try { card.scrollIntoView({ block: 'nearest', inline: 'center' }); } catch (ignore) { card.scrollIntoView(false); }
+      });
       track.appendChild(card);
     });
+    if (visibleItems.length) setFeatured(visibleItems[0]);
   }
 
   function loadCatalog(path, title) {
@@ -376,6 +420,7 @@
         var video = document.getElementById('hero-video');
         video.src = payload.data.path;
         video.classList.add('has-source');
+        document.getElementById('hero-placeholder').classList.add('is-hidden');
         video.load();
         video.play().catch(function () { showNotice('地址已准备好，请按确认键开始播放。'); });
         document.querySelector('.hero-title').textContent = currentDetail.title || '红果短剧';
@@ -405,9 +450,15 @@
     shell.dataset.mode = item.dataset.page || 'recommend';
     document.getElementById('page-context').textContent = label ? label.textContent : '页面';
     if (item.dataset.page === 'recommend') {
+      mainSurface.classList.remove('has-placeholder');
+      pagePlaceholder.classList.add('is-hidden');
       var active = document.querySelector('.channel-tab.is-active');
       loadCatalog(channelPaths[active && active.dataset.focus] || '/rank/hot-drama', active ? active.textContent : '热播短剧');
     } else {
+      mainSurface.classList.add('has-placeholder');
+      pagePlaceholder.classList.remove('is-hidden');
+      document.getElementById('page-placeholder-title').textContent = label ? label.textContent : '页面';
+      document.getElementById('page-placeholder-copy').textContent = (label ? label.textContent : '这个页面') + '的数据和交互正在接入。';
       showNotice((label ? label.textContent : '页面') + '页面已进入，下一步接入对应数据。');
     }
   }
@@ -430,7 +481,17 @@
 
   document.querySelectorAll('[data-action]').forEach(function (item) {
     item.addEventListener('click', function () {
-      if (item.dataset.action === 'play' || item.dataset.action === 'pause') toggleVideo();
+      if (item.dataset.action === 'featured') {
+        if (featuredItem) openDetail(featuredItem);
+        else showNotice('当前还没有可打开的短剧。');
+      } else if (item.dataset.action === 'play' || item.dataset.action === 'pause') toggleVideo();
+      else if (item.dataset.action === 'return-recommend') {
+        var recommend = document.querySelector('.side-item[data-page="recommend"]');
+        if (recommend) {
+          activatePage(recommend);
+          goFocus(firstContentFocus());
+        }
+      }
       else showNotice('已收到操作：' + item.dataset.action + '。');
     });
   });

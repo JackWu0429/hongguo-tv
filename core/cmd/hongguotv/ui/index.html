@@ -7,22 +7,36 @@
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
+  <svg class="icon-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <symbol id="icon-recommend" viewBox="0 0 24 24"><path d="M4 4h16v11H4z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m8 19 4-3 4 3M8 8h8M8 11h5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="5.8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m15 15 5 5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
+    <symbol id="icon-rank" viewBox="0 0 24 24"><path d="M5 19V11M12 19V5M19 19v-8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"/><path d="M3 19h18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"/></symbol>
+    <symbol id="icon-new" viewBox="0 0 24 24"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 3v-3H6.5A2.5 2.5 0 0 1 4 14.5z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 10h8M8 13h5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"/></symbol>
+    <symbol id="icon-history" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7M4 5v5h5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
+    <symbol id="icon-favorite" viewBox="0 0 24 24"><path d="M12 20.2S4 15.4 4 9.7A4.2 4.2 0 0 1 12 7a4.2 4.2 0 0 1 8 2.7c0 5.7-8 10.5-8 10.5Z" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+    <symbol id="icon-like" viewBox="0 0 24 24"><path d="M8 10v10H5V10zM8 19h8.7a2 2 0 0 0 1.9-1.5l1.1-4.5a2 2 0 0 0-1.9-2.5H14l.6-3.2A2.6 2.6 0 0 0 12.1 4L8 10" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.7"/></symbol>
+    <symbol id="icon-bell" viewBox="0 0 24 24"><path d="M6 17h12l-1.5-2.2V10a4.5 4.5 0 0 0-9 0v4.8zM10 20h4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"/></symbol>
+    <symbol id="icon-heart" viewBox="0 0 24 24"><path d="M12 20S4 15.2 4 9.7A4.1 4.1 0 0 1 12 7a4.1 4.1 0 0 1 8 2.7C20 15.2 12 20 12 20Z" fill="currentColor"/></symbol>
+    <symbol id="icon-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5 20a7 7 0 0 1 14 0" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.7"/></symbol>
+    <symbol id="icon-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z" fill="currentColor"/></symbol>
+  </svg>
   <main class="app-shell" data-mode="recommend">
     <aside class="sidebar" aria-label="主导航">
-      <div class="brand"><span class="brand-mark">▶</span><span>红果短剧</span></div>
+      <div class="brand"><span class="brand-mark"><svg viewBox="0 0 24 24"><use href="#icon-play" xlink:href="#icon-play"></use></svg></span><span>红果短剧</span></div>
       <nav class="side-nav" id="side-nav" data-focus-zone="sidebar">
-        <button class="side-item is-active" data-page="recommend" data-focus="sidebar-recommend"><span class="side-icon">🎬</span><span>推荐</span></button>
-        <button class="side-item" data-page="search" data-focus="sidebar-search"><span class="side-icon">🔍</span><span>找剧</span></button>
-        <button class="side-item" data-page="rank" data-focus="sidebar-rank"><span class="side-icon">🏆</span><span>排行榜</span></button>
-        <button class="side-item" data-page="new" data-focus="sidebar-new"><span class="side-icon">🆕</span><span>新剧</span></button>
-        <button class="side-item" data-page="history" data-focus="sidebar-history"><span class="side-icon">◷</span><span>历史</span></button>
-        <button class="side-item" data-page="favorites" data-focus="sidebar-favorites"><span class="side-icon">☆</span><span>收藏</span></button>
-        <button class="side-item" data-page="likes" data-focus="sidebar-likes"><span class="side-icon">👍</span><span>点赞</span></button>
-        <button class="side-item" data-page="reservations" data-focus="sidebar-reservations"><span class="side-icon">🔔</span><span>预约</span></button>
+        <button class="side-item is-active" data-page="recommend" data-focus="sidebar-recommend"><svg class="side-icon"><use href="#icon-recommend" xlink:href="#icon-recommend"></use></svg><span>推荐</span></button>
+        <button class="side-item" data-page="search" data-focus="sidebar-search"><svg class="side-icon"><use href="#icon-search" xlink:href="#icon-search"></use></svg><span>找剧</span></button>
+        <button class="side-item" data-page="rank" data-focus="sidebar-rank"><svg class="side-icon"><use href="#icon-rank" xlink:href="#icon-rank"></use></svg><span>排行榜</span></button>
+        <button class="side-item" data-page="new" data-focus="sidebar-new"><svg class="side-icon"><use href="#icon-new" xlink:href="#icon-new"></use></svg><span>新剧</span></button>
+        <button class="side-item" data-page="history" data-focus="sidebar-history"><svg class="side-icon"><use href="#icon-history" xlink:href="#icon-history"></use></svg><span>历史</span></button>
+        <button class="side-item" data-page="favorites" data-focus="sidebar-favorites"><svg class="side-icon"><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><span>收藏</span></button>
+        <button class="side-item" data-page="likes" data-focus="sidebar-likes"><svg class="side-icon"><use href="#icon-like" xlink:href="#icon-like"></use></svg><span>点赞</span></button>
+        <button class="side-item" data-page="reservations" data-focus="sidebar-reservations"><svg class="side-icon"><use href="#icon-bell" xlink:href="#icon-bell"></use></svg><span>预约</span></button>
+        <button class="side-item" data-page="support" data-focus="sidebar-support"><svg class="side-icon"><use href="#icon-heart" xlink:href="#icon-heart"></use></svg><span>打赏</span></button>
       </nav>
       <div class="sidebar-bottom">
         <div class="author">作者：洋演</div>
-        <button class="side-item side-item-secondary" data-page="account" data-focus="sidebar-account"><span class="side-icon">👤</span><span>我的 / 登录</span></button>
+        <button class="side-item side-item-secondary" data-page="account" data-focus="sidebar-account"><svg class="side-icon"><use href="#icon-user" xlink:href="#icon-user"></use></svg><span>我的 / 登录</span></button>
       </div>
     </aside>
 
@@ -38,14 +52,22 @@
         <div class="top-status" id="core-status">连接核心服务…</div>
       </div>
 
+      <section class="page-placeholder is-hidden" id="page-placeholder" aria-live="polite">
+        <div class="page-placeholder-mark"><svg><use href="#icon-recommend" xlink:href="#icon-recommend"></use></svg></div>
+        <h1 id="page-placeholder-title">页面准备中</h1>
+        <p id="page-placeholder-copy">这个页面的红果数据接口还在接入。</p>
+        <button class="primary-action page-placeholder-action" data-action="return-recommend" data-focus="page-placeholder-action">返回推荐</button>
+      </section>
+
       <section class="hero" aria-label="推荐视频">
         <div class="hero-media">
+          <img id="hero-backdrop" class="hero-backdrop" alt="">
           <video id="hero-video" class="hero-video" playsinline preload="metadata"></video>
-          <div class="hero-placeholder">
+          <div class="hero-placeholder" id="hero-placeholder">
             <div class="placeholder-kicker">红果短剧 TV</div>
-            <h1>推荐视频界面已就绪</h1>
-            <p>真实推荐数据、视频地址和弹幕接口将在协议验证后接入。</p>
-            <button class="primary-action" data-action="play" data-focus="hero-play">开始接入播放</button>
+            <h1 id="hero-placeholder-title">正在读取推荐</h1>
+            <p id="hero-placeholder-summary">正在连接红果内容服务…</p>
+            <button class="primary-action" data-action="featured" data-focus="hero-featured">查看详情</button>
           </div>
           <div class="hero-gradient"></div>
           <div class="catalog-ribbon" id="catalog-ribbon" aria-label="分类内容">
@@ -93,7 +115,7 @@
         </div>
       </section>
 
-      <div class="notice" id="action-notice" role="status" aria-live="polite">当前为 TV 界面骨架，未调用假数据。</div>
+      <div class="notice" id="action-notice" role="status" aria-live="polite">正在连接 Go 核心…</div>
     </section>
   </main>
   <script src="/app.js"></script>
