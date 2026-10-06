@@ -1011,6 +1011,8 @@
 
   function continueAfterEpisode(playback) {
     if (!canContinuePlayback(playback) || playback.continuationPending) return;
+    // Android 6 WebViews can support Promise without Promise.finally.
+    function finishContinuation() { playback.continuationPending = false; playback.continuationToken = 0; }
     playback.continuationPending = true;
     playback.continuationToken = ++continuationGeneration;
     setPlayerStatus('正在读取下一集…');
@@ -1051,7 +1053,7 @@
       if (!canContinuePlayback(playback)) return;
       setPlayerStatus(''); revealControls();
       showNotice('连续播放已暂停：' + error.message);
-    }).finally(function () { playback.continuationPending = false; playback.continuationToken = 0; });
+    }).then(finishContinuation, finishContinuation);
   }
 
   function refreshDetailAfterSeason(previousID, next) {
