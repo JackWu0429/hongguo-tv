@@ -2,14 +2,14 @@
 
 独立 Android TV 客户端项目，以 [hongguo-player](https://github.com/yangbin1322/hongguo-player) 的 Mac 发布版为功能和布局参考，采用 Android 壳与 Go 核心的实现方式。
 
-本仓库为私有仓库，目前处于基础骨架阶段。首版包含可启动的 Go 本地服务、Android TV 壳、Mac 风格推荐页原型和 GitHub Actions 构建；红果真实接口仍按协议证据逐项接入。
+本仓库为私有仓库。当前版本包含可启动的 Go 本地服务、Android TV 壳、Mac 风格推荐页、红果分类/详情接口和 APK 内置播放链路，并由 GitHub Actions 构建。
 
 ## 项目方向
 
 - 目标是复刻完整客户端的功能，而不是把现有 Lampa 插件包装为 APK。
 - 保留 Mac 版的左侧栏和右侧内容区；推荐页以视频流为主体。
 - 为 TV 重新设计遥控器焦点、面板回退和播放状态恢复。
-- Android 壳、Go 编译和打包流程参考 `aston314/vidsrc-local-proxy`。
+- Android 壳、Go 编译和打包流程参考 `aston314/vidsrc-local-proxy`；播放协议则复用了已验证的 MiniReel 签名与 CENC 解密实现。
 - APK 在 GitHub Actions 上编译，覆盖 `arm64-v8a`、`armeabi-v7a` 和 `x86_64`。
 
 ## 功能范围
@@ -24,14 +24,15 @@
 - [协议证据与待验证接口](docs/protocol-evidence.md)
 - [GitHub Actions 构建方案](docs/build-plan.md)
 
-## 当前基础骨架
+## 当前实现
 
 - Go 服务默认监听 `127.0.0.1:8797`，避免与现有 8787 服务冲突。
 - Android 壳通过前台服务启动 Go 进程，WebView 打开 Go 服务提供的 TV 页面。
-- TV 页面已经包含左侧栏、频道栏、右侧操作、视频信息、播放控制和方向键焦点状态机。
-- 页面中的内容接口目前只提供服务状态，不伪造推荐数据或播放地址。
+- TV 页面包含左侧栏、频道栏、视频卡片、详情选集、播放控制和方向键焦点状态机。
+- Go 核心提供分类、详情、播放信息 API，并在同一进程中提供 MiniReel 播放解析、`spade_a` 密钥解码、CENC AES-CTR 清晰化、临时 MP4 缓存和 Range 媒体路由。
+- APK 内置播放服务是唯一播放链路；不会在运行时调用 8787 或 57828，也不要求用户另行部署服务。缓存目录由 Android 壳传入应用私有 cache 目录，默认按 TTL 和总大小清理。
 
-## 下一步
+## 后续工作
 
 1. 建立原版页面与方法清单，记录可观察的输入、输出和行为。
 2. 运行原版采集未知接口的请求，保存经过脱敏的响应样本。

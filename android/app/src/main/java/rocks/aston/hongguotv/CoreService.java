@@ -14,6 +14,7 @@ import android.util.Log;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
+import java.util.Map;
 
 public class CoreService extends Service {
     private static final String CHANNEL_ID = "hongguo_tv_core";
@@ -67,9 +68,16 @@ public class CoreService extends Service {
                 Log.e("HongguoTv", "core binary missing: " + binary.getAbsolutePath());
                 return;
             }
-            process = new ProcessBuilder(binary.getAbsolutePath(), "-port", String.valueOf(PORT))
-                    .redirectErrorStream(true)
-                    .start();
+            ProcessBuilder builder = new ProcessBuilder(binary.getAbsolutePath(), "-port", String.valueOf(PORT))
+                    .redirectErrorStream(true);
+            // Android may expose /data/local/tmp as os.TempDir to the native
+            // process.  Point the embedded MiniReel cache at the app-private
+            // cache directory so CENC-cleared MP4 files are writable and can
+            // be reclaimed by Android when storage pressure occurs.
+            File playbackCache = new File(getCacheDir(), "minireel");
+            Map<String, String> environment = builder.environment();
+            environment.put("MINIREEL_CACHE_DIR", playbackCache.getAbsolutePath());
+            process = builder.start();
             consumeLogs(process);
         } catch (Exception error) {
             Log.e("HongguoTv", "failed to start core", error);

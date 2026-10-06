@@ -23,6 +23,7 @@ const version = "0.1.0-dev"
 
 type server struct {
 	startedAt time.Time
+	hongguo   *hongguoClient
 }
 
 type statusResponse struct {
@@ -43,10 +44,20 @@ func main() {
 		log.Fatalf("prepare UI: %v", err)
 	}
 
-	s := &server{startedAt: time.Now().UTC()}
+	s := &server{startedAt: time.Now().UTC(), hongguo: newHongguoClient()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/health", s.health)
 	mux.HandleFunc("/api/v1/status", s.status)
+	mux.HandleFunc("/api/v1/category", s.category)
+	mux.HandleFunc("/api/v1/Category", s.category)
+	mux.HandleFunc("/api/v1/series/detail", s.seriesDetail)
+	mux.HandleFunc("/api/v1/SeriesDetail", s.seriesDetail)
+	mux.HandleFunc("/api/v1/play/info", s.playInfo)
+	mux.HandleFunc("/api/v1/PlayInfo", s.playInfo)
+	// The TV APK owns the MiniReel resolver and media cache.  These routes are
+	// served by the same process so the UI never needs a second playback host.
+	mux.HandleFunc("/minireel-proxy/resolve", handleMiniReelResolve)
+	mux.HandleFunc("/minireel-proxy/media/", handleMiniReelMedia)
 	mux.Handle("/", http.FileServer(http.FS(root)))
 
 	addr := ":" + strconv.Itoa(*port)
@@ -59,8 +70,8 @@ func main() {
 func (s *server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Range")
+		w.Header().Set("Access-Control-Allow-Methods", "GET,HEAD,OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -86,10 +97,75 @@ func (s *server) status(w http.ResponseWriter, r *http.Request) {
 		OK:             true,
 		Service:        "hongguo-tv-core",
 		Version:        version,
-		Implementation: "skeleton",
+		Implementation: "go-api-adapter+embedded-playback",
 		StartedAt:      s.startedAt.Format(time.RFC3339),
-		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine"},
+		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "series-detail", "play-info", "embedded-playback", "cenc-mp4", "range-media"},
 	})
+}
+
+func (s *server) category(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	request := CategoryRequest{
+		Path:      r.URL.Query().Get("path"),
+		Offset:    parseQueryInt(r, "offset"),
+		SessionID: r.URL.Query().Get("session_id"),
+		Shown:     splitQueryList(r.URL.Query().Get("shown")),
+	}
+	result, err := s.hongguo.Category(r.Context(), request)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": result})
+}
+
+func (s *server) seriesDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	seriesID := r.URL.Query().Get("series_id")
+	result, err := s.hongguo.SeriesDetail(r.Context(), seriesID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": result})
+}
+
+func (s *server) playInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	result, err := s.hongguo.PlayInfo(r.Context(), r.URL.Query().Get("series_id"), r.URL.Query().Get("vid"))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": result})
+}
+
+func parseQueryInt(r *http.Request, name string) int {
+	value, _ := strconv.Atoi(r.URL.Query().Get(name))
+	return value
+}
+
+func splitQueryList(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	result := make([]string, 0)
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

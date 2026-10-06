@@ -40,6 +40,7 @@
 
       <section class="hero" aria-label="推荐视频">
         <div class="hero-media">
+          <video id="hero-video" class="hero-video" playsinline preload="metadata"></video>
           <div class="hero-placeholder">
             <div class="placeholder-kicker">红果短剧 TV</div>
             <h1>推荐视频界面已就绪</h1>
@@ -47,6 +48,10 @@
             <button class="primary-action" data-action="play" data-focus="hero-play">开始接入播放</button>
           </div>
           <div class="hero-gradient"></div>
+          <div class="catalog-ribbon" id="catalog-ribbon" aria-label="分类内容">
+            <div class="catalog-heading" id="catalog-heading">热播短剧</div>
+            <div class="catalog-track" id="catalog-track" data-focus-zone="catalog" aria-label="短剧列表"></div>
+          </div>
           <div class="hero-title">推荐内容</div>
           <div class="hero-episode">接口接入中</div>
           <div class="hero-summary">当前版本先验证 Mac 布局、TV 遥控器焦点和本地 Go 服务通信。</div>
@@ -66,6 +71,25 @@
           <button class="control-button" data-action="quality" data-focus="control-quality">清晰度</button>
           <button class="control-button" data-action="speed" data-focus="control-speed">1.0x</button>
           <button class="control-button" data-action="fullscreen" data-focus="control-fullscreen">全屏</button>
+        </div>
+      </section>
+
+      <section class="detail-modal is-hidden" id="detail-modal" aria-hidden="true" aria-label="短剧详情">
+        <div class="detail-dialog" role="dialog" aria-modal="true">
+          <div class="detail-header">
+            <span id="detail-title">短剧详情</span>
+            <button class="detail-close modal-action" id="detail-close" data-focus="detail-close" aria-label="关闭">×</button>
+          </div>
+          <div class="detail-main">
+            <img class="detail-cover" id="detail-cover" alt="">
+            <div class="detail-copy">
+              <h2 id="detail-name">正在加载…</h2>
+              <div class="detail-meta" id="detail-meta"></div>
+              <p id="detail-intro">正在读取详情…</p>
+              <button class="detail-play modal-action" id="detail-play" data-focus="detail-play">播放第一集</button>
+            </div>
+          </div>
+          <div class="detail-episodes" id="detail-episodes" data-focus-zone="episodes" aria-label="集数列表"></div>
         </div>
       </section>
 

@@ -19,7 +19,7 @@
 | Android Gradle Plugin | 8.7.3 |
 | ABI | arm64-v8a、armeabi-v7a、x86_64 |
 
-上述是现有项目的基线，新客户端的依赖与播放器加入后需重新验证，不能只复制版本号就认为构建和播放已兼容。
+上述是现有项目的基线。TV 项目现在已经把播放能力编进 Go 核心，不依赖 8787 或 57828 进程；CI 仍需分别验证三个 ABI 的构建产物和 Android TV 播放运行态。
 
 ## 构建链路
 
@@ -39,7 +39,7 @@
 
 Android 壳启动 Go 二进制的参考做法：Go 按 `GOOS=android` 编译 PIE 可执行文件，打包进 `jniLibs/<abi>/`，使用 `.so` 文件名携带，由壳通过进程启动。这不同于 JNI 共享库，具体进程、权限、缓存路径和退出逻辑需在新项目实现。
 
-新应用使用独立的 applicationId、本地通信端口和签名配置，方便与 8787 APK 同时安装。具体命名和端口在实现前确定。
+新应用使用独立的 applicationId、本地通信端口和签名配置，方便与 8787 APK 同时安装。TV 播放仍由本 APK 内的 Go 服务处理，8797 只承载自身 UI、API 和本地媒体路由。
 
 ## 签名与下载
 
@@ -56,6 +56,4 @@ ANDROID_KEY_PASSWORD
 
 ## 当前状态
 
-仓库初始化阶段只有设计与协议文档。Android 工程、Go 核心、构建脚本及 workflow 尚未添加，因此当前没有 APK 构建结果。
-
-Android 工程与 Go 入口就绪后接入真实构建，再以 GitHub Actions 运行结果验证三个 ABI。编译通过和 Android TV 真机功能通过分别记录。
+Android 工程、Go 入口、分类/详情/播放 API、MiniReel CENC 播放服务和 workflow 已经就绪。Go 核心的本地验证包括真实分类响应、详情集数、内置播放解析、MP4 清晰化以及 `HEAD`/`Range` 媒体请求；GitHub Actions 仍需验证最新提交的三个 ABI APK 构建和 Android TV 真机操作。

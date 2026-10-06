@@ -21,7 +21,7 @@ window.go.app.App.PlayInfo(seriesId, videoId)
 window.go.app.App.Danmaku(seriesId, videoId, startMs, endMs)
 ```
 
-这些是程序内部方法，不是红果公开 HTTP 路由。Android 必须实现对应桥接，Go 核心负责具体网络和本地逻辑。
+这些是程序内部方法，不是红果公开 HTTP 路由。TV APK 提供对应的本地 HTTP 桥接，Go 核心负责具体网络和本地逻辑。
 
 ## 季与集模型
 
@@ -74,11 +74,11 @@ json:"is_multi_season"
 
 | 功能 | 已知线索 | 仍需确认 |
 | --- | --- | --- |
-| 分类、榜单、推荐 | 内部方法和部分路径 | 分页、频道、筛选参数及数据结构 |
+| 分类、榜单、推荐 | Go 已接入 `/reading/distribution/category/landpage/v/`，已验证真实热播分类响应 | 分页、频道、筛选参数仍需扩展验收 |
 | 搜索 | `Search` 方法、搜索路径 | 远程搜索与本地剧库搜索的组合方式 |
-| 详情和集列表 | `SeriesDetail`、Episode 模型 | 请求参数、完整集列表及锁定状态 |
+| 详情和集列表 | Go 已解析网页 `_ROUTER_DATA`，已验证完整 `vid_list` 与锁定状态 | 同系列季关系仍需扩展 |
 | 下一季 | `NextSeason`、SeasonRef 模型 | 实际请求、关联关系及末季行为 |
-| 播放 | `PlayInfo`、视频模型路径 | 签名、清晰度、地址过期、CENC 和回退 |
+| 播放 | APK 内置签名 `video_model`、`spade_a` 解码、CENC AES-CTR 清晰化、MP4 Range 路由已接入并实测 | 清晰度策略和地址过期重试仍需 Android TV 长时间验收；不依赖 8787/57828 回退 |
 | 弹幕 | `Danmaku` 及时间段参数 | 实际上游地址、鉴权、颜色、时间基准 |
 | 评论、点赞 | 方法与部分 comment 路径 | 读写参数、登录限制、分页 |
 | 历史、收藏、进度 | 本地存储与网络相关方法 | 本地与账号数据合并、同步和删除语义 |
