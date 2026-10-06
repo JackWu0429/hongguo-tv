@@ -46,6 +46,12 @@ type Drama struct {
 	Episodes             []Episode `json:"episodes,omitempty"`
 	SeasonIndex          int       `json:"season_index,omitempty"`
 	MultiSeason          bool      `json:"is_multi_season,omitempty"`
+	ReservationID        string    `json:"reservation_id,omitempty"`
+	Upcoming             bool      `json:"upcoming,omitempty"`
+	Reserved             bool      `json:"reserved,omitempty"`
+	PublishTime          int64     `json:"publish_time,omitempty"`
+	PublishText          string    `json:"publish_text,omitempty"`
+	ActorID              string    `json:"actor_id,omitempty"`
 }
 
 type Episode struct {

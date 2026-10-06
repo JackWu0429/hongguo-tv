@@ -77,35 +77,21 @@
         </div>
         <div class="search-result-head"><strong id="search-result-title">全部短剧</strong><span id="search-result-count"></span></div>
         <div class="search-results" id="search-results" data-focus-zone="searchResults" aria-live="polite"></div>
-        <div class="search-pagination"><button id="search-more" class="search-more is-hidden" data-focus="search-more">加载更多</button><span id="search-page-status" role="status"></span></div>
+        <div id="search-pagination" class="list-status" role="status"></div>
       </section>
 
       <section class="rank-page page-workspace is-hidden" id="rank-page" aria-label="排行榜">
         <div class="rank-heading-row">
           <h1>排行榜</h1>
-          <div class="rank-tabs" data-focus-zone="rankTabs">
-            <button class="rank-tab is-active" data-rank-path="/rank/hot-drama" data-focus="rank-tab-all">全部</button>
-            <button class="rank-tab" data-rank-path="/rank/hot-real-drama" data-focus="rank-tab-real">真人剧</button>
-            <button class="rank-tab" data-rank-path="/rank/hot-comic-drama" data-focus="rank-tab-comic">漫剧</button>
-            <button class="rank-tab" data-rank-path="/rank/hot-ai-drama" data-focus="rank-tab-ai">AI剧</button>
-            <button class="rank-tab" data-rank-unavailable="演员榜" data-focus="rank-tab-actor">演员</button>
-            <button class="rank-tab" data-rank-unavailable="系列剧榜" data-focus="rank-tab-series">系列剧</button>
-          </div>
+          <div class="rank-tabs" id="rank-tabs" data-focus-zone="rankTabs"></div>
         </div>
         <div class="rank-layout">
-          <nav class="rank-subnav" data-focus-zone="rankSubnav" aria-label="榜单类型">
-            <button class="rank-subtab" data-rank-label="推荐榜" data-focus="rank-sub-recommend">推荐榜</button>
-            <button class="rank-subtab is-active" data-rank-label="热播榜" data-focus="rank-sub-hot">热播榜</button>
-            <button class="rank-subtab" data-rank-label="臻果榜" data-focus="rank-sub-premium">臻果榜</button>
-            <button class="rank-subtab" data-rank-label="预约榜" data-focus="rank-sub-reserve">预约榜</button>
-            <button class="rank-subtab" data-rank-label="新剧榜" data-focus="rank-sub-new">新剧榜</button>
-            <button class="rank-subtab" data-rank-label="热搜榜" data-focus="rank-sub-search">热搜榜</button>
-            <button class="rank-subtab" data-rank-label="必看榜" data-focus="rank-sub-must">必看榜</button>
-            <button class="rank-subtab" data-rank-label="收藏榜" data-focus="rank-sub-favorite">收藏榜</button>
-          </nav>
+          <nav class="rank-subnav" id="rank-subnav" data-focus-zone="rankSubnav" aria-label="榜单类型"></nav>
           <div class="rank-main">
-            <div class="rank-list-heading"><strong id="rank-list-title">热播榜</strong><span id="rank-list-update">红果热播榜</span><span class="rank-period">总榜</span></div>
+            <div class="rank-list-heading"><strong id="rank-list-title">热播榜</strong><span id="rank-list-update">红果热播榜</span></div>
+            <div id="rank-panels" class="rank-panels" data-focus-zone="rankPanels"></div>
             <div class="rank-list" id="rank-list" data-focus-zone="rankItems" aria-live="polite"></div>
+            <div id="rank-pagination" class="list-status" role="status"></div>
           </div>
         </div>
       </section>
@@ -125,7 +111,9 @@
         </div>
         <div class="new-date-strip is-hidden" id="new-date-strip" data-focus-zone="calendarDays" aria-label="上新日期"></div>
         <div class="new-grid" id="new-grid" data-focus-zone="newItems" aria-live="polite"></div>
+        <div id="new-pagination" class="list-status" role="status"></div>
         <div class="calendar-list is-hidden" id="calendar-list" data-focus-zone="calendarItems" aria-live="polite"></div>
+        <div id="calendar-pagination" class="list-status is-hidden" role="status"></div>
       </section>
 
       <section class="reservation-page page-workspace is-hidden" id="reservation-page" aria-label="我的预约">
@@ -134,7 +122,8 @@
           <button class="reservation-tab is-active" data-reservation-mode="online" data-focus="reservation-online">已上线</button>
           <button class="reservation-tab" data-reservation-mode="upcoming" data-focus="reservation-upcoming">待上线</button>
         </div>
-        <div class="reservation-empty" id="reservation-empty" data-focus-zone="reservationItems">没有已上线的预约</div>
+        <div class="calendar-list" id="reservation-list" data-focus-zone="reservationItems"></div>
+        <div id="reservation-pagination" class="list-status" role="status"></div>
       </section>
 
       <section class="library-page page-workspace is-hidden" id="library-page" aria-label="我的短剧">
@@ -147,6 +136,7 @@
         </div>
         <div id="library-count" class="library-count"></div>
         <div id="library-grid" class="library-grid" aria-live="polite"></div>
+        <div id="library-pagination" class="list-status" role="status"></div>
         <div id="library-empty" class="library-empty is-hidden"><svg><use href="#icon-history" xlink:href="#icon-history"></use></svg><strong id="library-empty-title">还没有观看记录</strong><p id="library-empty-copy">开始播放后，会自动保存集数和进度</p><button class="library-toolbar-button" data-action="library-discover" data-focus="library-discover">去找剧</button></div>
       </section>
 
@@ -172,6 +162,7 @@
         <div class="hero-media">
           <img id="hero-backdrop" class="hero-backdrop" alt="">
           <video id="hero-video" class="hero-video" playsinline preload="metadata"></video>
+          <div id="danmaku-layer" class="danmaku-layer" aria-hidden="true"></div>
           <button class="hero-feed-focus" id="hero-feed-focus" data-focus="hero-feed" aria-label="当前推荐短剧"></button>
           <div class="hero-placeholder" id="hero-placeholder">
             <div class="placeholder-kicker">红果短剧 TV</div>
@@ -195,7 +186,7 @@
           <button class="round-action" data-action="like" data-focus="hero-like" aria-pressed="false"><svg><use href="#icon-like" xlink:href="#icon-like"></use></svg><small>点赞</small></button>
           <button class="round-action" data-action="favorite" data-focus="hero-favorite" aria-pressed="false"><svg><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><small>收藏</small></button>
           <button class="round-action" data-action="comment" data-focus="hero-comment"><span>☁</span><small>评论</small></button>
-          <button class="round-action" data-action="share" data-focus="hero-share"><span>↗</span><small>分享</small></button>
+          <button class="round-action" data-action="danmaku" data-focus="hero-danmaku" aria-pressed="false"><span>弹</span><small>弹幕关</small></button>
         </div>
 
         <div class="bottom-controls" data-focus-zone="controls" aria-label="播放控制">
@@ -235,10 +226,12 @@
         </div>
       </section>
 
+      <section class="discussion-panel is-hidden" id="discussion-panel" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="discussion-title"><div class="discussion-head"><h2 id="discussion-title">本集评论</h2><button id="discussion-close" class="discussion-close" data-focus="discussion-close">关闭</button></div><div id="discussion-scroll" class="discussion-scroll"><div id="discussion-list"></div><div id="discussion-pagination" class="list-status" role="status"></div></div></section>
       <section class="confirm-modal is-hidden" id="confirm-modal" aria-hidden="true"><div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><h2 id="confirm-title">清空记录？</h2><p id="confirm-copy"></p><div class="confirm-actions"><button id="confirm-cancel" class="confirm-button" data-focus="confirm-cancel">取消</button><button id="confirm-accept" class="confirm-button confirm-danger" data-focus="confirm-accept">清空</button></div></div></section>
       <div class="notice" id="action-notice" role="status" aria-live="polite">正在连接 Go 核心…</div>
     </section>
   </main>
+  <script src="/pagination.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

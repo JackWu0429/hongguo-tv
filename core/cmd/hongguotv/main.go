@@ -22,7 +22,7 @@ import (
 //go:embed ui
 var uiFiles embed.FS
 
-const version = "0.1.0-dev"
+const version = "0.2.0-dev"
 
 type server struct {
 	startedAt    time.Time
@@ -74,6 +74,10 @@ func main() {
 	mux.HandleFunc("/api/v1/SeriesDetail", s.seriesDetail)
 	mux.HandleFunc("/api/v1/series/next-season", s.nextSeason)
 	mux.HandleFunc("/api/v1/search", s.search)
+	mux.HandleFunc("/api/v1/lists/", s.lists)
+	mux.HandleFunc("/api/v1/reservation", s.reservation)
+	mux.HandleFunc("/api/v1/comments", s.discussion)
+	mux.HandleFunc("/api/v1/danmaku", s.discussion)
 	mux.HandleFunc("/api/v1/Search", s.search)
 	mux.HandleFunc("/api/v1/play/info", s.playInfo)
 	mux.HandleFunc("/api/v1/PlayInfo", s.playInfo)
@@ -92,7 +96,7 @@ func main() {
 
 func (s *server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/v1/account") || r.URL.Path == "/api/v1/library" {
+		if strings.HasPrefix(r.URL.Path, "/api/v1/account") || strings.HasPrefix(r.URL.Path, "/api/v1/lists/") || r.URL.Path == "/api/v1/reservation" || r.URL.Path == "/api/v1/comments" || r.URL.Path == "/api/v1/danmaku" || r.URL.Path == "/api/v1/library" {
 			if !privateLocalRequest(r) {
 				writeError(w, http.StatusForbidden, "只允许应用本身访问账号和记录")
 				return
@@ -171,7 +175,7 @@ func (s *server) status(w http.ResponseWriter, r *http.Request) {
 		Version:        version,
 		Implementation: "go-api-adapter+embedded-playback",
 		StartedAt:      s.startedAt.Format(time.RFC3339),
-		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "search", "series-detail", "play-info", "embedded-playback", "cenc-mp4", "range-media", "local-history", "local-favorites", "local-likes", "resume-playback", "next-episode", "next-season", "account-login", "account-mfa", "cloud-library"},
+		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "search", "series-detail", "play-info", "embedded-playback", "cenc-mp4", "range-media", "local-history", "local-favorites", "local-likes", "resume-playback", "next-episode", "next-season", "account-login", "account-mfa", "cloud-library", "new-series", "release-calendar", "reservations", "recommend-feed", "comments", "danmaku", "infinite-scroll"},
 	})
 }
 

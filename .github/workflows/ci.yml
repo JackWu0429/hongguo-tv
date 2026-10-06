@@ -39,8 +39,14 @@ jobs:
           gradle-version: "8.10.2"
       - name: Test Go core
         run: go test ./...
+      - name: Check TV JavaScript and pagination
+        run: |
+          node --check core/cmd/hongguotv/ui/app.js
+          node --test tests/*.test.cjs
       - name: Build Android native binaries
         run: bash scripts/build_android_binaries.sh
+        env:
+          VERSION: 0.2.0-${{ github.sha }}
       - name: Build debug APK
         run: gradle -p android assembleDebug
       - name: Upload debug APK
