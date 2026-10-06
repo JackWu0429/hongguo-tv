@@ -1,24 +1,41 @@
 (function () {
   'use strict';
 
-  var focusOrder = [
-    '.side-item',
-    '.channel-tab',
-    '.primary-action',
-    '.round-action',
-    '.control-button'
-  ];
+  // TV remote buttons are handled as zones instead of by screen geometry.  A
+  // geometry-only algorithm often jumps from the sidebar into a right-side
+  // action because those controls happen to be vertically closer.
+  var zoneSelectors = {
+    sidebar: '.side-item',
+    channels: '.channel-tab',
+    actions: '.round-action',
+    controls: '.control-button'
+  };
   var status = document.getElementById('core-status');
   var notice = document.getElementById('action-notice');
   var shell = document.querySelector('.app-shell');
   var lastContentFocus = null;
+  var lastPageFocus = {};
+  var keyNames = {
+    19: 'ArrowUp',
+    20: 'ArrowDown',
+    21: 'ArrowLeft',
+    22: 'ArrowRight',
+    23: 'Enter',
+    66: 'Enter',
+    4: 'Escape',
+    111: 'Escape'
+  };
 
-  function focusables() {
+  function pageMode() {
+    return shell && shell.dataset.mode ? shell.dataset.mode : 'recommend';
+  }
+
+  function focusables(selector) {
     var result = [];
-    focusOrder.forEach(function (selector) {
-      Array.prototype.forEach.call(document.querySelectorAll(selector), function (element) {
-        if (!element.disabled) result.push(element);
-      });
+    var query = selector || Object.keys(zoneSelectors).map(function (zone) { return zoneSelectors[zone]; }).join(',');
+    Array.prototype.forEach.call(document.querySelectorAll(query), function (element) {
+      var style = window.getComputedStyle(element);
+      if (!element.disabled && style.display !== 'none' && style.visibility !== 'hidden') result.push(element);
     });
     return result;
   }
@@ -28,75 +45,129 @@
     if (element) element.classList.add('is-focused');
   }
 
+  function zoneOf(element) {
+    if (!element) return '';
+    if (element.classList.contains('side-item')) return 'sidebar';
+    if (element.classList.contains('channel-tab')) return 'channels';
+    if (element.classList.contains('round-action')) return 'actions';
+    if (element.classList.contains('control-button')) return 'controls';
+    if (element.classList.contains('primary-action')) return 'hero';
+    return '';
+  }
+
   function goFocus(element) {
     if (!element) return;
     element.focus({ preventScroll: false });
     markFocus(element);
-    if (!element.classList.contains('side-item')) lastContentFocus = element;
+    if (zoneOf(element) !== 'sidebar') {
+      lastContentFocus = element;
+      lastPageFocus[pageMode()] = element;
+    }
   }
 
-  function visibleRect(element) {
-    return element.getBoundingClientRect();
+  function firstContentFocus() {
+    var remembered = lastPageFocus[pageMode()];
+    if (remembered && document.contains(remembered) && !remembered.disabled) return remembered;
+    return document.querySelector('.channel-tab.is-active') || document.querySelector('.primary-action');
   }
 
-  function nextInDirection(current, direction) {
-    var all = focusables();
-    if (!current) return all[0] || null;
-    var currentRect = visibleRect(current);
-    var candidates = all.filter(function (node) {
-      if (node === current) return false;
-      var rect = visibleRect(node);
-      if (direction === 'left') return rect.right <= currentRect.left + 8;
-      if (direction === 'right') return rect.left >= currentRect.right - 8;
-      if (direction === 'up') return rect.bottom <= currentRect.top + 8;
-      return rect.top >= currentRect.bottom - 8;
-    });
-    if (!candidates.length) return null;
-    var axis = direction === 'left' || direction === 'right' ? 'left' : 'top';
-    var sign = direction === 'left' || direction === 'up' ? -1 : 1;
-    candidates.sort(function (a, b) {
-      var ar = visibleRect(a), br = visibleRect(b);
-      var ad = Math.abs((axis === 'left' ? ar.left : ar.top) - (axis === 'left' ? currentRect.left : currentRect.top));
-      var bd = Math.abs((axis === 'left' ? br.left : br.top) - (axis === 'left' ? currentRect.left : currentRect.top));
-      if (ad !== bd) return ad - bd;
-      var cross = axis === 'left' ? Math.abs(ar.top - currentRect.top) : Math.abs(ar.left - currentRect.left);
-      var crossB = axis === 'left' ? Math.abs(br.top - currentRect.top) : Math.abs(br.left - currentRect.left);
-      return cross - crossB || sign;
-    });
-    return candidates[0];
+  function activeSidebar() {
+    return document.querySelector('.side-item.is-active') || document.querySelector('.side-item');
   }
 
-  function isContent(element) {
-    return element && !element.classList.contains('side-item');
+  function activeChannel() {
+    return document.querySelector('.channel-tab.is-active') || document.querySelector('.channel-tab');
+  }
+
+  function moveWithinZone(zone, current, direction) {
+    var items = focusables(zoneSelectors[zone]);
+    var index = items.indexOf(current);
+    if (index < 0) return items[0] || null;
+    if (direction === 'up' || direction === 'left') index -= 1;
+    if (direction === 'down' || direction === 'right') index += 1;
+    return items[index] || null;
+  }
+
+  function moveFrom(current, direction) {
+    var zone = zoneOf(current);
+    if (zone === 'sidebar') {
+      if (direction === 'up' || direction === 'down') return moveWithinZone(zone, current, direction);
+      if (direction === 'right') return firstContentFocus();
+      return null;
+    }
+    if (zone === 'channels') {
+      if (direction === 'left' || direction === 'right') {
+        var channelTarget = moveWithinZone(zone, current, direction);
+        return channelTarget || (direction === 'left' ? activeSidebar() : null);
+      }
+      if (direction === 'down') return document.querySelector('.primary-action');
+      if (direction === 'up') return activeSidebar();
+      return null;
+    }
+    if (zone === 'hero') {
+      if (direction === 'right') return document.querySelector('.round-action');
+      if (direction === 'down') return document.querySelector('.control-button');
+      if (direction === 'up') return activeChannel();
+      if (direction === 'left') return activeSidebar();
+      return null;
+    }
+    if (zone === 'actions') {
+      if (direction === 'up' || direction === 'down') return moveWithinZone(zone, current, direction);
+      if (direction === 'left') return document.querySelector('.primary-action');
+      return null;
+    }
+    if (zone === 'controls') {
+      if (direction === 'left' || direction === 'right') {
+        var controlTarget = moveWithinZone(zone, current, direction);
+        return controlTarget || (direction === 'left' ? activeSidebar() : null);
+      }
+      if (direction === 'up') return document.querySelector('.primary-action');
+      return null;
+    }
+    return direction === 'right' ? firstContentFocus() : activeSidebar();
+  }
+
+  function normalizedKey(event) {
+    var key = event.key;
+    if (!key || key === 'Unidentified' || key === 'Unknown') key = keyNames[event.keyCode] || '';
+    if (key === 'GoBack' || key === 'BrowserBack') key = 'Escape';
+    return key;
   }
 
   function handleKey(event) {
+    var key = normalizedKey(event);
     var current = document.activeElement;
-    var direction = ({ ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' })[event.key];
-    if (!direction) {
-      if (event.key === 'Escape' || event.key === 'Backspace') {
-        if (!current || !current.classList.contains('side-item')) {
-          goFocus(lastContentFocus || document.querySelector('.primary-action'));
-          event.preventDefault();
-        }
+    var direction = ({ ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' })[key];
+
+    if (key === 'Enter') {
+      if (current && typeof current.click === 'function') {
+        current.click();
+        event.preventDefault();
+        event.stopPropagation();
       }
       return;
     }
-    if (direction === 'left' && current && current.classList.contains('side-item')) return;
-    if (direction === 'left' && current && isContent(current) && visibleRect(current).left < 270) {
-      var activeSide = document.querySelector('.side-item.is-active');
-      if (activeSide) { goFocus(activeSide); event.preventDefault(); return; }
-    }
-    if (direction === 'right' && current && current.classList.contains('side-item')) {
-      goFocus(lastContentFocus || document.querySelector('.channel-tab.is-active') || document.querySelector('.primary-action'));
-      event.preventDefault();
+
+    if (key === 'Escape' || key === 'Backspace') {
+      if (zoneOf(current) !== 'sidebar') {
+        goFocus(activeSidebar());
+        event.preventDefault();
+        event.stopPropagation();
+      }
       return;
     }
-    var target = nextInDirection(current, direction);
+
+    if (!direction) return;
+    var target = moveFrom(current, direction);
     if (target) {
       goFocus(target);
       event.preventDefault();
+      event.stopPropagation();
     }
+  }
+
+  function focusPageContent() {
+    goFocus(firstContentFocus());
   }
 
   function showNotice(message) {
@@ -109,19 +180,31 @@
   function activatePage(item) {
     document.querySelectorAll('.side-item').forEach(function (node) { node.classList.toggle('is-active', node === item); });
     var label = item.querySelector('span:last-child');
-    document.getElementById('page-context').textContent = label ? label.textContent : '页面';
     shell.dataset.mode = item.dataset.page || 'recommend';
+    document.getElementById('page-context').textContent = label ? label.textContent : '页面';
     showNotice('页面骨架已切换：' + (label ? label.textContent : '页面') + '，真实数据接口待接入。');
   }
 
   document.addEventListener('keydown', handleKey, true);
-  document.addEventListener('focusin', function (event) { markFocus(event.target); });
-  document.querySelectorAll('.side-item').forEach(function (item) {
-    item.addEventListener('click', function () { activatePage(item); });
+  document.addEventListener('focusin', function (event) {
+    markFocus(event.target);
+    if (zoneOf(event.target) !== 'sidebar') {
+      lastContentFocus = event.target;
+      lastPageFocus[pageMode()] = event.target;
+    }
   });
+
+  document.querySelectorAll('.side-item').forEach(function (item) {
+    item.addEventListener('click', function () {
+      activatePage(item);
+      focusPageContent();
+    });
+  });
+
   document.querySelectorAll('[data-action]').forEach(function (item) {
     item.addEventListener('click', function () { showNotice('已收到操作：' + item.dataset.action + '。真实接口待接入。'); });
   });
+
   document.querySelectorAll('.channel-tab').forEach(function (item) {
     item.addEventListener('click', function () {
       document.querySelectorAll('.channel-tab').forEach(function (node) { node.classList.toggle('is-active', node === item); });

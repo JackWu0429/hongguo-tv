@@ -10,7 +10,7 @@
   <main class="app-shell" data-mode="recommend">
     <aside class="sidebar" aria-label="主导航">
       <div class="brand"><span class="brand-mark">▶</span><span>红果短剧</span></div>
-      <nav class="side-nav" id="side-nav">
+      <nav class="side-nav" id="side-nav" data-focus-zone="sidebar">
         <button class="side-item is-active" data-page="recommend" data-focus="sidebar-recommend"><span class="side-icon">🎬</span><span>推荐</span></button>
         <button class="side-item" data-page="search" data-focus="sidebar-search"><span class="side-icon">🔍</span><span>找剧</span></button>
         <button class="side-item" data-page="rank" data-focus="sidebar-rank"><span class="side-icon">🏆</span><span>排行榜</span></button>
@@ -29,7 +29,7 @@
     <section class="main-surface" id="main-surface" tabindex="-1">
       <div class="top-bar">
         <div class="page-context" id="page-context">推荐</div>
-        <div class="channel-tabs" id="channel-tabs" aria-label="推荐频道">
+        <div class="channel-tabs" id="channel-tabs" data-focus-zone="channels" aria-label="推荐频道">
           <button class="channel-tab" data-focus="channel-follow">关注</button>
           <button class="channel-tab" data-focus="channel-comic">漫剧</button>
           <button class="channel-tab" data-focus="channel-real">真人剧</button>
@@ -52,13 +52,13 @@
           <div class="hero-summary">当前版本先验证 Mac 布局、TV 遥控器焦点和本地 Go 服务通信。</div>
         </div>
 
-        <div class="right-actions" aria-label="视频操作">
+        <div class="right-actions" data-focus-zone="actions" aria-label="视频操作">
           <button class="round-action" data-action="favorite" data-focus="hero-favorite"><span>♡</span><small>收藏</small></button>
           <button class="round-action" data-action="comment" data-focus="hero-comment"><span>☁</span><small>评论</small></button>
           <button class="round-action" data-action="share" data-focus="hero-share"><span>↗</span><small>分享</small></button>
         </div>
 
-        <div class="bottom-controls" aria-label="播放控制">
+        <div class="bottom-controls" data-focus-zone="controls" aria-label="播放控制">
           <button class="control-button" data-action="pause" data-focus="control-pause">▶/Ⅱ</button>
           <span class="time-label">00:00 / --:--</span>
           <div class="progress-track"><span></span></div>
