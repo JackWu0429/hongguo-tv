@@ -181,14 +181,21 @@
         </div>
 
         <div class="bottom-controls" data-focus-zone="controls" aria-label="播放控制">
-          <button class="control-button" data-action="pause" data-focus="control-pause">▶/Ⅱ</button>
-          <span class="time-label">00:00 / --:--</span>
-          <div class="progress-track"><span></span></div>
+          <div class="playback-timeline">
+            <span class="time-label">00:00 / --:--</span>
+            <button class="control-button progress-track" id="control-progress" data-focus="control-progress" role="slider" aria-label="播放进度" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" disabled><span></span></button>
+          </div>
+          <div class="playback-buttons">
+          <button class="control-button" data-action="pause" data-focus="control-pause" aria-label="播放">播放</button>
           <button class="control-button" data-action="episodes" data-focus="control-episodes">选集 · -- 集</button>
           <button class="control-button" data-action="quality" data-focus="control-quality">清晰度</button>
           <button class="control-button" data-action="speed" data-focus="control-speed">1.0x</button>
+          <button class="control-button" data-action="volume" data-focus="control-volume">音量</button>
           <button class="control-button" data-action="fullscreen" data-focus="control-fullscreen">全屏</button>
+          </div>
         </div>
+        <div class="player-status is-hidden" id="player-status" role="status" aria-live="polite"><span class="player-spinner" aria-hidden="true"></span><span id="player-status-text"></span><button class="control-button is-hidden" id="player-retry" data-action="retry" data-focus="player-retry">重试播放</button></div>
+        <section class="player-options is-hidden" id="player-options" role="dialog" aria-modal="true" aria-labelledby="player-options-title"><div class="player-options-heading"><strong id="player-options-title"></strong><button class="player-option" id="player-options-close" data-focus="player-options-close" aria-label="关闭">×</button></div><div id="player-options-list"></div></section>
       </section>
 
       <section class="detail-modal is-hidden" id="detail-modal" aria-hidden="true" aria-label="短剧详情">

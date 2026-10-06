@@ -10,7 +10,8 @@
     feed: '.hero-feed-focus',
     catalog: '.catalog-card',
     actions: '.round-action',
-    controls: '.control-button',
+    controls: '.playback-buttons .control-button, #player-retry',
+    timeline: '#control-progress',
     searchInput: '#search-input',
     searchActions: '.search-action',
     searchFilters: '.search-filter',
@@ -30,6 +31,7 @@
     libraryItems: '.library-card',
     libraryRemovals: '.library-remove',
     confirmation: '.confirm-button',
+    playerOptions: '.player-option',
     modalActions: '.modal-action',
     episodes: '.detail-episode'
   };
@@ -96,6 +98,17 @@
   var confirmationGeneration = 0;
   var activePlayback = null;
   var detailCache = {};
+  var playerOptionsOpen = false;
+  var playerOptionsReturn = null;
+  var controlsTimer = null;
+  var lastPlaybackControl = null;
+  var nativeFullscreen = false;
+  var fullscreenExitKeepsHidden = false;
+  var playbackQuality = '';
+  var playbackRequest = null;
+  var applicationInBackground = false;
+  var playbackPreferences = { speed: 1, volume: 100 };
+  var playbackSpeeds = [.5, .75, 1, 1.25, 1.5, 2];
   var keyNames = {
     19: 'ArrowUp', 20: 'ArrowDown', 21: 'ArrowLeft', 22: 'ArrowRight',
     23: 'Enter', 66: 'Enter', 4: 'Escape', 111: 'Escape'
@@ -118,6 +131,7 @@
       var style = window.getComputedStyle(element);
       var insideModal = element.closest && element.closest('#detail-modal');
       if (confirmOpen) { if (!element.closest('#confirm-modal')) return; }
+      else if (playerOptionsOpen) { if (!element.closest('#player-options')) return; }
       else if (detailModalOpen ? !insideModal : insideModal) return;
       if (!element.getClientRects || !element.getClientRects().length) return;
       if (!element.disabled && style.display !== 'none' && style.visibility !== 'hidden') result.push(element);
@@ -141,6 +155,7 @@
     if (element.classList.contains('hero-feed-focus')) return 'feed';
     if (element.classList.contains('catalog-card')) return 'catalog';
     if (element.classList.contains('round-action')) return 'actions';
+    if (element.id === 'control-progress') return 'timeline';
     if (element.classList.contains('control-button')) return 'controls';
     if (element.id === 'search-input') return 'searchInput';
     if (element.classList.contains('search-action')) return 'searchActions';
@@ -161,6 +176,7 @@
     if (element.classList.contains('library-card')) return 'libraryItems';
     if (element.classList.contains('library-remove')) return 'libraryRemovals';
     if (element.classList.contains('confirm-button')) return 'confirmation';
+    if (element.classList.contains('player-option')) return 'playerOptions';
     if (element.classList.contains('detail-episode')) return 'episodes';
     if (element.classList.contains('modal-action')) return 'modalActions';
     if (element.classList.contains('page-placeholder-action')) return 'placeholder';
@@ -169,10 +185,11 @@
   }
 
   function goFocus(element) {
-    if (!element || element.disabled) return;
+    if (!element || element.disabled || !element.getClientRects().length) return;
+    if (window.getComputedStyle(element).visibility !== 'visible') return;
     element.focus({ preventScroll: false });
     markFocus(element);
-    if (!detailModalOpen && !confirmOpen && zoneOf(element) !== 'sidebar') {
+    if (!detailModalOpen && !confirmOpen && !playerOptionsOpen && zoneOf(element) !== 'sidebar') {
       lastContentFocus = element;
       lastPageFocus[pageMode()] = element;
     }
@@ -315,6 +332,10 @@
 
   function moveFrom(current, direction) {
     if (confirmOpen) return direction === 'left' || direction === 'right' ? moveWithinZone('confirmation', current, direction) : null;
+    if (playerOptionsOpen) {
+      if (current.id === 'player-options-close') return direction === 'down' ? document.querySelector('.player-option.is-selected') || firstVisible('#player-options-list .player-option') : null;
+      return moveGrid('#player-options-list .player-option', current, direction) || (direction === 'up' ? document.getElementById('player-options-close') : null);
+    }
     if (detailModalOpen) return moveModalFrom(current, direction);
     var zone = zoneOf(current);
     if (zone === 'sidebar') {
@@ -332,15 +353,15 @@
       return null;
     }
     if (zone === 'feed') {
-      if (direction === 'left') return activeSidebar();
-      if (direction === 'right') return firstVisible('.round-action') || firstVisible('.control-button');
-      if (direction === 'down') return firstVisible('.control-button');
+      if (direction === 'left') return shell.classList.contains('is-cinema') ? firstVisible('.playback-buttons .control-button') : activeSidebar();
+      if (direction === 'right') return firstVisible('.round-action') || firstVisible('.playback-buttons .control-button');
+      if (direction === 'down') return firstVisible('.playback-buttons .control-button');
       if (direction === 'up') return pageMode() === 'player' ? null : activeChannel();
       return null;
     }
     if (zone === 'hero') {
       if (direction === 'right') return document.querySelector('.round-action');
-      if (direction === 'down') return firstCatalog() || firstVisible('.control-button');
+      if (direction === 'down') return firstCatalog() || firstVisible('.playback-buttons .control-button');
       if (direction === 'up') return activeChannel();
       if (direction === 'left') return activeSidebar();
       return null;
@@ -356,7 +377,7 @@
         return cardTarget || (direction === 'left' ? activeSidebar() : null);
       }
       if (direction === 'up') return firstVisible('.primary-action') || activeChannel();
-      if (direction === 'down') return document.querySelector('.control-button');
+      if (direction === 'down') return firstVisible('.playback-buttons .control-button');
       return null;
     }
     if (zone === 'actions') {
@@ -369,7 +390,7 @@
         var controlTarget = moveWithinZone(zone, current, direction);
         return controlTarget || (direction === 'left' ? activeSidebar() : null);
       }
-      if (direction === 'up') return firstVisible('.hero-feed-focus') || firstCatalog() || firstVisible('.primary-action');
+      if (direction === 'up') return firstVisible('#control-progress') || firstVisible('.hero-feed-focus') || firstCatalog() || firstVisible('.primary-action');
       return null;
     }
     if (zone === 'searchInput') {
@@ -497,10 +518,23 @@
     var current = document.activeElement;
     var direction = ({ ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' })[key];
 
+    var command = ({ MediaPlayPause: 'toggle', MediaPlay: 'play', MediaPause: 'pause', MediaFastForward: 'forward', MediaRewind: 'rewind', ' ': 'toggle' })[key];
+    if (command && (!event.repeat || command === 'forward' || command === 'rewind') && handleMediaCommand(command)) {
+      event.preventDefault(); event.stopPropagation(); return;
+    }
+
     if (current && current.id === 'search-input' && (key === 'ArrowLeft' || key === 'ArrowRight')) return;
 
     if (key === 'Enter') {
       if (event.repeat) { event.preventDefault(); return; }
+      if (zoneOf(current) === 'feed' && shell.classList.contains('is-controls-hidden')) {
+        revealControls(); goFocus(firstVisible('.playback-buttons .control-button'));
+        event.preventDefault(); event.stopPropagation(); return;
+      }
+      if (current && current.id === 'control-progress') {
+        goFocus(lastPlaybackControl || firstVisible('.playback-buttons .control-button'));
+        event.preventDefault(); event.stopPropagation(); return;
+      }
       if (current && current.id === 'search-input') {
         submitSearch();
         event.preventDefault();
@@ -515,28 +549,28 @@
       return;
     }
     if (key === 'Escape' || key === 'Backspace') {
-      var handledBack = confirmOpen || detailModalOpen || pageMode() === 'player' || zoneOf(current) !== 'sidebar';
-      if (confirmOpen) {
-        closeConfirmation();
-      } else if (detailModalOpen) {
-        closeDetail();
-      } else if (pageMode() === 'player') {
-        leavePlayer();
-      } else if (zoneOf(current) !== 'sidebar') {
-        goFocus(activeSidebar());
-      }
-      if (handledBack) {
+      if (handleBack()) {
         event.preventDefault();
         event.stopPropagation();
       }
       return;
     }
     if (!direction) return;
-    if (!detailModalOpen && pageMode() === 'recommend' && zoneOf(current) === 'feed' && (direction === 'up' || direction === 'down')) {
+    if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && current && current.id === 'control-progress') {
+      if (direction === 'left' || direction === 'right') seekBy(direction === 'left' ? -10 : 10);
+      else goFocus(direction === 'up' ? document.getElementById('hero-feed-focus') : lastPlaybackControl || firstVisible('.playback-buttons .control-button'));
+      event.preventDefault(); event.stopPropagation(); return;
+    }
+    if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && shell.classList.contains('is-controls-hidden') && pageMode() === 'recommend' && zoneOf(current) === 'feed' && (direction === 'up' || direction === 'down')) {
       playFeedItem(feedIndex + (direction === 'up' ? -1 : 1));
       event.preventDefault();
       event.stopPropagation();
       return;
+    }
+    if (isPlaybackPage() && !detailModalOpen && !playerOptionsOpen && !confirmOpen && (direction !== 'left' || shell.classList.contains('is-cinema') || zoneOf(current) !== 'feed')) revealControls();
+    if (zoneOf(current) === 'feed' && pageMode() === 'player' && (direction === 'up' || direction === 'down')) {
+      goFocus(firstVisible('.playback-buttons .control-button'));
+      event.preventDefault(); event.stopPropagation(); return;
     }
     var target = moveFrom(current, direction);
     if (target) {
@@ -554,6 +588,168 @@
     clearTimeout(showNotice.timer);
     showNotice.timer = setTimeout(function () { notice.classList.add('is-hidden'); }, 3200);
   }
+
+  function isPlaybackPage() { return pageMode() === 'recommend' || pageMode() === 'player'; }
+  function scheduleControlsHide() {
+    clearTimeout(controlsTimer);
+    var video = document.getElementById('hero-video');
+    if (!isPlaybackPage() || shell.classList.contains('is-controls-hidden') || video.paused || video.ended || detailModalOpen || confirmOpen || playerOptionsOpen || zoneOf(document.activeElement) === 'sidebar') return;
+    controlsTimer = setTimeout(function () { hideControls(); }, 4000);
+  }
+  function revealControls() {
+    shell.classList.remove('is-controls-hidden');
+    scheduleControlsHide();
+  }
+  function hideControls() {
+    clearTimeout(controlsTimer);
+    if (!isPlaybackPage() || detailModalOpen || confirmOpen || playerOptionsOpen || zoneOf(document.activeElement) === 'sidebar') return;
+    shell.classList.add('is-controls-hidden');
+    goFocus(document.getElementById('hero-feed-focus'));
+  }
+  function setPlayerStatus(message, failed) {
+    var panel = document.getElementById('player-status');
+    panel.classList.toggle('is-hidden', !message);
+    document.getElementById('player-status-text').textContent = message || '';
+    panel.querySelector('.player-spinner').classList.toggle('is-hidden', !!failed);
+    document.getElementById('player-retry').classList.toggle('is-hidden', !failed);
+    if (failed) {
+      revealControls();
+      if (zoneOf(document.activeElement) === 'feed') goFocus(document.getElementById('player-retry'));
+    }
+  }
+  function updatePlaybackControls() {
+    var video = document.getElementById('hero-video');
+    var duration = Number.isFinite(video.duration) ? video.duration : 0;
+    var position = Math.min(duration, Number(video.currentTime) || 0);
+    var progress = document.getElementById('control-progress');
+    document.querySelector('.time-label').textContent = clockText(position) + ' / ' + clockText(duration);
+    progress.disabled = !duration;
+    progress.setAttribute('aria-valuemax', String(Math.floor(duration)));
+    progress.setAttribute('aria-valuenow', String(Math.floor(position)));
+    progress.setAttribute('aria-valuetext', clockText(position) + ' / ' + clockText(duration));
+    progress.querySelector('span').style.width = (duration ? position / duration * 100 : 0) + '%';
+    var pause = document.querySelector('[data-action="pause"]');
+    pause.textContent = video.paused || video.ended ? '播放' : '暂停';
+    pause.setAttribute('aria-label', pause.textContent);
+    document.querySelector('[data-action="speed"]').textContent = video.playbackRate + 'x';
+    document.querySelector('[data-action="volume"]').textContent = video.muted || !video.volume ? '静音' : '音量 ' + Math.round(video.volume * 100) + '%';
+    document.querySelector('[data-action="quality"]').textContent = playbackQuality || '清晰度 · 自动';
+    document.querySelector('[data-action="fullscreen"]').textContent = shell.classList.contains('is-cinema') ? '退出全屏' : '全屏';
+  }
+  function savePlaybackPreferences() {
+    try { localStorage.setItem('hongguo-tv-playback', JSON.stringify(playbackPreferences)); } catch (error) { showNotice('播放设置未保存'); }
+  }
+  function restorePlaybackPreferences() {
+    try {
+      var saved = JSON.parse(localStorage.getItem('hongguo-tv-playback') || '{}');
+      if (playbackSpeeds.indexOf(saved.speed) >= 0) playbackPreferences.speed = saved.speed;
+      if (Number.isFinite(saved.volume) && saved.volume >= 0 && saved.volume <= 100) playbackPreferences.volume = saved.volume;
+    } catch (error) { /* Invalid preferences fall back to normal playback. */ }
+    var video = document.getElementById('hero-video');
+    video.playbackRate = playbackPreferences.speed;
+    video.defaultPlaybackRate = playbackPreferences.speed;
+    video.volume = playbackPreferences.volume / 100;
+    video.muted = playbackPreferences.volume === 0;
+    updatePlaybackControls();
+  }
+  function closePlayerOptions(restoring) {
+    playerOptionsOpen = false;
+    document.getElementById('player-options').classList.add('is-hidden');
+    var target = playerOptionsReturn;
+    playerOptionsReturn = null;
+    if (restoring !== false) goFocus(target && document.contains(target) ? target : document.getElementById('hero-feed-focus'));
+    scheduleControlsHide();
+  }
+  function openPlayerOptions(kind, entry) {
+    if (!isPlaybackPage()) return;
+    revealControls(); clearTimeout(controlsTimer);
+    playerOptionsReturn = entry;
+    playerOptionsOpen = true;
+    var video = document.getElementById('hero-video');
+    var values = kind === 'speed' ? playbackSpeeds : [0, 25, 50, 75, 100];
+    var selected = kind === 'speed' ? video.playbackRate : video.muted ? 0 : Math.round(video.volume * 100);
+    document.getElementById('player-options-title').textContent = kind === 'speed' ? '播放倍速' : '音量';
+    var list = document.getElementById('player-options-list'); list.innerHTML = '';
+    values.forEach(function (value, index) {
+      var option = document.createElement('button');
+      option.className = 'player-option' + (value === selected ? ' is-selected' : '');
+      option.dataset.focus = 'player-option-' + index;
+      option.textContent = kind === 'speed' ? value + 'x' : value === 0 ? '静音' : value + '%';
+      option.addEventListener('click', function () {
+        try {
+          if (kind === 'speed') { video.playbackRate = value; video.defaultPlaybackRate = value; playbackPreferences.speed = value; }
+          else { video.volume = value / 100; video.muted = value === 0; playbackPreferences.volume = value; }
+          updatePlaybackControls(); savePlaybackPreferences(); closePlayerOptions();
+        } catch (error) { showNotice(kind === 'speed' ? '设备不支持这个倍速' : '请用遥控器音量键调整音量'); }
+      });
+      list.appendChild(option);
+    });
+    document.getElementById('player-options').classList.remove('is-hidden');
+    goFocus(list.querySelector('.is-selected') || list.querySelector('.player-option'));
+  }
+  function seekTo(position) {
+    var video = document.getElementById('hero-video');
+    if (!activePlayback || !Number.isFinite(position) || !Number.isFinite(video.duration) || video.duration <= 0) return false;
+    video.currentTime = Math.max(0, Math.min(position, Math.max(0, video.duration - .25)));
+    updatePlaybackControls(); revealControls();
+    return true;
+  }
+  function seekBy(delta) { return seekTo(document.getElementById('hero-video').currentTime + delta); }
+  function setCinema(enabled) { shell.classList.toggle('is-cinema', enabled); updatePlaybackControls(); }
+  function exitCinema(keepHidden) {
+    fullscreenExitKeepsHidden = !!keepHidden;
+    setCinema(false);
+    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {});
+  }
+  function toggleCinema() {
+    if (shell.classList.contains('is-cinema')) exitCinema();
+    else {
+      setCinema(true);
+      // Android already fills the display. Keep the CSS layout if the browser
+      // Fullscreen API is unavailable; never fullscreen the video alone.
+      if (shell.requestFullscreen) shell.requestFullscreen().catch(function () {});
+    }
+    revealControls();
+  }
+  function handleBack() {
+    if (confirmOpen) closeConfirmation();
+    else if (playerOptionsOpen) closePlayerOptions();
+    else if (detailModalOpen) closeDetail();
+    else if (isPlaybackPage() && zoneOf(document.activeElement) !== 'sidebar' && !shell.classList.contains('is-controls-hidden')) hideControls();
+    else if (shell.classList.contains('is-cinema')) { exitCinema(true); hideControls(); }
+    else if (pageMode() === 'player') leavePlayer();
+    else if (zoneOf(document.activeElement) !== 'sidebar') goFocus(activeSidebar());
+    else return false;
+    return true;
+  }
+  function handleMediaCommand(command) {
+    var video = document.getElementById('hero-video');
+    if (applicationInBackground || !isPlaybackPage() || !video.getAttribute('src')) return false;
+    if (command === 'toggle') toggleVideo();
+    else if (command === 'play') video.play().catch(function () { showNotice('请按确认键开始播放'); });
+    else if (command === 'pause') video.pause();
+    else if (command === 'forward') seekBy(10);
+    else if (command === 'rewind') seekBy(-10);
+    else return false;
+    revealControls();
+    return true;
+  }
+  function pauseForBackground() {
+    applicationInBackground = true;
+    saveProgress(true);
+    document.getElementById('hero-video').pause();
+    clearTimeout(controlsTimer);
+  }
+  function resumeFromBackground() {
+    applicationInBackground = false;
+    updatePlaybackControls();
+  }
+  function resetPlayerUI() {
+    closePlayerOptions(false); clearTimeout(controlsTimer);
+    shell.classList.remove('is-controls-hidden'); exitCinema();
+    setPlayerStatus('');
+  }
+  window.HongguoTV = { requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground };
 
   function isLibraryPage() { return ['history', 'favorites', 'likes'].indexOf(pageMode()) >= 0; }
   function libraryEntry(id) { return libraryData.entries.filter(function (entry) { return entry.drama.series_id === id; })[0] || null; }
@@ -606,6 +802,7 @@
       libraryData = payload.data;
       libraryLoaded = true;
       updateSavedButtons();
+      updateDetailProgress();
       if (isLibraryPage()) renderLibrary(!!quiet);
       return true;
     });
@@ -811,6 +1008,8 @@
     if (!item || !item.series_id) return;
     saveProgress(true);
     activePlayback = null;
+    playbackRequest = { index: index, episode: forcedEpisode, position: forcedPosition };
+    playbackQuality = '';
     feedIndex = index;
     updateFeedCounter();
     setFeatured(item);
@@ -822,13 +1021,15 @@
     video.classList.remove('has-source');
     video.removeAttribute('src');
     video.load();
-    placeholder.classList.remove('is-hidden');
-    showNotice('正在准备播放…');
+    placeholder.classList.add('is-hidden');
+    setPlayerStatus('正在准备播放…');
+    updatePlaybackControls();
     Promise.resolve(libraryReady).then(function () { return libraryQueue.catch(function () {}); }).then(function () {
       if (generation !== feedGeneration) return null;
       var entry = libraryEntry(item.series_id);
       var episode = forcedEpisode || resumeEpisode(entry, item);
       var position = forcedPosition !== undefined ? forcedPosition : entry && episode === entry.episode && !entry.completed ? entry.position || 0 : 0;
+      playbackRequest.episode = episode; playbackRequest.position = position;
       var source = episode === 1 && firstVid(item) ? Promise.resolve(item) : getDetail(item);
       return source.then(function (detail) {
         if (generation !== feedGeneration) return null;
@@ -837,7 +1038,7 @@
         var playing = Object.assign({}, item, detail, { start_episode: episode, vid: vid });
         activePlayback = { item: playing, episode: episode, vid: vid, position: position, generation: generation, started: false, lastWrite: 0, completed: false };
         setFeatured(playing);
-        showNotice('正在准备第 ' + episode + ' 集…');
+        setPlayerStatus('正在准备第 ' + episode + ' 集…');
         return fetch('/api/v1/play/info?series_id=' + encodeURIComponent(item.series_id) + '&vid=' + encodeURIComponent(vid));
       });
     })
@@ -847,16 +1048,18 @@
         if (!payload) return;
         if (!payload.ok || !payload.data || !payload.data.path) throw new Error(payload.error || '播放服务没有返回地址');
         video.src = payload.data.path;
+        playbackQuality = payload.data.quality || '';
+        updatePlaybackControls();
         video.classList.add('has-source');
         placeholder.classList.add('is-hidden');
         video.load();
-        video.play().catch(function () { showNotice('视频已准备好，请按确认键开始播放。'); });
-        showNotice('正在播放 ' + (item.title || '红果短剧'));
+        setPlayerStatus('正在加载视频…');
+        if (!document.hidden && !applicationInBackground) video.play().catch(function () { setPlayerStatus(''); revealControls(); showNotice('视频已准备好，请按确认键开始播放'); });
+        else { setPlayerStatus(''); revealControls(); }
       })
       .catch(function (error) {
         if (generation !== feedGeneration || (pageMode() !== 'recommend' && pageMode() !== 'player')) return;
-        placeholder.classList.remove('is-hidden');
-        showNotice('播放地址获取失败：' + error.message);
+        setPlayerStatus('暂时无法播放这集', true);
       });
   }
 
@@ -875,6 +1078,7 @@
 
   function startPlayer(item, returnFocus) {
     if (!item || !item.series_id) return;
+    if (!isPlaybackPage()) resetPlayerUI();
     if (pageMode() !== 'player') {
       playerReturnPage = pageMode();
       playerReturnFocus = returnFocus || document.activeElement;
@@ -1431,8 +1635,17 @@
     updateSavedButtons();
   }
 
+  function updateDetailProgress() {
+    if (!detailModalOpen || !currentDetail) return;
+    var entry = libraryEntry(currentDetail.series_id);
+    var episode = resumeEpisode(entry, currentDetail);
+    detailElements().play.textContent = entry && entry.last_played_at ? entry.completed && episode === 1 ? '重新播放' : '继续第' + episode + '集' : '播放第一集';
+    updateEpisodeHighlight(entry && entry.episode ? entry.episode - 1 : -1);
+  }
+
   function openDetail(item) {
     if (!item || !item.series_id) return;
+    closePlayerOptions(false); clearTimeout(controlsTimer); revealControls();
     detailReturnFocus = document.activeElement;
     detailModalOpen = true;
     currentDetail = null;
@@ -1469,6 +1682,7 @@
     var target = detailReturnFocus && document.contains(detailReturnFocus) ? detailReturnFocus : firstCatalog() || activeChannel();
     detailReturnFocus = null;
     goFocus(target);
+    scheduleControlsHide();
   }
 
   function updateEpisodeHighlight(index) {
@@ -1499,6 +1713,7 @@
     ++catalogGeneration;
     ++feedGeneration;
     document.getElementById('hero-video').pause();
+    resetPlayerUI();
     document.querySelectorAll('.side-item').forEach(function (node) { node.classList.toggle('is-active', node === item); });
     var label = item.querySelector('span:last-child');
     shell.dataset.mode = item.dataset.page || 'recommend';
@@ -1551,7 +1766,11 @@
   document.addEventListener('keydown', handleKey, true);
   document.addEventListener('focusin', function (event) {
     markFocus(event.target);
-    if (!detailModalOpen && !confirmOpen && zoneOf(event.target) !== 'sidebar') {
+    var zone = zoneOf(event.target);
+    if (zone === 'controls' && event.target.closest('.playback-buttons')) lastPlaybackControl = event.target;
+    if (zone === 'sidebar') clearTimeout(controlsTimer);
+    else if (isPlaybackPage() && ['controls', 'timeline', 'actions', 'channels'].indexOf(zone) >= 0) revealControls();
+    if (!detailModalOpen && !confirmOpen && !playerOptionsOpen && zone !== 'sidebar') {
       lastContentFocus = event.target;
       lastPageFocus[pageMode()] = event.target;
     }
@@ -1581,6 +1800,12 @@
       else if (item.dataset.action === 'episodes') {
         if (featuredItem) openDetail(featuredItem);
         else showNotice('当前还没有可打开的短剧。');
+      }
+      else if (item.dataset.action === 'speed' || item.dataset.action === 'volume') openPlayerOptions(item.dataset.action, item);
+      else if (item.dataset.action === 'fullscreen') toggleCinema();
+      else if (item.dataset.action === 'quality') showNotice(playbackQuality ? '当前清晰度 ' + playbackQuality + ' · 自动选择' : '播放后显示实际清晰度');
+      else if (item.dataset.action === 'retry') {
+        if (playbackRequest) { goFocus(document.getElementById('hero-feed-focus')); playFeedItem(playbackRequest.index, playbackRequest.episode, playbackRequest.position); }
       }
       else if (item.dataset.action === 'return-recommend') {
         var recommend = document.querySelector('.side-item[data-page="recommend"]');
@@ -1664,6 +1889,21 @@
     confirmOperation().then(function (ok) { button.disabled = false; if (ok && confirmOpen && generation === confirmationGeneration) closeConfirmation(); });
   });
   document.getElementById('hero-feed-focus').addEventListener('click', toggleVideo);
+  document.getElementById('player-options-close').addEventListener('click', function () { closePlayerOptions(); });
+  document.getElementById('control-progress').addEventListener('click', function (event) {
+    if (!event.detail) return;
+    var rect = this.getBoundingClientRect();
+    seekTo((event.clientX - rect.left) / rect.width * document.getElementById('hero-video').duration);
+  });
+  document.addEventListener('pointermove', function (event) { if (isPlaybackPage() && event.target.closest('#hero')) revealControls(); });
+  document.addEventListener('fullscreenchange', function () {
+    if (document.fullscreenElement) { nativeFullscreen = true; setCinema(true); }
+    else if (nativeFullscreen) {
+      nativeFullscreen = false; setCinema(false);
+      if (fullscreenExitKeepsHidden) hideControls(); else revealControls();
+      fullscreenExitKeepsHidden = false;
+    }
+  });
 
   function loadStatus() {
     fetch('/api/v1/status').then(function (response) { return response.json(); }).then(function (data) {
@@ -1680,19 +1920,32 @@
     if (!activePlayback || activePlayback.generation !== feedGeneration) return;
     var position = activePlayback.position;
     if (position > 0 && Number.isFinite(media.duration)) media.currentTime = Math.min(position, Math.max(0, media.duration - .25));
+    media.playbackRate = playbackPreferences.speed;
+    updatePlaybackControls();
   });
   media.addEventListener('playing', function () {
     if (!activePlayback || activePlayback.generation !== feedGeneration) return;
+    if (applicationInBackground || document.hidden) { media.pause(); return; }
     activePlayback.started = true;
+    setPlayerStatus(''); updatePlaybackControls(); scheduleControlsHide();
     saveProgress(true);
   });
   media.addEventListener('timeupdate', function () {
     if (!activePlayback || !activePlayback.started) return;
-    document.querySelector('.time-label').textContent = clockText(media.currentTime) + ' / ' + clockText(Number.isFinite(media.duration) ? media.duration : 0);
-    document.querySelector('.progress-track > span').style.width = (media.duration ? Math.min(100, media.currentTime / media.duration * 100) : 0) + '%';
+    updatePlaybackControls();
     saveProgress(false);
   });
-  media.addEventListener('pause', function () { saveProgress(true); });
+  media.addEventListener('pause', function () {
+    saveProgress(true); updatePlaybackControls();
+    if (activePlayback && activePlayback.started && media.getAttribute('src') && media.paused && !media.ended) revealControls();
+  });
+  media.addEventListener('ratechange', updatePlaybackControls);
+  media.addEventListener('volumechange', updatePlaybackControls);
+  media.addEventListener('emptied', updatePlaybackControls);
+  media.addEventListener('waiting', function () { if (activePlayback) setPlayerStatus(activePlayback.started ? '正在缓冲…' : '正在加载视频…'); });
+  media.addEventListener('canplay', function () { if (media.paused) setPlayerStatus(''); });
+  media.addEventListener('seeked', function () { updatePlaybackControls(); saveProgress(true); if (media.paused) setPlayerStatus(''); });
+  media.addEventListener('error', function () { if (activePlayback && media.getAttribute('src')) setPlayerStatus('这集未能正常播放', true); });
   media.addEventListener('ended', function () {
     var playback = activePlayback;
     if (!playback || !playback.started || playback.generation !== feedGeneration) return;
@@ -1701,12 +1954,13 @@
       if (activePlayback !== playback || playback.generation !== feedGeneration) return;
       if (detail.vid_list && detail.vid_list[playback.episode]) playFeedItem(feedIndex, playback.episode + 1, 0);
       else if (pageMode() === 'recommend' && feedItems.length > 1) playFeedItem(feedIndex + 1);
-      else showNotice('本剧已播放完');
+      else { revealControls(); showNotice('本剧已播放完'); }
     }).catch(function (error) { if (activePlayback === playback) showNotice('下一集准备失败，可从选集继续：' + error.message); });
   });
-  document.addEventListener('visibilitychange', function () { if (document.hidden) saveProgress(true); });
+  document.addEventListener('visibilitychange', function () { if (document.hidden) pauseForBackground(); else resumeFromBackground(); });
 
   goFocus(document.querySelector('.side-item.is-active'));
+  restorePlaybackPreferences();
   loadStatus();
   libraryReady = loadLibrary();
   loadCatalog('/rank/hot-drama', '热播短剧');

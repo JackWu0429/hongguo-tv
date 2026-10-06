@@ -1,13 +1,10 @@
 package main
 
-// MiniReel playback bridge.
-//
-// The Android MiniReel client asks the signed video_model endpoint for a
-// short-lived MP4 URL and an spade_a content key.  Lampa's built-in player
-// cannot pass that key to ExoPlayer, so this small local bridge downloads the
-// selected episode, decrypts its CENC AES-CTR samples in place, and exposes a
-// normal MP4 URL with Range support.  It deliberately does not implement a
-// player or a transcoder: Lampa remains the player owner.
+// Embedded playback resolver, adapted from the validated MiniReel protocol.
+// The signed video_model endpoint supplies a short-lived MP4 URL and spade_a
+// content key. This service prepares the selected episode, decrypts its CENC
+// AES-CTR samples in place, and exposes an MP4 URL with Range support. The
+// Android WebView owns playback and its controls; media is not transcoded.
 
 import (
 	"bytes"
