@@ -30,7 +30,6 @@ button:focus { outline: none; }
 .side-item.is-focused, .side-item:focus-visible { color: #fff; background: rgba(255,255,255,.17); box-shadow: 0 0 0 2px var(--focus); transform: scale(1.018); }
 .side-icon { display: inline-block; flex: 0 0 23px; width: 23px; height: 23px; fill: none; color: currentColor; }
 .sidebar-bottom { margin-top: auto; padding-top: 16px; }
-.author { padding: 12px 16px 8px; color: #73737d; font-size: 13px; }
 .side-item-secondary { color: #c5c5ce; }
 
 .main-surface { position: relative; display: flex; flex: 1; min-width: 0; flex-direction: column; background: #111217; }

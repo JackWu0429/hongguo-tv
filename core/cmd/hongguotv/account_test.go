@@ -117,6 +117,8 @@ func TestAccountLoginRejectsMissingCredentials(t *testing.T) {
 }
 func accountFixtureResponse(w http.ResponseWriter, path string, mfa bool) {
 	switch path {
+	case "/reading/ugc/action/mget/v":
+		ioJSON(w, `{"code":0,"data":{"mixed_data_list":null,"has_more":false}}`)
 	case "/service/2/device_register/":
 		ioJSON(w, `{"device_id_str":"7390000000000000001","install_id_str":"7390000000000000002"}`)
 	case "/passport/mobile/send_code/v1/":

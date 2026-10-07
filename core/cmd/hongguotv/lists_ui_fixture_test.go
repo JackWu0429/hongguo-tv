@@ -15,7 +15,8 @@ import (
 func TestListsBrowserFixture(t *testing.T) {
 	browseFixture := os.Getenv("HONGGUO_BROWSE_UI_FIXTURE") == "1"
 	seriesFixture := os.Getenv("HONGGUO_SERIES_UI_FIXTURE") == "1"
-	playerFixture := os.Getenv("HONGGUO_PLAYER_UI_FIXTURE") == "1" || seriesFixture
+	likesFixture := os.Getenv("HONGGUO_LIKES_UI_FIXTURE") == "1"
+	playerFixture := os.Getenv("HONGGUO_PLAYER_UI_FIXTURE") == "1" || seriesFixture || likesFixture
 	if os.Getenv("HONGGUO_LISTS_UI_FIXTURE") != "1" && !playerFixture {
 		t.Skip("isolated UI fixture")
 	}
@@ -24,6 +25,8 @@ func TestListsBrowserFixture(t *testing.T) {
 	var failNew bool
 	var failQuality bool
 	var guest bool
+	var failLike bool
+	likeWrites := []LibraryChange{}
 	var failSeries, emptySeries, slowDetail, failDetail, failReservation, upcomingNext, skipUpcoming bool
 	var reservations []map[string]any
 	var progress []map[string]any
@@ -42,6 +45,9 @@ func TestListsBrowserFixture(t *testing.T) {
 		vids := make([]string, 80)
 		for j := range vids {
 			vids[j] = "7690223053078268953"
+			if likesFixture {
+				vids[j] = fmt.Sprintf("769022305307826%04d", 8953+j)
+			}
 		}
 		return Drama{SeriesID: fmt.Sprintf("7690163276214%06d", i+100), Vid: "7690223053078268953", VidList: vids, Title: fmt.Sprintf("测试短剧%03d", i+1), Intro: "这是用于检查电视遥控器焦点和滚动位置的简介。", EpisodeCount: 80, Score: "8.9", Tags: []string{"都市", "逆袭"}, Cover: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='280'><rect width='200' height='280' fill='%233b4b69'/></svg>"}
 	}
@@ -63,11 +69,50 @@ func TestListsBrowserFixture(t *testing.T) {
 	mux.HandleFunc("/api/v1/library", func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
-		if seriesFixture && r.Method == http.MethodPost {
+		if (seriesFixture || likesFixture) && r.Method == http.MethodPost {
 			var action map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&action); err != nil {
 				writeError(w, 400, err.Error())
 				return
+			}
+			if likesFixture && asString(action["action"]) == "like" {
+				b, _ := json.Marshal(action)
+				var change LibraryChange
+				json.Unmarshal(b, &change)
+				likeWrites = append(likeWrites, change)
+				if guest {
+					writeError(w, 401, "请先登录红果账号")
+					return
+				}
+				if failLike {
+					failLike = false
+					writeError(w, 502, "红果未确认点赞操作")
+					return
+				}
+				if change.Value == nil || !validID(change.VideoID) || change.Episode < 1 {
+					writeError(w, 400, "缺少当前播放集")
+					return
+				}
+				for _, e := range entries {
+					if e["drama"].(Drama).SeriesID != change.Drama.SeriesID {
+						continue
+					}
+					videos, _ := e["liked_videos"].([]LikedVideo)
+					kept := []LikedVideo{}
+					for _, v := range videos {
+						if v.VideoID != change.VideoID {
+							kept = append(kept, v)
+						}
+					}
+					if *change.Value {
+						kept = append(kept, LikedVideo{VideoID: change.VideoID, Episode: change.Episode, LikedAt: time.Now().UnixMilli()})
+					}
+					e["liked_videos"] = kept
+					e["liked_at"] = 0
+					if len(kept) > 0 {
+						e["liked_at"] = kept[0].LikedAt
+					}
+				}
 			}
 			if asString(action["action"]) == "progress" {
 				progress = append(progress, action)
@@ -208,7 +253,10 @@ func TestListsBrowserFixture(t *testing.T) {
 			if r.URL.Query().Get("guest") != "" {
 				guest = r.URL.Query().Get("guest") == "1"
 			}
-			writeJSON(w, 200, map[string]any{"writes": writes, "calls": calls})
+			if r.URL.Query().Get("fail_like") == "1" {
+				failLike = true
+			}
+			writeJSON(w, 200, map[string]any{"writes": writes, "calls": calls, "like_writes": likeWrites})
 		})
 		mux.HandleFunc("/api/v1/player/action", func(w http.ResponseWriter, r *http.Request) {
 			var a PlayerAction
@@ -368,6 +416,11 @@ func TestListsBrowserFixture(t *testing.T) {
 		if r.URL.Path == "/api/v1/series/detail" {
 			d := drama(0)
 			d.SeriesID = q.Get("series_id")
+			if likesFixture {
+				for i, vid := range d.VidList {
+					d.Episodes = append(d.Episodes, Episode{Index: i + 1, VideoID: vid, Title: fmt.Sprintf("第%d集", i+1)})
+				}
+			}
 			if seriesFixture {
 				mu.Lock()
 				slow, fail := slowDetail, failDetail

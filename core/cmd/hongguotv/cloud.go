@@ -45,6 +45,10 @@ func recordCloudChange(data *LibraryData, c LibraryChange, before LibraryData) e
 	}
 	kind := c.Action
 	id := c.Drama.SeriesID
+	if kind == "like" {
+		delete(cloud.Hidden, "likes:"+id)
+		return nil // Confirmed synchronous write, never enqueue legacy likes.
+	}
 	if c.Action == "clear" || c.Action == "remove" {
 		for _, e := range before.Entries {
 			if c.Action == "clear" || e.Drama.SeriesID == c.SeriesID {
@@ -164,6 +168,7 @@ func (m *accountManager) synchronize(parent context.Context) {
 		return
 	}
 	g, store, uid := m.generation, m.store, m.disk.Profile.UID
+	likeRevision := m.likeRevision
 	client := m.newClient(m.disk.Session)
 	client.uid = uid
 	m.syncing = true
@@ -194,6 +199,21 @@ func (m *accountManager) synchronize(parent context.Context) {
 	}
 	if err == nil {
 		err = m.flushCloud(ctx, g, store, client)
+	}
+	if err == nil {
+		likes, likesErr := client.pullLikes(ctx)
+		m.mu.Lock()
+		if g != m.generation || m.store != store {
+			m.mu.Unlock()
+			return
+		}
+		if likesErr == nil && likeRevision == m.likeRevision {
+			likesErr = store.mergeLikes(likes)
+		}
+		m.mu.Unlock()
+		if likesErr != nil {
+			err = errors.New("云端点赞读取失败：" + likesErr.Error())
+		}
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -606,11 +626,12 @@ func (s *libraryStore) mergeCloud(remote []LibraryEntry, stamp int64) error {
 			e.Drama = cleanLibraryDrama(r.Drama)
 		}
 		if !pending["progress:"+id] && d.Cloud.Hidden["history:"+id] == 0 && r.LastPlayedAt > e.LastPlayedAt {
-			fav, like := e.FavoriteAt, e.LikedAt
+			fav, like, videos := e.FavoriteAt, e.LikedAt, e.LikedVideos
 			*e = r
 			e.Drama = cleanLibraryDrama(r.Drama)
 			e.FavoriteAt = fav
 			e.LikedAt = like
+			e.LikedVideos = videos
 		}
 		if !pending["favorite:"+id] && d.Cloud.Hidden["favorites:"+id] == 0 {
 			if r.FavoriteAt > 0 {

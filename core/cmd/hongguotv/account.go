@@ -48,6 +48,8 @@ type loginAttempt struct {
 }
 type accountManager struct {
 	mu               sync.Mutex
+	likeMu           sync.Mutex
+	likeRevision     uint64
 	dir              string
 	disk             accountDisk
 	guest, store     *libraryStore

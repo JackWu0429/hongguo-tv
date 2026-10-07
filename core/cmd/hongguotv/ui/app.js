@@ -1369,7 +1369,7 @@
     var entry = featuredItem && libraryEntry(featuredItem.series_id);
     ['favorite', 'like'].forEach(function (kind) {
       var button = document.querySelector('.round-action[data-action="' + kind + '"]');
-      var saved = !!(entry && (kind === 'favorite' ? entry.favorite_at : entry.liked_at));
+      var saved = kind === 'favorite' ? !!(entry && entry.favorite_at) : currentVideoLiked(featuredItem);
       button.classList.toggle('is-saved', saved);
       button.setAttribute('aria-pressed', String(saved));
       button.querySelector('small').textContent = kind === 'favorite' ? saved ? '已收藏' : '收藏' : saved ? '已点赞' : '点赞';
@@ -1379,6 +1379,11 @@
     detailButton.textContent = detailEntry && detailEntry.favorite_at ? '已收藏' : '收藏';
     detailButton.classList.toggle('is-saved', !!(detailEntry && detailEntry.favorite_at));
     detailButton.setAttribute('aria-pressed', String(!!(detailEntry && detailEntry.favorite_at)));
+  }
+  function currentVideoLiked(item) {
+    var entry = item && libraryEntry(item.series_id);
+    var session = playbackSnapshot();
+    return !!(entry && session && item && session.series_id === item.series_id && (entry.liked_videos || []).some(function (liked) { return liked.video_id === session.vid; }));
   }
   function loadLibrary() {
     var ownerEpoch = accountEpoch;
@@ -1415,18 +1420,30 @@
         });
     });
     libraryQueue = operation;
-    return operation.catch(function (error) { showNotice('本机记录未保存：' + error.message); return false; });
+    return operation.catch(function (error) { if (ownerEpoch === accountEpoch) showNotice((change.action === 'like' ? '点赞未完成：' : '本机记录未保存：') + error.message); return false; });
   }
   function toggleSaved(item, kind, button) {
     if (!item || !item.series_id || !libraryLoaded || button.disabled) return;
+    var session = playbackSnapshot();
+    if (kind === 'like') {
+      if (!accountData || !accountData.logged_in) { showNotice('请先到“我的 / 登录”登录红果账号'); return; }
+      if (!session || session.series_id !== item.series_id) { showNotice('请先选择要点赞的播放集'); return; }
+    }
     var entry = libraryEntry(item.series_id);
-    var saved = !!(entry && (kind === 'favorite' ? entry.favorite_at : entry.liked_at));
+    var saved = kind === 'favorite' ? !!(entry && entry.favorite_at) : currentVideoLiked(item);
+    var ownerEpoch = accountEpoch;
     var wasFocused = document.activeElement === button;
     button.disabled = true;
-    changeLibrary({ action: kind, drama: basicDrama(item), value: !saved }).then(function (ok) {
+    button.setAttribute('aria-busy', 'true');
+    var change = { action: kind, drama: basicDrama(item), value: !saved };
+    if (kind === 'like') { change.video_id = session.vid; change.episode = session.episode; }
+    changeLibrary(change).then(function (ok) {
       button.disabled = false;
-      if (wasFocused && document.activeElement === document.body && button.getClientRects().length) goFocus(button);
-      if (ok) showNotice(saved ? kind === 'favorite' ? '已取消收藏' : '已取消点赞' : kind === 'favorite' ? '已收藏到本机' : '已保存到本机点赞');
+      button.removeAttribute('aria-busy');
+      var current = playbackSnapshot();
+      var same = ownerEpoch === accountEpoch && featuredItem && featuredItem.series_id === item.series_id && (kind !== 'like' || current && current.vid === session.vid);
+      if (same && wasFocused && document.activeElement === document.body && button.getClientRects().length) goFocus(button);
+      if (ok && same) showNotice(saved ? kind === 'favorite' ? '已取消收藏' : '已取消第' + session.episode + '集点赞' : kind === 'favorite' ? '已收藏到本机' : '已点赞第' + session.episode + '集');
     });
   }
   function renderLibrary(restoring) {
@@ -1434,7 +1451,7 @@
     if (!isLibraryPage()) return;
     var label = ({ history: '历史', favorites: '收藏', likes: '点赞' })[kind];
     document.getElementById('library-title').textContent = label;
-    var storageLabel = libraryData.owner_id && kind !== 'likes' ? '当前账号 · 云同步' : '保存在本机';
+    var storageLabel = libraryData.owner_id ? '当前账号 · 云同步' : '保存在本机';
     document.getElementById('library-hint').textContent = storageLabel + (kind === 'history' ? ' · 自动记住集数和进度' : '');
     var grid = document.getElementById('library-grid');
     var entries = libraryData.entries.filter(function (entry) { return libraryTime(entry, kind) > 0; });
@@ -1607,7 +1624,7 @@
     var sync = data.sync || {};
     var syncLabel = !logged ? '未登录 · 记录保存在本机' : ({ syncing: '正在同步…', pending: '等待同步', error: '同步暂未完成', idle: sync.last_sync ? '已同步' : '尚未同步' })[sync.state] || '等待同步';
     document.getElementById('account-sync-state').textContent = syncLabel;
-    document.getElementById('account-sync-detail').textContent = sync.error || (logged ? (sync.pending ? sync.pending + ' 项记录待同步。' : '收藏与观看进度会自动同步。') + (sync.last_sync ? ' 最近同步：' + new Date(sync.last_sync).toLocaleTimeString() : '') : '收藏、观看历史和播放进度会与红果账号同步。');
+    document.getElementById('account-sync-detail').textContent = sync.error || (logged ? (sync.pending ? sync.pending + ' 项记录待同步。' : '收藏、点赞与观看进度会自动同步。') + (sync.last_sync ? ' 最近同步：' + new Date(sync.last_sync).toLocaleTimeString() : '') : '收藏、点赞、观看历史和播放进度会与红果账号同步。');
     document.getElementById('account-message').textContent = accountBusy ? '正在连接红果，请稍候…' : accountNotice || data.error || '';
     document.querySelector('.side-item[data-page="account"] span:last-child').textContent = logged ? '我的账号' : '我的 / 登录';
     if (pageMode() === 'account') document.getElementById('page-context').textContent = logged ? '我的账号' : '我的 / 登录';

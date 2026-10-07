@@ -217,6 +217,10 @@ const fixtureVideo = "7690163276214176793"
 func loggedFixture(t *testing.T, h http.HandlerFunc) *accountManager {
 	t.Helper()
 	m := fixtureAccount(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/reading/ugc/action/mget/v" {
+			ioJSON(w, `{"code":0,"data":{"mixed_data_list":null,"has_more":false}}`)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/passport/") || r.URL.Path == "/service/2/device_register/" {
 			accountFixtureResponse(w, r.URL.Path, false)
 			return

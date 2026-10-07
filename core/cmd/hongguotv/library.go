@@ -16,15 +16,22 @@ import (
 var errLibrarySave = errors.New("保存本地记录失败")
 
 type LibraryEntry struct {
-	Drama        Drama   `json:"drama"`
-	Episode      int     `json:"episode,omitempty"`
-	VideoID      string  `json:"video_id,omitempty"`
-	Position     float64 `json:"position,omitempty"`
-	Duration     float64 `json:"duration,omitempty"`
-	Completed    bool    `json:"completed,omitempty"`
-	LastPlayedAt int64   `json:"last_played_at,omitempty"`
-	FavoriteAt   int64   `json:"favorite_at,omitempty"`
-	LikedAt      int64   `json:"liked_at,omitempty"`
+	Drama        Drama        `json:"drama"`
+	Episode      int          `json:"episode,omitempty"`
+	VideoID      string       `json:"video_id,omitempty"`
+	Position     float64      `json:"position,omitempty"`
+	Duration     float64      `json:"duration,omitempty"`
+	Completed    bool         `json:"completed,omitempty"`
+	LastPlayedAt int64        `json:"last_played_at,omitempty"`
+	FavoriteAt   int64        `json:"favorite_at,omitempty"`
+	LikedAt      int64        `json:"liked_at,omitempty"`
+	LikedVideos  []LikedVideo `json:"liked_videos,omitempty"`
+}
+
+type LikedVideo struct {
+	VideoID string `json:"video_id"`
+	Episode int    `json:"episode,omitempty"`
+	LikedAt int64  `json:"liked_at"`
 }
 
 type LibraryData struct {
@@ -112,6 +119,7 @@ func clearLibraryKind(entry *LibraryEntry, kind string) {
 		entry.FavoriteAt = 0
 	case "likes":
 		entry.LikedAt = 0
+		entry.LikedVideos = nil
 	}
 }
 
@@ -177,6 +185,9 @@ func (s *libraryStore) apply(change LibraryChange) (LibraryData, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if change.Action == "like" && s.data.OwnerID != "" && (!validID(change.VideoID) || change.VideoID == "0" || change.Episode < 1 || change.Episode > 10000) {
+		return LibraryData{}, errors.New("缺少当前播放集")
+	}
 	data := cloneLibrary(s.data)
 	if change.Action == "clear" || change.Action == "remove" {
 		for i := range data.Entries {
@@ -210,7 +221,22 @@ func (s *libraryStore) apply(change LibraryChange) (LibraryData, error) {
 				entry.FavoriteAt = 0
 			}
 		case "like":
-			if *change.Value {
+			if change.VideoID != "" {
+				kept := entry.LikedVideos[:0]
+				for _, v := range entry.LikedVideos {
+					if v.VideoID != change.VideoID {
+						kept = append(kept, v)
+					}
+				}
+				entry.LikedVideos = kept
+				if *change.Value {
+					entry.LikedVideos = append(entry.LikedVideos, LikedVideo{VideoID: change.VideoID, Episode: change.Episode, LikedAt: now})
+				}
+				entry.LikedAt = 0
+				for _, v := range entry.LikedVideos {
+					entry.LikedAt = max(entry.LikedAt, v.LikedAt)
+				}
+			} else if *change.Value {
 				entry.LikedAt = now
 			} else {
 				entry.LikedAt = 0
@@ -290,7 +316,11 @@ func (s *server) library(w http.ResponseWriter, r *http.Request) {
 	var data LibraryData
 	var err error
 	if s.accounts != nil {
-		data, err = s.accounts.changeLibrary(change)
+		if change.Action == "like" {
+			data, err = s.accounts.changeVideoLike(r.Context(), change)
+		} else {
+			data, err = s.accounts.changeLibrary(change)
+		}
 	} else {
 		data, err = s.libraryStore.apply(change)
 	}
@@ -298,6 +328,12 @@ func (s *server) library(w http.ResponseWriter, r *http.Request) {
 		status := http.StatusBadRequest
 		if errors.Is(err, errLibrarySave) {
 			status = http.StatusInternalServerError
+		} else if errors.Is(err, errListLogin) {
+			status = http.StatusUnauthorized
+		} else if errors.Is(err, errAccountChanged) {
+			status = http.StatusConflict
+		} else if errors.Is(err, errVideoLikeUpstream) {
+			status = http.StatusBadGateway
 		}
 		writeError(w, status, err.Error())
 		return
