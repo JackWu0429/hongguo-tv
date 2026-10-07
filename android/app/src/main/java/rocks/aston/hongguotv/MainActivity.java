@@ -6,6 +6,9 @@ import android.content.Intent;
 import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
+import android.graphics.Color;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.Window;
@@ -17,6 +20,14 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.widget.Button;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 public class MainActivity extends Activity {
     private static final String CORE_URL = "http://127.0.0.1:8797/";
@@ -25,6 +36,12 @@ public class MainActivity extends Activity {
     private boolean activityForeground;
     private AlertDialog exitDialog;
     private boolean keyboardVisible;
+    private LinearLayout startupPanel;
+    private TextView startupMessage;
+    private Button startupRetry;
+    private Thread startupThread;
+    private boolean destroyed;
+    private boolean pageLoadFailed;
     private final Runnable restoreFullscreen = () -> {
         if (activityForeground && hasWindowFocus() && !isFinishing() && !isDestroyed() && !isKeyboardVisible()) {
             applyFullscreen();
@@ -50,19 +67,49 @@ public class MainActivity extends Activity {
         settings.setUserAgentString(settings.getUserAgentString() + " HongguoTV-Android");
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
+        // Fetch UI assets from the core embedded in this APK after updates.
+        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                pageLoadFailed = false;
+                super.onPageStarted(view, url, favicon);
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (request.isForMainFrame()) { pageLoadFailed = true; showStartupFailure(); }
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                if (!pageLoadFailed && url.startsWith(CORE_URL)) startupPanel.setVisibility(View.GONE);
                 view.evaluateJavascript("window.HongguoTV && window.HongguoTV." +
                         (activityForeground ? "resumeFromBackground()" : "pauseForBackground()"), null);
             }
         });
         webView.setWebChromeClient(new WebChromeClient());
-        setContentView(webView);
+        FrameLayout content = new FrameLayout(this);
+        content.addView(webView, new FrameLayout.LayoutParams(-1, -1));
+        startupPanel = new LinearLayout(this);
+        startupPanel.setOrientation(LinearLayout.VERTICAL);
+        startupPanel.setGravity(Gravity.CENTER);
+        startupPanel.setBackgroundColor(0xFF0C0D12);
+        startupMessage = new TextView(this);
+        startupMessage.setTextColor(Color.WHITE);
+        startupMessage.setTextSize(22);
+        startupPanel.addView(startupMessage);
+        startupRetry = new Button(this);
+        startupRetry.setText("重试");
+        startupRetry.setOnClickListener(view -> { startCoreService(); waitForCore(); });
+        startupPanel.addView(startupRetry);
+        content.addView(startupPanel, new FrameLayout.LayoutParams(-1, -1));
+        setContentView(content);
         View decor = getWindow().getDecorView();
         decor.setOnSystemUiVisibilityChangeListener(visibility -> {
             // Android 6 WebView/IME can clear these flags after the initial launch.
@@ -72,7 +119,48 @@ public class MainActivity extends Activity {
         decor.getViewTreeObserver().addOnGlobalLayoutListener(keyboardLayoutListener);
         applyFullscreen();
         webView.requestFocus(View.FOCUS_DOWN);
-        webView.loadUrl(CORE_URL);
+        waitForCore();
+    }
+
+    private void showStartupFailure() {
+        if (destroyed) return;
+        startupMessage.setText("本机服务连接失败，请重试");
+        startupRetry.setVisibility(View.VISIBLE);
+        startupPanel.setVisibility(View.VISIBLE);
+        startupRetry.requestFocus();
+    }
+
+    private void waitForCore() {
+        if (startupThread != null && startupThread.isAlive()) return;
+        startupMessage.setText("正在启动红果短剧…");
+        startupRetry.setVisibility(View.GONE);
+        startupPanel.setVisibility(View.VISIBLE);
+        startupThread = new Thread(() -> {
+            long deadline = SystemClock.elapsedRealtime() + 30000;
+            boolean ready = false;
+            while (!Thread.currentThread().isInterrupted() && SystemClock.elapsedRealtime() < deadline) {
+                HttpURLConnection connection = null;
+                try {
+                    connection = (HttpURLConnection) new URL(CORE_URL + "api/v1/health").openConnection();
+                    connection.setConnectTimeout(1000);
+                    connection.setReadTimeout(1000);
+                    ready = connection.getResponseCode() == 200;
+                } catch (Exception ignored) {
+                    // Retry only the local process; no external endpoints here.
+                } finally {
+                    if (connection != null) connection.disconnect();
+                }
+                if (ready) break;
+                try { Thread.sleep(250); } catch (InterruptedException interrupted) { return; }
+            }
+            final boolean coreReady = ready;
+            runOnUiThread(() -> {
+                if (destroyed || isFinishing()) return;
+                if (coreReady) { webView.loadUrl(CORE_URL); webView.requestFocus(); }
+                else showStartupFailure();
+            });
+        }, "hongguo-tv-startup");
+        startupThread.start();
     }
 
     private void applyFullscreen() {
@@ -206,6 +294,8 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        destroyed = true;
+        if (startupThread != null) startupThread.interrupt();
         View decor = getWindow().getDecorView();
         decor.removeCallbacks(restoreFullscreen);
         decor.setOnSystemUiVisibilityChangeListener(null);

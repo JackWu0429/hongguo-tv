@@ -22,7 +22,7 @@ import (
 //go:embed ui
 var uiFiles embed.FS
 
-var version = "0.2.0-dev"
+var version = "0.2.1-dev"
 
 type server struct {
 	startedAt    time.Time
@@ -88,13 +88,23 @@ func main() {
 	// served by the same process so the UI never needs a second playback host.
 	mux.HandleFunc("/minireel-proxy/resolve", handleMiniReelResolve)
 	mux.HandleFunc("/minireel-proxy/media/", handleMiniReelMedia)
-	mux.Handle("/", http.FileServer(http.FS(root)))
+	mux.Handle("/", serveUI(root))
 
 	addr := "127.0.0.1:" + strconv.Itoa(*port)
 	log.Printf("hongguo-tv core %s listening on %s", version, addr)
 	if err := http.ListenAndServe(addr, s.withCORS(mux)); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func serveUI(root fs.FS) http.Handler {
+	files := http.FileServer(http.FS(root))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// APK updates must use the embedded UI from the current core, while
+		// leaving DOM storage, account records and the media cache intact.
+		w.Header().Set("Cache-Control", "no-store")
+		files.ServeHTTP(w, r)
+	})
 }
 
 func (s *server) withCORS(next http.Handler) http.Handler {

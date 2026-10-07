@@ -1,0 +1,82 @@
+/* Layout fallbacks are selected by capabilities, never by Android version. */
+.legacy-grid .brand-mark, .legacy-grid .page-placeholder-mark,
+.legacy-grid .search-result-empty, .legacy-grid .rank-empty,
+.legacy-grid .calendar-empty, .legacy-grid .reservation-empty,
+.legacy-grid .detail-modal, .legacy-grid .confirm-modal {
+  display: flex; align-items: center; justify-content: center;
+}
+.legacy-grid .search-results, .legacy-grid .new-grid, .legacy-grid .library-grid {
+  display: flex; flex-wrap: wrap; margin-right: -20px;
+}
+.legacy-grid .search-results > .search-result-card,
+.legacy-grid .new-grid > .new-card, .legacy-grid .library-grid > .library-tile {
+  flex: 0 0 auto; width: calc(100% / 7 - 20px); margin: 0 20px 28px 0;
+}
+.legacy-grid .list-empty, .legacy-grid .search-result-empty, .legacy-grid .calendar-empty { width: 100%; }
+.legacy-grid .rank-row { display: flex; }
+.legacy-grid .rank-row-rank { flex: 0 0 42px; }
+.legacy-grid .rank-row-image { flex: 0 0 116px; margin-left: 18px; }
+.legacy-grid .rank-row > .drama-poster { flex: 0 0 116px; width: 116px; margin-left: 18px; }
+.legacy-grid .rank-row .drama-poster > .rank-row-image { margin-left: 0; }
+.legacy-grid .rank-row-copy { flex: 1; margin: 0 18px; }
+.legacy-grid .rank-row-side { flex: 0 0 94px; }
+.legacy-grid #player-options-list { display: flex; flex-wrap: wrap; margin-right: -12px; }
+.legacy-grid #player-options-list > .player-option { width: calc(50% - 12px); margin: 0 12px 12px 0; }
+/* Intrinsic images may be landscape or vary in size. Reserve a 2:3 box. */
+.legacy-aspect .drama-poster { padding-top: 150%; }
+.legacy-aspect .drama-poster > img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+.legacy-aspect .new-card-poster { padding-top: 150%; }
+.legacy-aspect .new-card-poster > img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+.legacy-aspect .rank-row > .drama-poster { padding-top: 0; height: 150px; }
+
+.legacy-flex-gap .brand-mark { margin-right: 11px; }
+.legacy-flex-gap .side-item + .side-item { margin-top: 5px; }
+.legacy-flex-gap .side-icon { margin-right: 15px; }
+.legacy-flex-gap .channel-tab + .channel-tab { margin-left: 4px; }
+.legacy-flex-gap .hero-top-copy > * + *, .legacy-flex-gap .hero-top-right > * + * { margin-top: 6px; }
+.legacy-flex-gap .catalog-card + .catalog-card { margin-left: 10px; }
+.legacy-flex-gap .round-action + .round-action { margin-top: 18px; }
+.legacy-flex-gap .bottom-controls > * + * { margin-top: 9px; }
+.legacy-flex-gap .playback-buttons > * + * { margin-left: 12px; }
+.legacy-flex-gap .playback-buttons [data-action="fullscreen"] { margin-left: auto; }
+.legacy-flex-gap .player-status > * + * { margin-top: 15px; }
+.legacy-flex-gap .search-box > * + * { margin-left: 10px; }
+.legacy-flex-gap .filter-row > strong { margin-right: 17px; }
+.legacy-flex-gap .filter-options > * + * { margin-left: 14px; }
+.legacy-flex-gap .rank-panel-row > * + * { margin-left: 12px; }
+.legacy-flex-gap .publication-row > img { margin-right: 20px; }
+.legacy-flex-gap .publication-action { margin-left: 20px; }
+.legacy-flex-gap .rank-tabs > * + *, .legacy-flex-gap .new-tabs > * + * { margin-left: 28px; }
+.legacy-flex-gap .rank-heading-row > * + *, .legacy-flex-gap .new-heading-row > * + * { margin-left: 34px; }
+.legacy-flex-gap .rank-main { margin-left: 32px; }
+.legacy-flex-gap .rank-subtab + .rank-subtab { margin-top: 6px; }
+.legacy-flex-gap .rank-row-side > * + * { margin-top: 13px; }
+.legacy-flex-gap .new-filter + .new-filter { margin-left: 10px; }
+.legacy-flex-gap .calendar-day + .calendar-day { margin-left: 10px; }
+.legacy-flex-gap .publication-row + .publication-row { margin-top: 14px; }
+.legacy-flex-gap .reservation-tab + .reservation-tab { margin-left: 12px; }
+.legacy-flex-gap .detail-cover { margin-right: 24px; }
+.legacy-flex-gap .detail-action-row > * + * { margin-left: 12px; }
+.legacy-flex-gap .detail-tab + .detail-tab { margin-left: 16px; }
+.legacy-flex-gap .detail-episode { margin: 4px; }
+.legacy-flex-gap .detail-episodes { padding: 8px 20px 18px; }
+.legacy-flex-gap .series-row + .series-row { margin-top: 12px; }
+.legacy-flex-gap .account-card + .account-card { margin-left: 1.5rem; }
+.legacy-flex-gap .account-form-actions > * { margin: 0 .8rem .8rem 0; }
+.legacy-flex-gap .confirm-button + .confirm-button { margin-left: 14px; }
+.legacy-flex-gap .discussion-close { margin-left: 14px; }
+.legacy-flex-gap .discussion-avatar { margin-right: 12px; }
+.legacy-flex-gap .discussion-actions > * { margin: 0 6px 6px 0; }
+.legacy-flex-gap .discussion-compose-actions > * + * { margin-left: 12px; }
+@media (max-width: 1400px) {
+  .legacy-grid .search-results > .search-result-card,
+  .legacy-grid .new-grid > .new-card, .legacy-grid .library-grid > .library-tile { width: calc(100% / 5 - 20px); }
+  .legacy-grid .rank-row-rank { flex-basis: 34px; }
+  .legacy-grid .rank-row-image { flex-basis: 98px; margin-left: 12px; }
+  .legacy-grid .rank-row > .drama-poster { flex-basis: 98px; width: 98px; margin-left: 12px; }
+  .legacy-aspect .rank-row > .drama-poster { height: 132px; }
+  .legacy-grid .rank-row-copy { margin: 0 12px; }
+  .legacy-grid .rank-row-side { flex-basis: 82px; }
+  .legacy-flex-gap .rank-main { margin-left: 18px; }
+  .legacy-flex-gap .bottom-controls > * + * { margin-top: 6px; }
+}

@@ -177,6 +177,11 @@
     23: 'Enter', 66: 'Enter', 4: 'Escape', 111: 'Escape'
   };
 
+  function playMedia(video) {
+    // play() returned undefined before Chromium 50.
+    try { return Promise.resolve(video.play()); } catch (error) { return Promise.reject(error); }
+  }
+
   function fetchData(url, options) {
     return fetch(url, options).then(function (response) {
       return response.json().then(function (payload) {
@@ -1192,7 +1197,7 @@
     var old = qualityPrevious; qualityPrevious = null;
     if (old && activePlayback === old.playback) {
       setPlayerStatus('');
-      if (old.playing && !document.hidden && !applicationInBackground) document.getElementById('hero-video').play().catch(function () {});
+      if (old.playing && !document.hidden && !applicationInBackground) playMedia(document.getElementById('hero-video')).catch(function () {});
     }
   }
   function switchQuality(value) {
@@ -1217,12 +1222,12 @@
       if (playbackRequest) playbackRequest.position = position;
       video.src = data.path; video.load(); updatePlaybackControls(); closePlayerOptions();
       setPlayerStatus('正在加载视频…');
-      if (previous.playing && !document.hidden && !applicationInBackground) video.play().catch(function () { setPlayerStatus(''); revealControls(); });
+      if (previous.playing && !document.hidden && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus(''); revealControls(); });
     }).catch(function (error) {
       if (epoch !== qualityEpoch || generation !== feedGeneration) return;
       qualityPrevious = null; qualityRequest = null;
       document.getElementById('player-options-message').textContent = error.message + '，原视频保留';
-      if (previous.playing && !document.hidden && !applicationInBackground) video.play().catch(function () {});
+      if (previous.playing && !document.hidden && !applicationInBackground) playMedia(video).catch(function () {});
     });
   }
   function sendDanmaku() {
@@ -1292,7 +1297,7 @@
   function exitCinema(keepHidden) {
     fullscreenExitKeepsHidden = !!keepHidden;
     setCinema(false);
-    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {});
+    if (document.fullscreenElement && document.exitFullscreen) Promise.resolve(document.exitFullscreen()).catch(function () {});
   }
   function toggleCinema() {
     if (shell.classList.contains('is-cinema')) exitCinema();
@@ -1300,7 +1305,7 @@
       setCinema(true);
       // Android already fills the display. Keep the CSS layout if the browser
       // Fullscreen API is unavailable; never fullscreen the video alone.
-      if (shell.requestFullscreen) shell.requestFullscreen().catch(function () {});
+      if (shell.requestFullscreen) Promise.resolve(shell.requestFullscreen()).catch(function () {});
     }
     revealControls();
   }
@@ -1321,7 +1326,7 @@
     var video = document.getElementById('hero-video');
     if (applicationInBackground || !isPlaybackPage() || !video.getAttribute('src')) return false;
     if (command === 'toggle') toggleVideo();
-    else if (command === 'play') video.play().catch(function () { showNotice('请按确认键开始播放'); });
+    else if (command === 'play') playMedia(video).catch(function () { showNotice('请按确认键开始播放'); });
     else if (command === 'pause') video.pause();
     else if (command === 'forward') seekBy(10);
     else if (command === 'rewind') seekBy(-10);
@@ -1803,12 +1808,12 @@
       if (event.touches.length !== 1 || !allowed(event.target)) return;
       var point = event.touches[0];
       touch = { x: point.clientX, y: point.clientY, at: Date.now(), generation: feedGeneration };
-    }, { passive: true });
+    }, false);
     surface.addEventListener('touchmove', function (event) {
       if (!touch || event.touches.length !== 1) { touch = null; return; }
       var point = event.touches[0];
       if (Math.abs(point.clientY - touch.y) > 8 && Math.abs(point.clientY - touch.y) > Math.abs(point.clientX - touch.x)) event.preventDefault();
-    }, { passive: false });
+    }, false);
     surface.addEventListener('touchend', function (event) {
       var start = touch;
       touch = null;
@@ -1820,7 +1825,7 @@
       suppressClickUntil = Date.now() + 400;
       switchRecommendation(dy < 0 ? 1 : -1);
       goFocus(document.getElementById('hero-feed-focus'));
-    }, { passive: false });
+    }, false);
     surface.addEventListener('touchcancel', function () { touch = null; });
     surface.addEventListener('click', function (event) {
       if (Date.now() < suppressClickUntil) { event.preventDefault(); event.stopImmediatePropagation(); }
@@ -1839,7 +1844,7 @@
       wheelConsumed = true;
       switchRecommendation(wheelDelta > 0 ? 1 : -1);
       goFocus(document.getElementById('hero-feed-focus'));
-    }, { passive: false });
+    }, false);
   }
 
   function firstVid(item) {
@@ -2027,7 +2032,7 @@
     var video = document.getElementById('hero-video');
     var placeholder = document.getElementById('hero-placeholder');
     var generation = ++feedGeneration;
-    hero.classList.add('is-feed');
+    hero.classList.add('is-feed', 'is-preparing-video');
     hero.classList.remove('is-catalog-loading');
     video.classList.remove('has-source');
     video.removeAttribute('src');
@@ -2067,7 +2072,7 @@
         placeholder.classList.add('is-hidden');
         video.load();
         setPlayerStatus('正在加载视频…');
-        if (!document.hidden && !applicationInBackground) video.play().catch(function () { setPlayerStatus(''); revealControls(); showNotice('视频已准备好，请按确认键开始播放'); });
+        if (!document.hidden && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus(''); revealControls(); showNotice('视频已准备好，请按确认键开始播放'); });
         else { setPlayerStatus(''); revealControls(); }
       })
       .catch(function (error) {
@@ -2619,6 +2624,7 @@
     document.getElementById('hero-video').pause();
     document.getElementById('hero-video').removeAttribute('src');
     document.getElementById('hero-video').classList.remove('has-source');
+    document.getElementById('hero').classList.remove('is-preparing-video');
     document.getElementById('hero-video').load();
     resetDanmaku(); closeDiscussion(false);
     featuredItem = null; feedItems = []; feedIndex = -1;
@@ -2916,10 +2922,10 @@
     nodes.episodes.innerHTML = '';
     (item.episodes || []).forEach(function (episode) {
       var button = document.createElement('button');
-      button.className = 'detail-episode' + (episode.locked ? ' is-locked' : '');
+      button.className = 'detail-episode';
       button.dataset.index = String(Math.max(0, episode.index - 1));
       button.textContent = String(episode.index);
-      button.title = episode.locked ? '接口标记为锁定，仍尝试使用播放服务解析' : '播放第' + episode.index + '集';
+      button.title = '播放第' + episode.index + '集';
       button.addEventListener('click', function () { playEpisode(Number(button.dataset.index)); });
       nodes.episodes.appendChild(button);
     });
@@ -3005,7 +3011,7 @@
   function toggleVideo() {
     var video = document.getElementById('hero-video');
     if (!video.src) { showNotice('请先打开一部短剧并选择集数。'); return; }
-    if (video.paused) video.play().catch(function () { showNotice('播放被设备阻止，请再次确认。'); });
+    if (video.paused) playMedia(video).catch(function () { showNotice('播放被设备阻止，请再次确认。'); });
     else video.pause();
   }
 
@@ -3209,7 +3215,7 @@
     var rect = this.getBoundingClientRect();
     seekTo((event.clientX - rect.left) / rect.width * document.getElementById('hero-video').duration);
   });
-  document.addEventListener('pointermove', function (event) { if (isPlaybackPage() && event.target.closest('#hero')) revealControls(); });
+  document.addEventListener(window.PointerEvent ? 'pointermove' : 'mousemove', function (event) { if (isPlaybackPage() && event.target.closest('#hero')) revealControls(); });
   document.addEventListener('fullscreenchange', function () {
     if (document.fullscreenElement) { nativeFullscreen = true; setCinema(true); }
     else if (nativeFullscreen) {
@@ -3220,13 +3226,20 @@
   });
 
   function loadStatus() {
-    fetch('/api/v1/status').then(function (response) { return response.json(); }).then(function (data) {
-      status.textContent = data.ok ? '已连接' : '连接异常';
-      status.dataset.ok = data.ok ? 'true' : 'false';
-    }).catch(function () {
-      status.textContent = '连接失败';
-      status.dataset.ok = 'false';
-    });
+    // Use a bounded request even on WebViews without fetch/AbortController.
+    var request = new XMLHttpRequest();
+    request.open('GET', '/api/v1/status', true);
+    request.timeout = 8000;
+    function failed() { status.textContent = '本机服务连接失败，请重新打开应用'; status.dataset.ok = 'false'; }
+    request.onload = function () {
+      try {
+        var data = JSON.parse(request.responseText);
+        status.textContent = request.status === 200 && data.ok ? '已连接' : '连接异常';
+        status.dataset.ok = request.status === 200 && data.ok ? 'true' : 'false';
+      } catch (error) { failed(); }
+    };
+    request.onerror = failed; request.ontimeout = failed;
+    request.send();
   }
 
   var media = document.getElementById('hero-video');
@@ -3241,6 +3254,7 @@
     document.getElementById('danmaku-layer').classList.remove('is-paused'); tickDanmaku();
     if (!activePlayback || activePlayback.generation !== feedGeneration) return;
     if (applicationInBackground || document.hidden) { media.pause(); return; }
+    document.getElementById('hero').classList.remove('is-preparing-video');
     activePlayback.started = true;
     setPlayerStatus(''); updatePlaybackControls(); scheduleControlsHide();
     saveProgress(true);
@@ -3260,7 +3274,12 @@
   media.addEventListener('volumechange', updatePlaybackControls);
   media.addEventListener('emptied', updatePlaybackControls);
   media.addEventListener('waiting', function () { if (activePlayback) setPlayerStatus(activePlayback.started ? '正在缓冲…' : '正在加载视频…'); });
-  media.addEventListener('canplay', function () { if (media.paused) setPlayerStatus(''); });
+  media.addEventListener('canplay', function () {
+    if (media.paused && activePlayback && activePlayback.generation === feedGeneration && media.readyState >= 2) {
+      document.getElementById('hero').classList.remove('is-preparing-video');
+      setPlayerStatus('');
+    }
+  });
   media.addEventListener('seeked', function () { resetDanmaku(); tickDanmaku(); updatePlaybackControls(); saveProgress(true); if (media.paused) setPlayerStatus(''); });
   media.addEventListener('error', function () { if (activePlayback && media.getAttribute('src')) setPlayerStatus('这集未能正常播放', true); });
   media.addEventListener('ended', function () {

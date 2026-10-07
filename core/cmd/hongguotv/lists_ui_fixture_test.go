@@ -418,7 +418,7 @@ func TestListsBrowserFixture(t *testing.T) {
 			d.SeriesID = q.Get("series_id")
 			if likesFixture {
 				for i, vid := range d.VidList {
-					d.Episodes = append(d.Episodes, Episode{Index: i + 1, VideoID: vid, Title: fmt.Sprintf("第%d集", i+1)})
+					d.Episodes = append(d.Episodes, Episode{Index: i + 1, VideoID: vid, Title: fmt.Sprintf("第%d集", i+1), Locked: i >= 3})
 				}
 			}
 			if seriesFixture {

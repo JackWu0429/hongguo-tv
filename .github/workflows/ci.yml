@@ -42,11 +42,12 @@ jobs:
       - name: Check TV JavaScript and pagination
         run: |
           node --check core/cmd/hongguotv/ui/app.js
+          node --check core/cmd/hongguotv/ui/compat.js
           node --test tests/*.test.cjs
       - name: Build Android native binaries
         run: bash scripts/build_android_binaries.sh
         env:
-          VERSION: 0.2.0-${{ github.sha }}
+          VERSION: 0.2.1-${{ github.sha }}
       - name: Build and lint debug APK
         run: gradle -p android assembleDebug lintDebug
       - name: Upload debug APK
