@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+from urllib.parse import quote
 
 REPOSITORY = 'aston314/hongguo-tv-releases'
 
@@ -19,8 +20,11 @@ def gh(*args, payload=None, required=True):
         raise RuntimeError(result.stderr.strip() or 'GitHub publication failed')
     return result
 
-def api(path, **kwargs):
-    return json.loads(gh('api', path, **kwargs).stdout)
+def api(path, method=None, **kwargs):
+    args = ['api', path]
+    if method is not None:
+        args += ['--method', method]
+    return json.loads(gh(*args, **kwargs).stdout)
 
 def release_by_tag(tag):
     result = gh('api', f'repos/{REPOSITORY}/releases/tags/{tag}', required=False)
@@ -31,6 +35,22 @@ def release_by_tag(tag):
     # A draft's tag may not exist until publication. Resolve it from drafts,
     # then use its release ID rather than requiring the future Git tag.
     return next((r for r in api(f'repos/{REPOSITORY}/releases?per_page=100') if r['tag_name'] == tag), None)
+
+def upload_asset(release_id, path):
+    # Keep authentication in gh. The upload host and repository are fixed;
+    # do not follow an upload_url obtained from arbitrary metadata.
+    endpoint = f'https://uploads.github.com/repos/{REPOSITORY}/releases/{release_id}/assets?name={quote(path.name)}'
+    return json.loads(gh('api', '--method', 'POST', endpoint,
+                         '--header', 'Content-Type: application/octet-stream',
+                         '--input', str(path)).stdout)
+
+def verify_assets(release, files):
+    assets = {asset['name']: asset for asset in release['assets']}
+    for path in files:
+        asset = assets.get(path.name)
+        digest = 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest()
+        if asset is None or asset.get('digest') != digest or asset.get('size') != path.stat().st_size:
+            raise ValueError(f'Published asset differs: {path.name}; preserving existing files')
 
 def publish(directory, notes):
     repo = api(f'repos/{REPOSITORY}')
@@ -48,24 +68,29 @@ def publish(directory, notes):
         raise ValueError('SHA256SUMS differs from APK')
     if manifest['download_url'] != f'https://github.com/{REPOSITORY}/releases/download/{tag}/{apk.name}':
         raise ValueError('Manifest points outside the public release')
+    files = (apk, sums, manifest_path)
     release = release_by_tag(tag)
     if release is None:
-        gh('release', 'create', tag, '--repo', REPOSITORY, '--draft', '--title', f'红果短剧 {tag}', '--notes-file', str(notes))
-    else:
-        if not release['draft']:
-            asset = next((a for a in release['assets'] if a['name'] == apk.name), None)
-            if asset is None or asset.get('digest') != 'sha256:' + digest:
-                raise ValueError('An existing published release differs; preserving its assets')
-    current = release_by_tag(tag)
-    if current is None:
-        raise RuntimeError('Created release is not readable with the publication token')
-    if current['draft']:
-        gh('release', 'upload', tag, str(apk), str(sums), str(manifest_path), '--repo', REPOSITORY, '--clobber')
-        uploaded = api(f'repos/{REPOSITORY}/releases/{current["id"]}')
-        asset = next(a for a in uploaded['assets'] if a['name'] == apk.name)
-        if asset.get('digest') != 'sha256:' + digest:
-            raise ValueError('Uploaded GitHub asset digest differs')
-        gh('release', 'edit', tag, '--repo', REPOSITORY, '--draft=false')
+        # POST returns the authoritative ID even before draft/tag discovery
+        # catches up. Retain that ID for uploads and publication.
+        release = api(f'repos/{REPOSITORY}/releases', payload={
+            'tag_name': tag, 'target_commitish': 'main', 'draft': True,
+            'name': f'红果短剧 {tag}', 'body': notes.read_text()})
+    if release['draft']:
+        assets = {asset['name']: asset for asset in release['assets']}
+        for path in files:
+            asset = assets.get(path.name)
+            if asset is None:
+                asset = upload_asset(release['id'], path)
+            verify_assets({'assets': [asset]}, (path,))
+        # Re-read by ID to verify the complete upload before making it public.
+        uploaded = api(f'repos/{REPOSITORY}/releases/{release["id"]}')
+        verify_assets(uploaded, files)
+        release = api(f'repos/{REPOSITORY}/releases/{release["id"]}',
+                      payload={'draft': False}, method='PATCH')
+    verify_assets(release, files)
+    if release['draft']:
+        raise RuntimeError('Release remains a draft; update metadata was not changed')
     old_result = gh('api', f'repos/{REPOSITORY}/contents/update.json', required=False)
     payload = {'message': f'Publish Android update {tag}', 'content': base64.b64encode(manifest_path.read_bytes()).decode()}
     if old_result.returncode == 0:
@@ -76,6 +101,9 @@ def publish(directory, notes):
             return
         if previous['version_code'] == manifest['version_code'] and previous['sha256'] != digest:
             raise ValueError('Refusing to change APK bytes for an existing versionCode')
+        if base64.b64decode(old['content']) == manifest_path.read_bytes():
+            print(f'{tag} is already published with matching files and metadata')
+            return
         payload['sha'] = old['sha']
     gh('api', '--method', 'PUT', f'repos/{REPOSITORY}/contents/update.json', payload=payload)
     print(f'Published {tag}: https://github.com/{REPOSITORY}/releases/tag/{tag}')

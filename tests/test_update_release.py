@@ -1,9 +1,13 @@
 import importlib.util
+import base64
+import hashlib
 import json
 from pathlib import Path
 import tempfile
 import unittest
 import zipfile
+from types import SimpleNamespace
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 def module(name):
@@ -68,5 +72,100 @@ class ReleaseUpdateTests(unittest.TestCase):
         try:
             with self.assertRaises(ValueError): publish.publish(self.root, self.notes)
         finally: publish.api = original
+
+    def publication_fixture(self, draft=None, old_manifest=None, corrupt_upload=False):
+        value = self.manifest()
+        if old_manifest is True: old_manifest = value
+        (self.root / 'update.json').write_text(json.dumps(value))
+        (self.root / 'SHA256SUMS.txt').write_text(value['sha256'] + '  ' + self.apk.name + '\n')
+        release = {'id': 42, 'tag_name': 'v0.2.7', 'draft': True, 'assets': []}
+        if draft is not None:
+            release['draft'] = draft
+            for name in [self.apk.name, 'SHA256SUMS.txt', 'update.json']:
+                path = self.root / name
+                release['assets'].append({'name': name, 'size': path.stat().st_size,
+                                         'digest': 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest()})
+        events = []
+        def fake_api(path, payload=None, method=None):
+            events.append((path, payload, method))
+            if path == f'repos/{publish.REPOSITORY}':
+                return {'private': False, 'default_branch': 'main'}
+            if path == f'repos/{publish.REPOSITORY}/releases':
+                self.assertTrue(payload['draft'])
+                return release.copy()
+            if path == f'repos/{publish.REPOSITORY}/releases/42':
+                if method == 'PATCH':
+                    self.assertEqual(payload, {'draft': False})
+                    release['draft'] = False
+                return release.copy()
+            self.fail('Unexpected API endpoint: ' + path)
+        def fake_gh(*args, **kwargs):
+            events.append((args, kwargs))
+            if args[:2] == ('api', f'repos/{publish.REPOSITORY}/contents/update.json'):
+                if old_manifest is None: return SimpleNamespace(returncode=1, stderr='HTTP 404', stdout='')
+                content = json.dumps(old_manifest).encode()
+                return SimpleNamespace(returncode=0, stdout=json.dumps({'sha': 'old-sha', 'content': base64.b64encode(content).decode()}))
+            if args[:3] == ('api', '--method', 'PUT'):
+                return SimpleNamespace(returncode=0, stdout='{}')
+            if args[:3] == ('api', '--method', 'POST'):
+                self.assertTrue(args[3].startswith(f'https://uploads.github.com/repos/{publish.REPOSITORY}/releases/42/assets?name='))
+                path = Path(args[args.index('--input') + 1])
+                asset = {'name': path.name, 'size': path.stat().st_size,
+                         'digest': 'sha256:' + ('0' * 64 if corrupt_upload else hashlib.sha256(path.read_bytes()).hexdigest())}
+                release['assets'].append(asset)
+                return SimpleNamespace(returncode=0, stdout=json.dumps(asset))
+            self.fail('Unexpected gh call: ' + str(args))
+        return value, release, events, fake_api, fake_gh
+
+    def test_new_draft_uses_returned_id_and_uploads_only_three_files(self):
+        _, release, events, fake_api, fake_gh = self.publication_fixture()
+        (self.root / 'private-source.go').write_text('must never be uploaded')
+        with patch.object(publish, 'api', fake_api), patch.object(publish, 'gh', fake_gh), \
+                patch.object(publish, 'release_by_tag', return_value=None) as lookup:
+            publish.publish(self.root, self.notes)
+        lookup.assert_called_once_with('v0.2.7')
+        self.assertFalse(release['draft'])
+        self.assertEqual([a['name'] for a in release['assets']], [self.apk.name, 'SHA256SUMS.txt', 'update.json'])
+        self.assertEqual(events[-1][0][:3], ('api', '--method', 'PUT'))
+
+    def test_bad_uploaded_digest_never_publishes_or_updates_manifest(self):
+        _, release, events, fake_api, fake_gh = self.publication_fixture(corrupt_upload=True)
+        with patch.object(publish, 'api', fake_api), patch.object(publish, 'gh', fake_gh), \
+                patch.object(publish, 'release_by_tag', return_value=None):
+            with self.assertRaises(ValueError): publish.publish(self.root, self.notes)
+        self.assertTrue(release['draft'])
+        self.assertFalse(any(e[0][:3] == ('api', '--method', 'PUT') for e in events))
+
+    def test_published_release_is_idempotent(self):
+        _, release, events, fake_api, fake_gh = self.publication_fixture(draft=False, old_manifest=True)
+        with patch.object(publish, 'api', fake_api), patch.object(publish, 'gh', fake_gh), \
+                patch.object(publish, 'release_by_tag', return_value=release):
+            publish.publish(self.root, self.notes)
+        self.assertFalse(any(e[0][:3] in [('api', '--method', 'PUT'), ('api', '--method', 'POST')] for e in events))
+
+    def test_published_asset_mismatch_is_preserved_and_rejected(self):
+        _, release, events, fake_api, fake_gh = self.publication_fixture(draft=False)
+        release['assets'][1]['digest'] = 'sha256:' + '0' * 64
+        with patch.object(publish, 'api', fake_api), patch.object(publish, 'gh', fake_gh), \
+                patch.object(publish, 'release_by_tag', return_value=release):
+            with self.assertRaises(ValueError): publish.publish(self.root, self.notes)
+        self.assertEqual(len(events), 1)
+
+    def test_older_release_never_regresses_latest_version(self):
+        _, release, events, fake_api, fake_gh = self.publication_fixture(draft=False, old_manifest={'version_code': 10})
+        with patch.object(publish, 'api', fake_api), patch.object(publish, 'gh', fake_gh), \
+                patch.object(publish, 'release_by_tag', return_value=release):
+            publish.publish(self.root, self.notes)
+        self.assertFalse(any(e[0][:3] == ('api', '--method', 'PUT') for e in events))
+
+    def test_draft_resume_keeps_existing_matching_assets(self):
+        _, release, events, fake_api, fake_gh = self.publication_fixture(draft=True)
+        release['assets'] = release['assets'][:1]
+        with patch.object(publish, 'api', fake_api), patch.object(publish, 'gh', fake_gh), \
+                patch.object(publish, 'release_by_tag', return_value=release):
+            publish.publish(self.root, self.notes)
+        self.assertEqual(len(release['assets']), 3)
+        uploads = [e for e in events if e[0][:3] == ('api', '--method', 'POST')]
+        self.assertEqual(len(uploads), 2)
 
 if __name__ == '__main__': unittest.main()
