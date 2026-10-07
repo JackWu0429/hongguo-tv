@@ -409,6 +409,7 @@ button:focus { outline: none; }
 .account-card label { display: block; margin: 1rem 0 .6rem; color: #bbbcc8; }
 .account-input { width: 100%; padding: .9rem 1rem; box-sizing: border-box; border: 2px solid #41414c; border-radius: .6rem; background: #101016; color: #fff; font-size: 1.3rem; }
 .account-input:focus { border-color: #fff; outline: none; background: #242432; }
+.account-input-help { color: #b0afba; font-size: .95rem; line-height: 1.6; margin: .8rem 0; }
 .account-form-actions { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 1.5rem; }
 .account-action { padding: .9rem 1.3rem; font: inherit; font-size: 1.15rem; color: #fff; border: 2px solid transparent; border-radius: .6rem; background: #333340; cursor: pointer; }
 .account-primary { background: #e64254; }
@@ -452,3 +453,46 @@ button:focus { outline: none; }
 .reservation-login { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; min-height: 260px; }
 .reservation-login p { margin: 0 0 20px; }
 .reservation-login .publication-action { margin: 0; }
+
+/* Public interaction statistics share the current episode; no extra focus nodes. */
+.round-action .action-count { font-size: 19px; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.right-actions { top: 50%; transform: translateY(-50%); gap: 12px; }
+.support-page { display: flex; flex-direction: column; align-items: center; padding-top: 28px; }
+.support-heading { width: 100%; max-width: 980px; text-align: center; }
+.support-kicker { display: block; margin-bottom: 10px; color: #f58ca2; font-size: 14px; letter-spacing: .12em; }
+.support-heading h1 { font-size: 34px; }
+.support-heading p { margin: 14px 0 0; color: #b9bac6; font-size: 17px; line-height: 1.75; }
+.support-methods { display: flex; align-items: stretch; width: 100%; max-width: 940px; margin-top: 28px; }
+.support-card { display: flex; flex: 1 1 0; flex-direction: column; align-items: center; min-width: 0; padding: 20px; text-align: center; background: #1d1e27; border: 1px solid #33343f; border-radius: 22px; }
+.support-card + .support-card { margin-left: 26px; }
+.support-card.is-focused, .support-card:focus { box-shadow: 0 0 0 3px #fff, 0 16px 36px rgba(0,0,0,.25); background: #272832; }
+.support-card-head { display: flex; align-items: center; width: 100%; margin-bottom: 16px; }
+.support-card-head h2 { margin: 0; font-size: 20px; }
+.support-card-head > span:last-child { margin-left: auto; color: #9294a5; font-size: 12px; }
+.support-method-dot { width: 10px; height: 10px; flex: 0 0 10px; margin-right: 10px; border-radius: 50%; }
+.support-method-wechat { background: #0abb62; }
+.support-method-alipay { background: #1976ff; }
+.support-qr-frame { width: 100%; height: 340px; }
+.support-qr-frame img { display: block; width: auto; height: 100%; max-width: 100%; margin: auto; object-fit: contain; border-radius: 10px; }
+.support-card > p { margin: 16px 0 0; color: #d0d1dc; font-size: 15px; }
+.support-thanks { margin: 24px 0 0; color: #9395a5; font-size: 14px; }
+.support-modal { position: absolute; z-index: 25; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.86); padding: 18px; }
+.support-modal-panel { max-height: 100%; padding: 18px 22px; background: #1d1e27; border: 1px solid #3c3d49; border-radius: 20px; }
+.support-modal-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.support-modal-heading h2 { margin: 0 35px 0 0; font-size: 22px; }
+.support-close { padding: 10px 20px; background: #363742; border-radius: 10px; }
+.support-close.is-focused, .support-close:focus { box-shadow: 0 0 0 3px #fff; }
+.support-modal-panel > img { display: block; width: auto; height: calc(100vh - 180px); max-width: 100%; margin: auto; border-radius: 8px; }
+.support-modal-panel > p { margin: 14px 0 0; color: #aaaebc; text-align: center; font-size: 14px; }
+@media (max-height: 800px) {
+  .support-page { padding-top: 18px; }
+  .support-heading h1 { font-size: 28px; }
+  .support-heading p { margin-top: 10px; font-size: 15px; }
+  .support-methods { margin-top: 20px; max-width: 810px; }
+  .support-card { padding: 15px 18px; border-radius: 18px; }
+  .support-card-head { margin-bottom: 12px; }
+  .support-qr-frame { height: 266px; }
+  .support-card > p { margin-top: 12px; }
+  .support-thanks { margin-top: 16px; }
+}
+.app-shell[data-mode="support"] .top-bar { background: #111217; }

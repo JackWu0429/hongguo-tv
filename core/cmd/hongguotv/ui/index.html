@@ -155,7 +155,7 @@
               <h2>手机号登录</h2>
               <label for="account-phone">手机号</label><input class="account-input" id="account-phone" data-focus="account-phone" type="tel" inputmode="tel" maxlength="11" autocomplete="off" placeholder="请输入手机号">
               <div class="account-code-field is-hidden" id="account-code-field"><label for="account-code">短信验证码</label><input class="account-input" id="account-code" data-focus="account-code" type="text" inputmode="numeric" maxlength="8" autocomplete="one-time-code" placeholder="请输入验证码"></div>
-              <div class="account-form-actions"><button class="account-action" id="account-send-code" data-focus="account-send">获取验证码</button><button class="account-action account-primary is-hidden" id="account-login" data-focus="account-login">登录</button><button class="account-action is-hidden" id="account-change-phone" data-focus="account-change-phone">换手机号</button></div>
+              <p class="account-input-help">遥控器：确认键输入，返回键完成；输入完成后可用方向键选择按钮。</p><div class="account-form-actions"><button class="account-action" id="account-send-code" data-focus="account-send">获取验证码</button><button class="account-action account-primary is-hidden" id="account-login" data-focus="account-login">登录</button><button class="account-action is-hidden" id="account-change-phone" data-focus="account-change-phone">换手机号</button></div>
             </div>
             <div id="account-mfa" class="is-hidden"><h2>还需要短信验证</h2><p>请用登录的手机号，发送以下短信：</p><dl><dt>收件号码</dt><dd id="account-sms-number"></dd><dt>短信内容</dt><dd id="account-sms-content"></dd></dl><p>发送后点击“我已发送”。最多等待 90 秒，可以随时取消。</p><div class="account-form-actions"><button class="account-action account-primary" id="account-verify" data-focus="account-verify">我已发送</button><button class="account-action" id="account-cancel" data-focus="account-cancel">取消验证</button></div></div>
             <div id="account-profile" class="is-hidden"><div class="account-avatar"><svg><use href="#icon-user" xlink:href="#icon-user"></use></svg></div><h2 id="account-name"></h2><p id="account-phone-mask"></p><button class="account-action" id="account-logout" data-focus="account-logout">退出账号</button></div>
@@ -167,10 +167,19 @@
           <h2>版本更新</h2>
           <p>当前版本 <strong id="app-current-version">读取中…</strong></p>
           <p id="app-update-state" role="status" aria-live="polite">启动后每天自动检查一次，播放时不打扰。</p>
-          <div class="app-update-actions"><button class="app-update-action account-action" id="app-check-update" data-focus="app-check-update">检查更新</button><button class="app-update-action account-action" id="app-update-source" data-focus="app-update-source">下载代理</button></div>
-          <p id="app-update-source-label" class="account-footnote">默认 ghfast，连接失败时尝试直连。</p>
+          <div class="app-update-actions"><button class="app-update-action account-action" id="app-check-update" data-focus="app-check-update">检查更新</button><button class="app-update-action account-action" id="app-update-source" data-focus="app-update-source">下载设置</button></div>
         </div>
       </section>
+
+      <section id="support-page" class="page-workspace support-page is-hidden" aria-labelledby="support-title">
+        <div class="support-heading"><span class="support-kicker">谢谢你的支持</span><h1 id="support-title">喜欢这里？请我喝杯咖啡</h1><p>如果这里让你少花一点找剧的时间，多一点追剧的快乐，欢迎请我喝杯咖啡。<br>你的支持，会成为继续打磨体验、保持更新的一份动力。</p></div>
+        <div class="support-methods">
+          <button class="support-card" data-focus="support-wechat" aria-label="放大微信打赏二维码"><div class="support-card-head"><span class="support-method-dot support-method-wechat"></span><h2>微信打赏</h2><span>确认键放大</span></div><div class="support-qr-frame"><img src="/images/support-wechat.png" alt="微信打赏二维码" draggable="false"></div><p>打开微信，扫一扫</p></button>
+          <button class="support-card" data-focus="support-alipay" aria-label="放大支付宝打赏二维码"><div class="support-card-head"><span class="support-method-dot support-method-alipay"></span><h2>支付宝打赏</h2><span>确认键放大</span></div><div class="support-qr-frame"><img src="/images/support-alipay.png" alt="支付宝打赏二维码" draggable="false"></div><p>打开支付宝，扫一扫</p></button>
+        </div>
+        <p class="support-thanks">一杯咖啡，一份鼓励。谢谢你，让这里变得更好。</p>
+      </section>
+      <div id="support-modal" class="support-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="support-modal-title" aria-hidden="true"><div class="support-modal-panel"><div class="support-modal-heading"><h2 id="support-modal-title">扫码打赏</h2><button id="support-close" class="support-close" data-focus="support-close">关闭</button></div><img id="support-large-qr" alt="打赏二维码"><p>用手机扫一扫 · 按返回键关闭</p></div></div>
 
       <section class="hero is-catalog-loading" id="hero" aria-label="推荐视频">
         <div class="hero-media">
@@ -196,9 +205,9 @@
         </div>
 
         <div class="right-actions" data-focus-zone="actions" aria-label="视频操作">
-          <button class="round-action" data-action="like" data-focus="hero-like" aria-pressed="false"><svg><use href="#icon-like" xlink:href="#icon-like"></use></svg><small>点赞</small></button>
-          <button class="round-action" data-action="favorite" data-focus="hero-favorite" aria-pressed="false"><svg><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><small>收藏</small></button>
-          <button class="round-action" data-action="comment" data-focus="hero-comment"><svg><use href="#icon-comment" xlink:href="#icon-comment"></use></svg><small>评论</small></button>
+          <button class="round-action" data-action="like" data-focus="hero-like" aria-pressed="false"><svg><use href="#icon-like" xlink:href="#icon-like"></use></svg><strong class="action-count" id="hero-like-count">—</strong><small>点赞</small></button>
+          <button class="round-action" data-action="favorite" data-focus="hero-favorite" aria-pressed="false"><svg><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><strong class="action-count" id="hero-favorite-count">—</strong><small>收藏</small></button>
+          <button class="round-action" data-action="comment" data-focus="hero-comment"><svg><use href="#icon-comment" xlink:href="#icon-comment"></use></svg><strong class="action-count" id="hero-comment-count">—</strong><small>评论</small></button>
           <button class="round-action" data-action="danmaku" data-focus="hero-danmaku" aria-pressed="false"><svg><use href="#icon-danmaku" xlink:href="#icon-danmaku"></use></svg><small>弹幕关</small></button>
         </div>
 
@@ -253,6 +262,7 @@
   <script src="/pagination.js"></script>
   <script src="/episode-prefetch.js"></script>
   <script src="/updates.js"></script>
+  <script src="/engagement.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

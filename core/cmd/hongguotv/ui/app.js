@@ -37,6 +37,7 @@
     accountInputs: '.account-input',
     accountActions: '.account-action',
     appUpdates: '.app-update-action',
+    support: '.support-card, .support-close',
     confirmation: '.confirm-button',
     playerOptions: '.player-option, #player-compose-input',
     modalActions: '.modal-action',
@@ -48,7 +49,12 @@
   var notice = document.getElementById('action-notice');
   var shell = document.querySelector('.app-shell');
   var androidShell = /HongguoTV-Android/.test(navigator.userAgent);
+  var accountEditingInput = null;
   var mainSurface = document.getElementById('main-surface');
+  var supportPage = document.getElementById('support-page');
+  var supportModalOpen = false;
+  var supportReturnFocus = null;
+  var engagement;
   var pagePlaceholder = document.getElementById('page-placeholder');
   var detailModal = document.getElementById('detail-modal');
   var detailModalOpen = false;
@@ -291,7 +297,7 @@
     key: function (item) { return item.comment_id; },
     cursor: function (data) { return data.next_cursor ? { cursor: data.next_cursor } : {}; },
     request: function (params, signal) { return fetchData('/api/v1/comments?' + new URLSearchParams(params), signal ? { signal: signal } : {}); },
-    metadata: function (data) { if (discussionSession) document.getElementById('discussion-title').textContent = '第' + discussionSession.episode + '集评论 · ' + (data.total || 0); },
+    metadata: function (data) { if (discussionSession) { document.getElementById('discussion-title').textContent = '第' + discussionSession.episode + '集评论 · ' + (data.total || 0); engagement.commentTotal(discussionSession, data.total); } },
     clear: function () { renderMessage(document.getElementById('discussion-list'), 'list-empty', '正在读取评论…'); },
     render: renderDiscussion,
     status: function (p) { listStatus(p, 'discussion-pagination'); }, after: queueTailCheck
@@ -575,7 +581,8 @@
     Array.prototype.forEach.call(document.querySelectorAll(query), function (element) {
       var style = window.getComputedStyle(element);
       var insideModal = element.closest && element.closest('#detail-modal');
-      if (confirmOpen) { if (!element.closest('#confirm-modal')) return; }
+      if (supportModalOpen) { if (!element.closest('#support-modal')) return; }
+      else if (confirmOpen) { if (!element.closest('#confirm-modal')) return; }
       else if (playerOptionsOpen) { if (!element.closest('#player-options')) return; }
       else if (discussionOpen) { if (!element.closest('#discussion-panel')) return; }
       else if (element.closest('#discussion-panel')) return;
@@ -597,6 +604,7 @@
 
   function zoneOf(element) {
     if (!element) return '';
+    if (element.classList.contains('support-card') || element.classList.contains('support-close')) return 'support';
     if (element.classList.contains('discussion-item') || element.classList.contains('discussion-close')) return 'discussion';
     if (element.classList.contains('side-item')) return 'sidebar';
     if (element.classList.contains('channel-tab')) return 'channels';
@@ -647,6 +655,7 @@
     // The default scroll behavior is sufficient; old WebViews have no
     // focus-options overload.
     var previous = document.activeElement;
+    if (accountEditingInput && previous === accountEditingInput && element !== previous) finishAccountEditing(false);
     if (previous && previous.tagName === 'INPUT' && element.tagName !== 'INPUT' && window.HongguoTVInput) window.HongguoTVInput.finishEditing();
     element.focus();
     markFocus(element);
@@ -662,6 +671,7 @@
     if (remembered && focusables().indexOf(remembered) >= 0) return remembered;
     if (pageMode() === 'search') return searchInput || document.querySelector('.search-submit');
     if (pageMode() === 'account') return firstVisible('.account-input') || firstVisible('.account-action');
+    if (pageMode() === 'support') return firstVisible('.support-card');
     if (isLibraryPage()) return firstVisible('.library-card') || firstVisible('[data-action="library-discover"]') || firstVisible('.library-toolbar-button');
     if (pageMode() === 'rank') return firstVisible('.rank-tab.is-active') || firstRankTab();
     if (pageMode() === 'new') return firstVisible('.new-tab.is-active') || firstNewTab();
@@ -700,7 +710,7 @@
   function firstCalendarRow() { return firstVisible('.calendar-row'); }
 
   function hideWorkspacePages() {
-    [rankPage, newPage, reservationPage, libraryPage, accountPage].forEach(function (page) {
+    [rankPage, newPage, reservationPage, libraryPage, accountPage, supportPage].forEach(function (page) {
       if (page) page.classList.add('is-hidden');
     });
   }
@@ -805,6 +815,7 @@
   }
 
   function moveFrom(current, direction) {
+    if (supportModalOpen) return document.getElementById('support-close');
     if (confirmOpen) return direction === 'left' || direction === 'right' ? moveWithinZone('confirmation', current, direction) : null;
     if (playerOptionsOpen) {
       if (current.id === 'player-compose-input') return direction === 'down' ? document.getElementById('player-compose-send') : direction === 'up' ? document.getElementById('player-options-close') : null;
@@ -817,6 +828,10 @@
       return moveDiscussion(current, direction);
     }
     var zone = zoneOf(current);
+    if (zone === 'support') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone('support', current, direction) || (direction === 'left' ? activeSidebar() : null);
+      return direction === 'up' ? activeSidebar() : null;
+    }
     if (zone === 'sidebar') {
       if (direction === 'up' || direction === 'down') return moveWithinZone(zone, current, direction);
       if (direction === 'right') return firstContentFocus();
@@ -1047,6 +1062,29 @@
     return direction === 'right' ? firstContentFocus() : activeSidebar();
   }
 
+  function startAccountEditing(input) {
+    if (!androidShell || !input || input.disabled || accountBusy) return;
+    if (input.id === 'account-phone' && accountData && accountData.phase === 'code' && /^1[3-9]\d{9}$/.test(input.value)) {
+      goFocus(firstVisible('#account-code') || firstVisible('#account-change-phone')); return;
+    }
+    if (accountEditingInput && accountEditingInput !== input) finishAccountEditing(false);
+    accountEditingInput = input; input.readOnly = false;
+    input.setAttribute('aria-label', input.id === 'account-phone' ? '输入手机号，返回键完成' : '输入验证码，返回键完成');
+    input.focus();
+    if (window.HongguoTVInput && window.HongguoTVInput.startAccountEditing) window.HongguoTVInput.startAccountEditing();
+  }
+  function finishAccountEditing(moveFocus) {
+    var input = accountEditingInput;
+    if (!input) return;
+    accountEditingInput = null; input.readOnly = true; input.blur();
+    input.setAttribute('aria-label', input.id === 'account-phone' ? '手机号，确认键输入' : '短信验证码，确认键输入');
+    if (window.HongguoTVInput) window.HongguoTVInput.finishEditing();
+    if (moveFocus) {
+      var next = input.id === 'account-code' ? firstVisible('#account-login') : firstVisible('#account-code') || firstVisible('#account-send-code') || firstVisible('#account-login');
+      goFocus(next || activeSidebar());
+    }
+  }
+
   function normalizedKey(event) {
     var key = event.key || event.keyIdentifier;
     var aliases = { Left: 'ArrowLeft', Up: 'ArrowUp', Right: 'ArrowRight', Down: 'ArrowDown',
@@ -1064,13 +1102,12 @@
     var current = document.activeElement;
     if (current && current.classList.contains('player-text-input') && ['Escape', 'ArrowUp', 'ArrowDown'].indexOf(key) < 0) return;
     if (current && current.classList.contains('account-input')) {
-      if (key === 'Backspace' || key === 'Delete' || key === 'ArrowLeft' || key === 'ArrowRight') return;
+      if (!current.readOnly && (key === 'Backspace' || key === 'Delete' || key === 'ArrowLeft' || key === 'ArrowRight')) return;
       if (key === 'Enter') {
         event.preventDefault(); event.stopPropagation();
         if (event.repeat) return;
-        if (current.id === 'account-code') accountLogin();
-        else if (accountData && accountData.phase === 'code') goFocus(document.getElementById('account-code'));
-        else accountSendCode();
+        if (androidShell) { if (accountEditingInput === current) finishAccountEditing(true); else startAccountEditing(current); }
+        else goFocus(current.id === 'account-code' ? firstVisible('#account-login') : firstVisible('#account-code') || firstVisible('#account-send-code') || firstVisible('#account-login'));
         return;
       }
     }
@@ -1374,6 +1411,8 @@
     revealControls();
   }
   function handleBack() {
+    if (accountEditingInput) { finishAccountEditing(true); return true; }
+    if (supportModalOpen) { closeSupportQR(); return true; }
     if (confirmOpen) closeConfirmation();
     else if (playerOptionsOpen) closePlayerOptions();
     else if (detailModalOpen) closeDetail();
@@ -1426,9 +1465,9 @@
   }
   function canShowAppUpdate() {
     var current = document.activeElement;
-    return !applicationInBackground && !document.hidden && !isPlaybackPage() && !detailModalOpen && !discussionOpen && !confirmOpen && !playerOptionsOpen && !accountBusy && !(current && /INPUT|TEXTAREA/.test(current.tagName));
+    return !applicationInBackground && !document.hidden && !isPlaybackPage() && !supportModalOpen && !detailModalOpen && !discussionOpen && !confirmOpen && !playerOptionsOpen && !accountBusy && !(current && /INPUT|TEXTAREA/.test(current.tagName));
   }
-  window.HongguoTV = { remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, canShowAppUpdate: canShowAppUpdate };
+  window.HongguoTV = { remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () { finishAccountEditing(true); } };
 
   function isLibraryPage() { return ['history', 'favorites', 'likes'].indexOf(pageMode()) >= 0; }
   function libraryEntry(id) { return libraryData.entries.filter(function (entry) { return entry.drama.series_id === id; })[0] || null; }
@@ -1452,6 +1491,7 @@
       button.classList.toggle('is-saved', saved);
       button.setAttribute('aria-pressed', String(saved));
       button.querySelector('small').textContent = kind === 'favorite' ? saved ? '已收藏' : '收藏' : saved ? '已点赞' : '点赞';
+      button.setAttribute('aria-label', button.querySelector('small').textContent + ' · ' + button.querySelector('.action-count').textContent);
     });
     var detailEntry = currentDetail && libraryEntry(currentDetail.series_id);
     var detailButton = document.getElementById('detail-save');
@@ -1522,7 +1562,10 @@
       var current = playbackSnapshot();
       var same = ownerEpoch === accountEpoch && featuredItem && featuredItem.series_id === item.series_id && (kind !== 'like' || current && current.vid === session.vid);
       if (same && wasFocused && document.activeElement === document.body && button.getClientRects().length) goFocus(button);
-      if (ok && same) showNotice(saved ? kind === 'favorite' ? '已取消收藏' : '已取消第' + session.episode + '集点赞' : kind === 'favorite' ? '已收藏到本机' : '已点赞第' + session.episode + '集');
+      if (ok && same) {
+        if (session) engagement.adjust(kind, saved ? -1 : 1, session);
+        showNotice(saved ? kind === 'favorite' ? '已取消收藏' : '已取消第' + session.episode + '集点赞' : kind === 'favorite' ? '已收藏到本机' : '已点赞第' + session.episode + '集');
+      }
     });
   }
   function renderLibrary(restoring) {
@@ -1647,6 +1690,7 @@
     accountCountdownUntil = Date.now() + (data.retry_after || 0) * 1000;
     if (owner !== previousOwner || owner !== (libraryData.owner_id || '')) {
       ++accountEpoch;
+      if (engagement) engagement.resetAccount();
       episodePrefetch.cancel();
       var interruptedPlayback = playbackInfoRequest || playbackPrefetchHandoff;
       cancelPlaybackPreparation();
@@ -1687,7 +1731,8 @@
     document.getElementById('account-login').classList.toggle('is-hidden', data.phase !== 'code');
     document.getElementById('account-change-phone').classList.toggle('is-hidden', data.phase !== 'code');
     var phoneInput = document.getElementById('account-phone');
-    phoneInput.readOnly = accountBusy || data.phase === 'code' && /^1[3-9]\d{9}$/.test(phoneInput.value);
+    phoneInput.readOnly = androidShell && accountEditingInput !== phoneInput || accountBusy || data.phase === 'code' && /^1[3-9]\d{9}$/.test(phoneInput.value);
+    document.getElementById('account-code').readOnly = androidShell && accountEditingInput !== document.getElementById('account-code');
     phoneInput.placeholder = data.phase === 'code' && !phoneInput.value && data.phone ? '请重新输入 ' + data.phone + ' 的完整手机号' : '请输入手机号';
     document.querySelectorAll('.account-input').forEach(function (node) { node.disabled = accountBusy; });
     document.querySelectorAll('.account-action:not(.app-update-action)').forEach(function (node) { node.disabled = accountBusy; });
@@ -1881,6 +1926,7 @@
     if (placeholderTitle) placeholderTitle.textContent = item.title || '红果短剧';
     if (placeholderSummary) placeholderSummary.textContent = item.intro || '';
     updateSavedButtons();
+    if (engagement) engagement.select(activePlayback && activePlayback.item.series_id === item.series_id ? { series_id: item.series_id, vid: activePlayback.vid } : null);
     document.querySelector('[data-action="episodes"]').textContent = '选集 · ' + (item.episode_count || '--') + ' 集';
     updateSeasonControl(item);
   }
@@ -3162,6 +3208,9 @@
   }
 
   function activatePage(item, restoring) {
+    if (supportModalOpen) closeSupportQR();
+    finishAccountEditing(false);
+    engagement.clear();
     if (detailModalOpen) closeDetail();
     saveProgress(true);
     allPagers.forEach(function (pager) { pager.cancel(); });
@@ -3213,6 +3262,9 @@
       accountPage.classList.remove('is-hidden');
       renderAccount();
       pollAccount();
+    } else if (item.dataset.page === 'support') {
+      mainSurface.classList.add('has-workspace');
+      supportPage.classList.remove('is-hidden');
     } else {
       mainSurface.classList.add('has-placeholder');
       pagePlaceholder.classList.remove('is-hidden');
@@ -3439,6 +3491,49 @@
   });
   document.addEventListener('visibilitychange', function () { if (document.hidden) pauseForBackground(); else resumeFromBackground(); });
 
+  function openSupportQR(card) {
+    supportReturnFocus = card; supportModalOpen = true;
+    var image = card.querySelector('img');
+    document.getElementById('support-modal-title').textContent = card.querySelector('h2').textContent;
+    document.getElementById('support-large-qr').src = image.getAttribute('src');
+    document.getElementById('support-large-qr').alt = image.alt;
+    document.getElementById('support-modal').classList.remove('is-hidden');
+    document.getElementById('support-modal').setAttribute('aria-hidden', 'false');
+    goFocus(document.getElementById('support-close'));
+  }
+  function closeSupportQR() {
+    supportModalOpen = false;
+    document.getElementById('support-modal').classList.add('is-hidden');
+    document.getElementById('support-modal').setAttribute('aria-hidden', 'true');
+    goFocus(supportReturnFocus || firstContentFocus());
+  }
+  document.querySelectorAll('.support-card').forEach(function (card) { card.addEventListener('click', function () { openSupportQR(card); }); });
+  document.getElementById('support-close').addEventListener('click', closeSupportQR);
+  document.querySelectorAll('.account-input').forEach(function (input) {
+    if (androidShell) {
+      input.readOnly = true;
+      input.addEventListener('click', function () { startAccountEditing(input); });
+      input.addEventListener('blur', function () { if (accountEditingInput === input) finishAccountEditing(false); });
+    }
+  });
+  document.querySelector('.account-input-help').classList.toggle('is-hidden', !androidShell);
+
+  engagement = window.HongguoEngagement.create({
+    request: function (target) {
+      var controller = new AbortController();
+      return { abort: function () { controller.abort(); }, promise: fetchData('/api/v1/player/stats?' + new URLSearchParams(target), { signal: controller.signal }) };
+    },
+    render: function (target, data) {
+      ['like', 'favorite', 'comment'].forEach(function (kind) {
+        var field = { like: 'likes', favorite: 'favorites', comment: 'comments' }[kind];
+        var text = window.HongguoEngagement.countText(data && data[field]);
+        document.getElementById('hero-' + kind + '-count').textContent = text;
+        var button = document.querySelector('.round-action[data-action="' + kind + '"]');
+        button.setAttribute('aria-label', button.querySelector('small').textContent + ' · ' + text);
+      });
+    }
+  });
+
   var appUpdates = window.HongguoAppUpdates.create({
     bridge: window.HongguoTVUpdates,
     canPrompt: canShowAppUpdate,
@@ -3454,7 +3549,6 @@
       check.textContent = data.state === 'checking' ? '检查中…' : data.state === 'available' || data.state === 'ready' ? '查看更新 ' + data.latest_version : '检查更新';
       document.getElementById('app-update-source').disabled = !data.supported;
       document.getElementById('app-update-source').setAttribute('aria-disabled', data.state === 'checking' || data.state === 'downloading' ? 'true' : 'false');
-      document.getElementById('app-update-source-label').textContent = data.proxy ? '下载代理：' + data.proxy + '（失败时尝试直连）' : data.supported ? '下载通道：GitHub 直连' : '更新功能仅在 Android 正式版中使用。';
     }
   });
   document.getElementById('app-check-update').addEventListener('click', appUpdates.check);

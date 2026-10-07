@@ -101,3 +101,5 @@
 .legacy-grid .reservation-login { flex-direction: column; }
 .legacy-flex-gap .reservation-login .publication-action { margin-left: 0; }
 .legacy-grid .reservation-grid > .reservation-login { width: calc(100% - 20px); margin-right: 20px; }
+/* This rail uses margins on old WebViews without flex gap. */
+.legacy-flex-gap .round-action + .round-action { margin-top: 12px; }

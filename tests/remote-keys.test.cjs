@@ -11,6 +11,8 @@ function keyboard() {
     var current={id:'sidebar-recommend',classList:{contains:function(){return false}}};
     var document={activeElement:current};
     var detailModalOpen=false,playerOptionsOpen=false,confirmOpen=false,discussionOpen=false;
+    var androidShell=false,accountEditingInput=null;
+    function firstVisible(selector){return {id:selector.slice(1)}}
     var shell={classList:{contains:function(){return false}}};
     var moved=[],focused=[],clicks=0;
     function pageMode(){return 'search'}
@@ -67,7 +69,7 @@ test('native vertical bridge uses the existing router once and ignores text edit
   assert.deepEqual(Array.from(c.moved),['down','up']);
   assert.deepEqual(Array.from(c.focused),['down','up']);
 });
-test('holding Enter in account inputs never submits an additional SMS or login', () => {
+test('Enter in account inputs focuses the explicit action without sending SMS or logging in', () => {
   const c=keyboard();
   vm.runInContext("var submissions=0;function accountSendCode(){submissions++};function accountLogin(){submissions++};var accountData=null;",c);
   for (const id of ['account-phone','account-code']) {
@@ -75,5 +77,12 @@ test('holding Enter in account inputs never submits an additional SMS or login',
     const e={keyCode:13,preventDefault(){},stopPropagation(){}};
     c.handleKey(e);c.handleKey({...e,repeat:true});
   }
-  assert.equal(c.submissions,2);
+  assert.equal(c.submissions,0);
+  assert.deepEqual(Array.from(c.focused),['account-code','account-login']);
+});
+test('read-only Android account inputs route all arrows to navigation', () => {
+  const c=keyboard();
+  vm.runInContext("androidShell=true;document.activeElement={id:'account-phone',readOnly:true,classList:{contains:function(name){return name==='account-input'}}}",c);
+  for (const keyCode of [37,38,39,40]) c.handleKey({keyCode,preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(Array.from(c.moved),['left','up','right','down']);
 });

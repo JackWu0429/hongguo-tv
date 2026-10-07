@@ -396,7 +396,7 @@ final class AppUpdater {
         LinearLayout panel = new LinearLayout(activity); panel.setOrientation(LinearLayout.VERTICAL); panel.setGravity(Gravity.CENTER);
         int pad = Math.round(20 * activity.getResources().getDisplayMetrics().density); panel.setPadding(pad, pad, pad, pad);
         panel.addView(input, new LinearLayout.LayoutParams(-1, -2));
-        AlertDialog next = new AlertDialog.Builder(activity).setTitle("下载代理")
+        AlertDialog next = new AlertDialog.Builder(activity).setTitle("下载设置")
                 .setMessage("代理连接失败时自动尝试 GitHub 直连。留空则始终直连。")
                 .setView(panel).setNegativeButton("取消", null).setPositiveButton("保存", (d, which) -> {
                     try { proxy = UpdatePolicy.proxyPrefix(input.getText().toString()); preferences.edit().putString("proxy", proxy).apply(); publish(); }

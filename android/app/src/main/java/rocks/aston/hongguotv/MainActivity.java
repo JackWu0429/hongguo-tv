@@ -43,6 +43,8 @@ public class MainActivity extends Activity {
     private boolean activityForeground;
     private AlertDialog exitDialog;
     private boolean keyboardVisible;
+    private boolean accountEditing;
+    private int accountEditGeneration;
     private LinearLayout startupPanel;
     private TextView startupMessage;
     private Button startupRetry;
@@ -60,7 +62,10 @@ public class MainActivity extends Activity {
     };
     private final ViewTreeObserver.OnGlobalLayoutListener keyboardLayoutListener = () -> {
         boolean visible = isKeyboardVisible();
-        if (keyboardVisible && !visible) scheduleFullscreen();
+        if (keyboardVisible && !visible) {
+            completeAccountEditing();
+            scheduleFullscreen();
+        }
         keyboardVisible = visible;
     };
 
@@ -100,6 +105,8 @@ public class MainActivity extends Activity {
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 pageLoadFailed = false;
                 pageReady = false;
+                accountEditing = false;
+                accountEditGeneration++;
                 super.onPageStarted(view, url, favicon);
             }
 
@@ -318,12 +325,43 @@ public class MainActivity extends Activity {
 
     public final class InputBridge {
         @JavascriptInterface
+        public void startAccountEditing() {
+            runOnUiThread(() -> {
+                if (destroyed || !pageReady || !activityForeground || webView == null) return;
+                accountEditing = true;
+                final int generation = ++accountEditGeneration;
+                webView.requestFocus();
+                // The same DOM input was read-only during D-pad navigation.
+                // Refresh WebView's input connection after making it editable.
+                webView.post(() -> {
+                    if (destroyed || !pageReady || !activityForeground || !accountEditing || generation != accountEditGeneration) return;
+                    InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                    if (keyboard != null) {
+                        keyboard.restartInput(webView);
+                        keyboard.showSoftInput(webView, InputMethodManager.SHOW_IMPLICIT);
+                    }
+                });
+            });
+        }
+
+        @JavascriptInterface
         public void finishEditing() {
             runOnUiThread(() -> {
                 if (destroyed || webView == null) return;
+                accountEditing = false;
+                accountEditGeneration++;
                 InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
                 if (keyboard != null) keyboard.hideSoftInputFromWindow(webView.getWindowToken(), 0);
             });
+        }
+    }
+
+    private void completeAccountEditing() {
+        if (!accountEditing) return;
+        accountEditing = false;
+        accountEditGeneration++;
+        if (!destroyed && pageReady && webView != null) {
+            webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.finishAccountEditing()", null);
         }
     }
 
@@ -376,6 +414,7 @@ public class MainActivity extends Activity {
     protected void onPause() {
         activityForeground = false;
         routedVerticalKeys = 0;
+        completeAccountEditing();
         if (startupAnimation != null) startupAnimation.stop();
         if (webView != null) {
             webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.pauseForBackground()", null);
@@ -401,6 +440,8 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         destroyed = true;
         pageReady = false;
+        accountEditing = false;
+        accountEditGeneration++;
         if (appUpdater != null) appUpdater.destroy();
         if (startupAnimation != null) startupAnimation.stop();
         if (startupThread != null) startupThread.interrupt();

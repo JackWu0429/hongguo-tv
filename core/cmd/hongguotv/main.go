@@ -22,7 +22,7 @@ import (
 //go:embed ui
 var uiFiles embed.FS
 
-var version = "0.2.8-dev"
+var version = "0.2.9-dev"
 
 type server struct {
 	instanceID   string
@@ -91,6 +91,7 @@ func main() {
 	mux.HandleFunc("/api/v1/danmaku", s.discussion)
 	mux.HandleFunc("/api/v1/replies", s.discussion)
 	mux.HandleFunc("/api/v1/player/action", s.playerAction)
+	mux.HandleFunc("/api/v1/player/stats", s.engagement)
 	mux.HandleFunc("/api/v1/Search", s.search)
 	mux.HandleFunc("/api/v1/play/info", s.playInfo)
 	mux.HandleFunc("/api/v1/PlayInfo", s.playInfo)

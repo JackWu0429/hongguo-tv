@@ -47,6 +47,7 @@ jobs:
           node --check core/cmd/hongguotv/ui/compat.js
           node --check core/cmd/hongguotv/ui/episode-prefetch.js
           node --check core/cmd/hongguotv/ui/updates.js
+          node --check core/cmd/hongguotv/ui/engagement.js
           python3 -m unittest discover -s tests -p "test_*.py"
           node --test tests/*.test.cjs
       - name: Build Android native binaries
