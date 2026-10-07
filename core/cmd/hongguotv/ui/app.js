@@ -114,6 +114,7 @@
   var rankOptions = [];
   var rankSelection = { rank: 'all', rank_sub: 'ranklist_hot_play_sc', rank_panel: '' };
   var reservationMode = 'online';
+  var reservationCounts = { online: null, upcoming: null };
   var activeSearchQuery = '';
   var tailTimer = null;
   var playerReturnPage = null;
@@ -241,7 +242,7 @@
   var rankPager = createListPager('/api/v1/lists/rank', rankList, '.rank-row', 'rank-pagination', renderRank, function (data, pager) { if (!pager.loaded) renderRankSelectors(data.ranks); });
   var newPager = createListPager('/api/v1/lists/new', newGrid, '.new-card', 'new-pagination', renderNew);
   var calendarPager = createListPager('/api/v1/lists/calendar', calendarList, '.calendar-row', 'calendar-pagination', function (items, append) { renderPublications(items, append, false); }, function (data) { renderCalendarDays(data.calendar); });
-  var reservationPager = createListPager('/api/v1/lists/reservations', document.getElementById('reservation-list'), '.reservation-row', 'reservation-pagination', function (items, append) { renderPublications(items, append, true); });
+  var reservationPager = createListPager('/api/v1/lists/reservations', document.getElementById('reservation-list'), '.reservation-row', 'reservation-pagination', function (items, append) { renderPublications(items, append, true); }, updateReservationCounts);
   var libraryPager = createListPager('', document.getElementById('library-grid'), '.library-card', 'library-pagination', function () { renderLibrary(true); });
   var feedPager = createListPager('/api/v1/lists/recommend', null, '.hero-feed-focus', '', function (items, append) {
     if (!append) renderFeed(items);
@@ -880,6 +881,14 @@
       return null;
     }
     if (zone === 'reservationItems') {
+      if (reservationMode === 'online') {
+        var target = moveGrid('.reservation-row', current, direction);
+        if (target) return target;
+        if (direction === 'up') return firstVisible('.reservation-tab.is-active');
+        if (direction === 'down') return listBoundary(reservationPager, current, direction);
+        if (direction === 'left') return activeSidebar();
+        return null;
+      }
       if (direction === 'up') return moveWithinZone(zone, current, direction) || firstVisible('.reservation-tab.is-active');
       if (direction === 'down') return moveWithinZone(zone, current, direction) || listBoundary(reservationPager, current, direction);
       if (direction === 'right') return current.querySelector('.publication-action');
@@ -1514,6 +1523,7 @@
     accountCountdownUntil = Date.now() + (data.retry_after || 0) * 1000;
     if (owner !== previousOwner || owner !== (libraryData.owner_id || '')) {
       ++accountEpoch;
+      reservationCounts = { online: null, upcoming: null }; updateReservationCounts({});
       resetSeriesPanel();
       if (detailModalOpen && detailTab === 'series') { loadSeriesSeasons(); goFocus(document.getElementById('detail-tab-series')); }
       if (confirmOpen) closeConfirmation();
@@ -2311,21 +2321,34 @@
       return;
     }
     (items || []).forEach(function (item) {
+      newGrid.appendChild(publicationCard(item, 'new-item-'));
+    });
+  }
+
+  function publicationCard(item, prefix) {
       var card = document.createElement('button');
       card.className = 'new-card';
-      card.dataset.focus = 'new-item-' + item.series_id;
+      card.dataset.focus = prefix + item.series_id;
       var poster = document.createElement('span'); poster.className = 'new-card-poster';
       var image = document.createElement('img');
       image.className = 'new-card-image'; setCover(image, item);
       var episodeCount = document.createElement('span'); episodeCount.className = 'new-card-episodes'; episodeCount.textContent = item.episode_count ? '共' + item.episode_count + '集' : '';
       poster.appendChild(image); if (episodeCount.textContent) poster.appendChild(episodeCount);
       var title = document.createElement('span'); title.className = 'new-card-title'; title.textContent = item.title || '未命名短剧';
-      var meta = document.createElement('span'); meta.className = 'new-card-meta'; meta.textContent = (item.tags || []).slice(0, 3).join(' · ') || '新剧';
+      var meta = document.createElement('span'); meta.className = 'new-card-meta'; meta.textContent = (item.tags || []).slice(0, 3).join(' · ') || (prefix === 'reservation-' ? '已上线' : '新剧');
       var score = document.createElement('span'); score.className = 'new-card-score'; score.textContent = item.score ? item.score + ' 分' : (item.episode_count ? '共' + item.episode_count + '集' : '');
       card.appendChild(poster); card.appendChild(title); card.appendChild(meta); card.appendChild(score);
       card.addEventListener('click', function () { startPlayer(item, card); });
       card.addEventListener('focus', function () { try { card.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (ignore) {} });
-      newGrid.appendChild(card);
+      return card;
+  }
+
+  function updateReservationCounts(data) {
+    if (typeof data.online_total_count === 'number') reservationCounts.online = data.online_total_count;
+    if (typeof data.offline_total_count === 'number') reservationCounts.upcoming = data.offline_total_count;
+    document.querySelectorAll('.reservation-tab').forEach(function (tab) {
+      var mode = tab.dataset.reservationMode; var count = reservationCounts[mode];
+      tab.textContent = (mode === 'online' ? '已上线' : '待上线') + (count === null ? '' : ' ' + count);
     });
   }
 
@@ -2364,8 +2387,9 @@
       .then(function () {
         if (epoch !== accountEpoch) return;
         item.reserved = reserve;
+        if (reservationCounts.upcoming !== null && item.upcoming) { reservationCounts.upcoming = Math.max(0, reservationCounts.upcoming + (reserve ? 1 : -1)); updateReservationCounts({}); }
         document.querySelectorAll('.publication-row').forEach(function (row) { if (row.__item && row.__item.reservation_id === item.reservation_id) { row.__item.reserved = reserve; var b = row.querySelector('.publication-action'); if (b) b.textContent = reserve ? '取消预约' : '预约'; } });
-        if (!reserve && pageMode() === 'reservations') {
+        if (!reserve && originPage === 'reservations' && pageMode() === 'reservations' && reservationMode === 'upcoming' && document.contains(button)) {
           var row = button.closest('.publication-row'); var next = row.nextElementSibling || row.previousElementSibling;
           var focused = hadFocus && (document.activeElement === button || document.activeElement === document.body);
           reservationPager.items = reservationPager.items.filter(function (x) { return x.reservation_id !== item.reservation_id; });
@@ -2386,6 +2410,10 @@
     if (!append) container.innerHTML = '';
     if (!items.length && !container.children.length) renderMessage(container, 'calendar-empty', reservations ? '暂无' + (reservationMode === 'online' ? '已上线' : '待上线') + '的预约' : '这一天暂无上新安排');
     items.forEach(function (item) {
+      if (reservations && reservationMode === 'online') {
+        var card = publicationCard(item, 'reservation-'); card.classList.add('reservation-row'); card.__item = item;
+        container.appendChild(card); return;
+      }
       var row = document.createElement('div'); row.className = 'publication-row ' + (reservations ? 'reservation-row' : 'calendar-row'); row.tabIndex = 0;
       row.dataset.focus = (reservations ? 'reservation-' : 'calendar-') + (item.reservation_id || item.series_id); row.__item = item;
       var image = document.createElement('img'); image.loading = 'lazy'; setCover(image, item); row.appendChild(image);
@@ -2423,6 +2451,7 @@
   }
   function renderReservations(mode, restoring) {
     reservationMode = mode || reservationMode;
+    document.getElementById('reservation-list').className = reservationMode === 'online' ? 'new-grid reservation-grid' : 'calendar-list';
     document.querySelectorAll('.reservation-tab').forEach(function (node) { node.classList.toggle('is-active', node.dataset.reservationMode === reservationMode); });
     if (restoring && reservationPager.loaded) { queueTailCheck(); return; }
     if (!accountData || !accountData.logged_in) {
@@ -2575,6 +2604,7 @@
     fetchData('/api/v1/reservation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: item.reservation_id, reserved: reserved }), signal: request.signal }).then(function () {
       if (epoch !== accountEpoch || generation !== seriesGeneration || !detailModalOpen) return;
       item.reserved = reserved; reservationPager.loaded = false; calendarPager.loaded = false;
+      if (reservationCounts.upcoming !== null) { reservationCounts.upcoming = Math.max(0, reservationCounts.upcoming + (reserved ? 1 : -1)); updateReservationCounts({}); }
       document.querySelectorAll('.publication-row').forEach(function (row) {
         if (row.__item && row.__item.reservation_id === item.reservation_id) {
           row.__item.reserved = reserved;

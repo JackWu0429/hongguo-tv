@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
-	"sync"
+	"strings"
 	"time"
 )
 
@@ -292,24 +295,34 @@ func (c *passportClient) uploadMutation(ctx context.Context, p cloudMutation) er
 		return errors.New("云端播放进度无效")
 	}
 	stamp := e.LastPlayedAt
-	row := map[string]any{"book_id": cloudNumericID(p.SeriesID), "book_type": 2, "vid": cloudNumericID(e.VideoID), "vid_index": e.Episode, "chapter_index": 0, "current_play_position": cloudMillis(e.Position), "player_accumulate_total_time": cloudMillis(e.Position), "read_timestamp_ms": stamp, "update_timestamp_ms": stamp, "is_delete": false, "is_interactive_game": false, "is_listen_mode": false, "is_multi_season": e.Drama.MultiSeason, "season_index": e.Drama.SeasonIndex, "duration": cloudMillis(e.Duration), "episode_cnt": e.Drama.EpisodeCount, "digged_count": 0, "user_digg": 0, "origin_novel_book_id": 0, "recent_reads": 0, "retain_video_play_time": 0, "series_play_cnt": 0, "tone_id": 0, "use_soft_delete": false, "meet_guide_comment_tag": 0, "user_playlet_comment_flag": 0}
-	if _, err := c.cloudJSON(ctx, "/reading/bookapi/read_history/update/v", http.MethodPost, nil, map[string]any{"update_datas": []any{row}}); err != nil {
-		return err
+	multi := 0
+	if e.Drama.MultiSeason {
+		multi = 1
 	}
-	progress := map[string]any{"book_id": p.SeriesID, "book_type": 2, "item_id": e.VideoID, "vid_index": e.Episode, "current_play_time": cloudMillis(e.Position), "player_cumulative_total_duration": cloudMillis(e.Position), "read_timestamp_ms": stamp, "progress_type": 0, "channel_id": 0, "cur_channel_id": 0, "check_timestamp": stamp, "is_listen_mode": false, "is_local_book": false, "listen_and_read": false, "page_index": 0, "page_progress_rate": 0, "paragraph_offset": 0, "tone_id": 0}
+	row := map[string]any{"book_id": cloudNumericID(p.SeriesID), "book_type": 2, "vid": cloudNumericID(e.VideoID), "vid_index": e.Episode, "chapter_index": 0, "current_play_position": cloudMillis(e.Position), "player_accumulate_total_time": cloudMillis(e.Position), "read_timestamp_ms": stamp, "update_timestamp_ms": stamp, "is_delete": false, "is_interactive_game": false, "is_listen_mode": false, "is_multi_season": multi, "season_index": e.Drama.SeasonIndex, "duration": cloudMillis(e.Duration), "episode_cnt": e.Drama.EpisodeCount, "digged_count": 0, "user_digg": false, "origin_novel_book_id": 0, "recent_reads": 0, "retain_video_play_time": 0, "series_play_cnt": 0, "tone_id": 0, "use_soft_delete": false, "meet_guide_comment_tag": false, "user_playlet_comment_flag": false}
+	if _, err := c.cloudJSON(ctx, "/reading/bookapi/read_history/update/v", http.MethodPost, nil, map[string]any{"update_datas": []any{row}}); err != nil {
+		return errors.New("云端观看历史上报失败：" + err.Error())
+	}
+	progress := map[string]any{"book_id": p.SeriesID, "book_type": 2, "item_id": e.VideoID, "vid_index": e.Episode, "current_play_time": cloudMillis(e.Position), "player_cumulative_total_duration": cloudMillis(e.Position), "read_timestamp_ms": stamp, "progress_type": 0, "channel_id": 0, "cur_channel_id": 0, "check_timestamp": false, "is_listen_mode": false, "is_local_book": false, "listen_and_read": false, "page_index": 0, "page_progress_rate": 0, "paragraph_offset": 0, "tone_id": 0}
 	_, err := c.cloudJSON(ctx, "/reading/bookapi/read_progress/upload/v", http.MethodPost, nil, map[string]any{"books": []any{progress}})
+	if err != nil {
+		return errors.New("云端观看进度上报失败：" + err.Error())
+	}
 	return err
 }
 
-func (c *passportClient) pullLibrary(ctx context.Context, uid string, local LibraryData, details *hongguoClient) ([]LibraryEntry, error) {
+func (c *passportClient) pullLibrary(ctx context.Context, uid string, local LibraryData, _ *hongguoClient) ([]LibraryEntry, error) {
 	entries := map[string]LibraryEntry{}
 	for _, e := range local.Entries {
 		entries[e.Drama.SeriesID] = e
 	}
 	remote := map[string]LibraryEntry{}
 	offset := 0
-	for page := 0; page < 5; page++ {
-		q := url.Values{"limit": {"100"}, "offset": {strconv.Itoa(offset)}, "book_type": {"2"}, "full_field": {"false"}, "query_soft_deleted": {"false"}, "last_min_read_timestamp_ms": {"0"}, "is_first_load": {strconv.FormatBool(offset == 0)}}
+	seenPages := map[[32]byte]bool{}
+	for page := 0; page < 200; page++ {
+		// The official client requests limit=0; this API returns batches of up
+		// to 500 regardless of smaller limits. Real accounts can exceed 5 pages.
+		q := url.Values{"limit": {"0"}, "offset": {strconv.Itoa(offset)}, "book_type": {"2"}, "full_field": {"false"}, "query_soft_deleted": {"false"}, "last_min_read_timestamp_ms": {"0"}, "is_first_load": {strconv.FormatBool(offset == 0)}}
 		p, err := c.cloudJSON(ctx, "/reading/bookapi/read_history/list/v", http.MethodGet, q, nil)
 		if err != nil {
 			return nil, err
@@ -318,6 +331,14 @@ func (c *passportClient) pullLibrary(ctx context.Context, uid string, local Libr
 		rows, ok := d["data_list"].([]any)
 		if !ok {
 			return nil, errors.New("云端历史响应缺少列表")
+		}
+		if len(rows) > 0 {
+			encoded, _ := json.Marshal(rows)
+			fingerprint := sha256.Sum256(encoded)
+			if seenPages[fingerprint] {
+				return nil, errors.New("云端历史返回重复分页，请重试")
+			}
+			seenPages[fingerprint] = true
 		}
 		for _, value := range rows {
 			r, ok := asMap(value)
@@ -351,8 +372,11 @@ func (c *passportClient) pullLibrary(ctx context.Context, uid string, local Libr
 			break
 		}
 		next := asInt(d["next_offset"])
-		if next <= offset || page == 4 {
+		if len(rows) == 0 || page == 199 {
 			return nil, errors.New("云端历史分页未完整读取")
+		}
+		if next <= offset {
+			next = offset + 500 // Same fallback stride as the official History client.
 		}
 		offset = next
 	}
@@ -380,11 +404,17 @@ func (c *passportClient) pullLibrary(ctx context.Context, uid string, local Libr
 		} else if e.Drama.Title == "" && entries[id].Drama.Title != "" {
 			e.Drama = entries[id].Drama
 		}
-		if e.Drama.SeriesID == "" || e.Drama.Title == "" {
+		if e.Drama.SeriesID == "" || e.Drama.Title == "" || e.Drama.MetadataPending {
 			e.Drama.SeriesID = id
 			missing = append(missing, id)
 		}
-		e.FavoriteAt = int64(len(rows) - i)
+		e.FavoriteAt = accountEpoch(r["collect_time"])
+		if e.FavoriteAt > 0 && e.FavoriteAt < 100000000000 {
+			e.FavoriteAt *= 1000
+		}
+		if e.FavoriteAt <= 0 {
+			e.FavoriteAt = time.Now().UnixMilli() - int64(i)
+		}
 		remote[id] = e
 	}
 	missingIDs := map[string]bool{}
@@ -396,57 +426,38 @@ func (c *passportClient) pullLibrary(ctx context.Context, uid string, local Libr
 			missing = append(missing, id)
 		}
 	}
-	if len(missing) > 0 {
-		if details == nil {
-			return nil, errors.New("云端收藏详情服务未就绪")
+	// Card metadata is separate from the authoritative membership snapshot.
+	// Read the same signed batch API as Mac, rather than scraping hundreds of
+	// webpages. An omitted (unavailable) item keeps its favorite and can retry.
+	for start := 0; start < len(missing); start += 20 {
+		batch := missing[start:min(start+20, len(missing))]
+		cards, err := c.libraryMetadata(ctx, batch)
+		if err != nil {
+			return nil, errors.New("云端剧集资料读取失败：" + err.Error())
 		}
-		// Limit concurrency while avoiding hundreds of serial detail requests.
-		var mu sync.Mutex
-		var firstErr error
-		var workers sync.WaitGroup
-		jobs := make(chan string)
-		for i := 0; i < 4; i++ {
-			workers.Add(1)
-			go func() {
-				defer workers.Done()
-				for id := range jobs {
-					detail, err := details.SeriesDetail(ctx, id)
-					mu.Lock()
-					if err != nil || detail.Drama.Title == "" {
-						firstErr = errors.New("部分云端收藏详情暂时无法读取，请重试")
-					} else {
-						e := remote[id]
-						e.Drama = cleanLibraryDrama(detail.Drama)
-						remote[id] = e
-					}
-					mu.Unlock()
+		for _, id := range batch {
+			e := remote[id]
+			if card, ok := cards[id]; ok {
+				e.Drama = cleanLibraryDrama(card)
+			} else {
+				e.Drama.MetadataPending = true
+				if e.Drama.Title == "" {
+					e.Drama.Title = "剧集信息暂未加载"
 				}
-			}()
-		}
-		for _, id := range missing {
-			select {
-			case jobs <- id:
-			case <-ctx.Done():
-				break
 			}
-		}
-		close(jobs)
-		workers.Wait()
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		if firstErr != nil {
-			return nil, firstErr
+			remote[id] = e
 		}
 	}
 	ids := []any{}
 	for id := range remote {
 		ids = append(ids, cloudNumericID(id))
 	}
-	if len(ids) > 0 {
-		p, err = c.cloudJSON(ctx, "/reading/bookapi/read_progress/get/v", http.MethodPost, nil, map[string]any{"book_ids": map[string]any{"2": ids}})
+	sort.Slice(ids, func(i, j int) bool { return asString(ids[i]) < asString(ids[j]) })
+	for start := 0; start < len(ids); start += 200 {
+		batch := ids[start:min(start+200, len(ids))]
+		p, err = c.cloudJSON(ctx, "/reading/bookapi/read_progress/get/v", http.MethodPost, nil, map[string]any{"book_ids": map[string]any{"2": batch}})
 		if err != nil {
-			return nil, err
+			return nil, errors.New("云端观看进度读取失败：" + err.Error())
 		}
 		list, ok := p["video_data"].([]any)
 		if !ok {
@@ -495,6 +506,45 @@ func (c *passportClient) pullLibrary(ctx context.Context, uid string, local Libr
 	return out, nil
 }
 
+func (c *passportClient) libraryMetadata(ctx context.Context, ids []string) (map[string]Drama, error) {
+	for _, id := range ids {
+		if !validID(id) || id == "0" {
+			return nil, errors.New("云端详情项目身份无效")
+		}
+	}
+	p, err := c.cloudJSON(ctx, "/novel/player/multi_video_detail/preload/v1", http.MethodPost, nil, map[string]any{
+		"dr_scene": "preload", "series_id": strings.Join(ids, ","),
+		"biz_param": map[string]any{"detail_page_version": 0, "disable_digg_stat": false, "disable_video_relate_book": false, "need_all_video_definition": false, "need_mp4_align": false, "source": 7, "use_os_player": false, "use_server_dns": false},
+	})
+	if err != nil {
+		return nil, err
+	}
+	d, ok := asMap(p["data"])
+	if !ok {
+		return nil, errors.New("云端详情响应缺少数据")
+	}
+	out := map[string]Drama{}
+	for _, id := range ids {
+		x, ok := asMap(d[id])
+		if !ok {
+			continue
+		}
+		v, ok := asMap(x["video_data"])
+		if !ok || len(v) == 0 {
+			continue
+		}
+		card, ok := normalizeDrama(v)
+		if !ok || card.SeriesID != id {
+			return nil, errors.New("云端详情身份不一致")
+		}
+		if asString(v["series_title"]) == "" {
+			continue
+		}
+		out[id] = card
+	}
+	return out, nil
+}
+
 func (s *libraryStore) mergeCloud(remote []LibraryEntry, stamp int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -534,6 +584,9 @@ func (s *libraryStore) mergeCloud(remote []LibraryEntry, stamp int64) error {
 			indices[id] = i
 		}
 		e := &d.Entries[i]
+		if (e.Drama.Title == "" || e.Drama.MetadataPending) && !r.Drama.MetadataPending {
+			e.Drama = cleanLibraryDrama(r.Drama)
+		}
 		if !pending["progress:"+id] && d.Cloud.Hidden["history:"+id] == 0 && r.LastPlayedAt > e.LastPlayedAt {
 			fav, like := e.FavoriteAt, e.LikedAt
 			*e = r
@@ -542,8 +595,8 @@ func (s *libraryStore) mergeCloud(remote []LibraryEntry, stamp int64) error {
 			e.LikedAt = like
 		}
 		if !pending["favorite:"+id] && d.Cloud.Hidden["favorites:"+id] == 0 {
-			if r.FavoriteAt > 0 && e.FavoriteAt == 0 {
-				e.FavoriteAt = stamp - savedLimit + r.FavoriteAt
+			if r.FavoriteAt > 0 {
+				e.FavoriteAt = r.FavoriteAt
 			} else if r.FavoriteAt == 0 {
 				e.FavoriteAt = 0
 			}

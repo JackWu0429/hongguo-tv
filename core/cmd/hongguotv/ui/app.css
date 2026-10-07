@@ -343,6 +343,7 @@ button:focus { outline: none; }
 .calendar-list, .reservation-list { display: flex; flex-direction: column; gap: 14px; padding-bottom: 18px; }
 
 .reservation-page h1 { margin-bottom: 24px; }
+.reservation-grid > .calendar-empty, .reservation-grid > .list-empty { grid-column: 1 / -1; }
 .reservation-tabs { display: flex; gap: 12px; margin-bottom: 18px; }
 .reservation-tab { min-width: 94px; min-height: 42px; padding: 0 20px; color: #aaaab7; background: #20212a; border: 1px solid #3d3e4d; border-radius: 22px; }
 .reservation-tab.is-active { color: #fff; background: var(--accent); border-color: var(--accent); }

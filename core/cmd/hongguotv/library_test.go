@@ -24,6 +24,7 @@ func TestLibraryProgressPersistsAndCollectionsAreIndependent(t *testing.T) {
 	}
 	on := true
 	drama := libraryFixture()
+	drama.Cover = "https://p3-reading-sign.fqnovelpic.com/novel-pic/test-cover~tplv-tt-cs0:400:572.heic?signature=fixture"
 	for _, change := range []LibraryChange{
 		{Action: "favorite", Drama: drama, Value: &on},
 		{Action: "like", Drama: drama, Value: &on},
@@ -38,6 +39,9 @@ func TestLibraryProgressPersistsAndCollectionsAreIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := reopened.snapshot()
+	if data.Entries[0].Drama.Cover != drama.Cover || data.Entries[0].Drama.CoverFallback != "https://p3-novel.byteimg.com/novel-pic/test-cover~tplv-shrink:640:0.image" {
+		t.Fatal("restored cloud HEIC cover lost its original URL or browser alternative")
+	}
 	if len(data.Entries) != 1 || data.Entries[0].Episode != 8 || data.Entries[0].Position != 42 || data.Entries[0].Drama.SeriesID != drama.SeriesID {
 		t.Fatalf("progress not persisted: %#v", data)
 	}

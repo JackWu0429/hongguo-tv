@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,124 @@ import (
 	"testing"
 	"time"
 )
+
+func TestCloudHistoryBeyondFivePagesAndOfficialCursorFallback(t *testing.T) {
+	for _, missingCursor := range []bool{false, true} {
+		t.Run(fmt.Sprint(missingCursor), func(t *testing.T) {
+			pages := 0
+			c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/reading/bookapi/read_history/list/v":
+					if r.URL.Query().Get("limit") != "0" || r.URL.Query().Get("offset") != fmt.Sprint(pages*500) {
+						t.Error("wrong official history cursor")
+					}
+					next := (pages + 1) * 500
+					if missingCursor {
+						next = 0
+					}
+					pages++
+					ioJSON(w, fmt.Sprintf(`{"code":0,"data":{"data_list":[{"book_id_str":"76901632762141767%d","book_name":"分页剧","vid_index":1,"read_timestamp_ms":1700000000000}],"has_more":%t,"next_offset":%d}}`, 90+pages, pages < 6, next))
+				case "/reading/bookapi/bookshelf/video/list/v":
+					ioJSON(w, `{"code":0,"data":{"video_shelf_info":[]}}`)
+				case "/reading/bookapi/read_progress/get/v":
+					ioJSON(w, `{"code":0,"video_data":[]}`)
+				default:
+					t.Error("unexpected cloud route")
+				}
+			})
+			defer close()
+			rows, err := c.pullLibrary(context.Background(), "123456789", LibraryData{}, nil)
+			if err != nil || pages != 6 || len(rows) != 6 {
+				t.Fatalf("incomplete history: pages=%d count=%d err=%v", pages, len(rows), err)
+			}
+		})
+	}
+}
+
+func TestCloudIncompleteHistoryNeverReturnsPartialSnapshot(t *testing.T) {
+	for _, repeated := range []bool{false, true} {
+		calls := 0
+		c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/reading/bookapi/read_history/list/v" {
+				t.Error("partial history must not continue syncing")
+			}
+			calls++
+			if !repeated {
+				ioJSON(w, `{"code":0,"data":{"data_list":[],"has_more":true}}`)
+				return
+			}
+			ioJSON(w, `{"code":0,"data":{"data_list":[{"book_id_str":"7690163276214176792","vid_index":1,"read_timestamp_ms":1700000000000}],"has_more":true}}`)
+		})
+		rows, err := c.pullLibrary(context.Background(), "123456789", LibraryData{}, nil)
+		close()
+		if err == nil || rows != nil || calls > 2 {
+			t.Fatal("incomplete page acknowledged or retried indefinitely")
+		}
+	}
+}
+
+func TestCloudBatchMetadataAndUnavailableFavorite(t *testing.T) {
+	const other = "7690163276214176794"
+	c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/reading/bookapi/read_history/list/v":
+			ioJSON(w, `{"code":0,"data":{"data_list":[],"has_more":false}}`)
+		case "/reading/bookapi/bookshelf/video/list/v":
+			ioJSON(w, `{"code":0,"data":{"video_shelf_info":[{"series_id":"7690163276214176792","collect_time":1700000000},{"series_id":"7690163276214176794","collect_time":1699999900}]}}`)
+		case "/novel/player/multi_video_detail/preload/v1":
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			biz, _ := asMap(body["biz_param"])
+			if r.Method != "POST" || body["dr_scene"] != "preload" || body["series_id"] != fixtureSeries+","+other || biz["source"] != float64(7) || biz["detail_page_version"] != float64(0) {
+				t.Error("wrong batch metadata protocol")
+			}
+			ioJSON(w, `{"code":0,"data":{"7690163276214176792":{"video_data":{"series_id_str":"7690163276214176792","series_title":"批量收藏","episode_cnt":80,"series_cover":"https://example.com/poster.jpg"}}}}`)
+		case "/reading/bookapi/read_progress/get/v":
+			ioJSON(w, `{"code":0,"video_data":[]}`)
+		default:
+			t.Error("unexpected cloud request")
+		}
+	})
+	defer close()
+	rows, err := c.pullLibrary(context.Background(), "123456789", LibraryData{}, nil)
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("lost favorite when metadata omitted: count=%d %v", len(rows), err)
+	}
+	byID := map[string]LibraryEntry{}
+	for _, r := range rows {
+		byID[r.Drama.SeriesID] = r
+	}
+	if byID[fixtureSeries].Drama.Title != "批量收藏" || byID[fixtureSeries].FavoriteAt != 1700000000000 || !byID[other].Drama.MetadataPending || byID[other].FavoriteAt <= 0 {
+		t.Fatal("metadata/timestamp lost")
+	}
+	s, _ := newLibraryStore(t.TempDir())
+	if err := s.mergeCloud(rows, 0); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.snapshot().Entries) != 2 || s.snapshot().Entries[0].FavoriteAt <= 0 {
+		t.Fatal("zero sync stamp erased cloud favorite")
+	}
+	row := byID[other]
+	row.Drama = Drama{SeriesID: other, Title: "重试已加载"}
+	if err := s.mergeCloud([]LibraryEntry{byID[fixtureSeries], row}, 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range s.snapshot().Entries {
+		if e.Drama.SeriesID == other && (e.Drama.MetadataPending || e.Drama.Title != "重试已加载") {
+			t.Fatal("metadata retry not merged")
+		}
+	}
+}
+
+func TestCloudMetadataMismatchedIdentityCannotMerge(t *testing.T) {
+	c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
+		ioJSON(w, `{"code":0,"data":{"7690163276214176792":{"video_data":{"series_id":"7690163276214176794","series_title":"错误身份"}}}}`)
+	})
+	defer close()
+	if _, err := c.libraryMetadata(context.Background(), []string{fixtureSeries}); err == nil {
+		t.Fatal("wrong series accepted")
+	}
+}
 
 const fixtureSeries = "7690163276214176792"
 const fixtureVideo = "7690163276214176793"
@@ -66,12 +185,23 @@ func TestCloudPullAndPushWireShapes(t *testing.T) {
 			if rows, ok := body["update_datas"].([]any); ok {
 				historyUpdates.Add(1)
 				row := rows[0].(map[string]any)
+				for _, key := range []string{"user_digg", "meet_guide_comment_tag", "user_playlet_comment_flag"} {
+					if _, ok := row[key].(bool); !ok {
+						t.Errorf("%s must be boolean", key)
+					}
+				}
+				if _, ok := row["is_multi_season"].(json.Number); !ok {
+					t.Error("is_multi_season must be integer")
+				}
 				if asString(row["book_id"]) != fixtureSeries || asString(row["vid"]) != fixtureVideo || asInt(row["vid_index"]) != 8 || asInt(row["current_play_position"]) != 15250 {
 					t.Error("history upload ID/index/ms mismatch")
 				}
 			} else if rows, ok := body["books"].([]any); ok {
 				progressUpdates.Add(1)
 				row := rows[0].(map[string]any)
+				if _, ok := row["check_timestamp"].(bool); !ok {
+					t.Error("check_timestamp must be boolean")
+				}
 				if asString(row["book_id"]) != fixtureSeries || asString(row["item_id"]) != fixtureVideo || asInt(row["current_play_time"]) != 15250 {
 					t.Error("progress upload mismatch")
 				}

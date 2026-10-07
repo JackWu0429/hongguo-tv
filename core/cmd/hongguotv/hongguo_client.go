@@ -52,6 +52,7 @@ type Drama struct {
 	PublishTime          int64     `json:"publish_time,omitempty"`
 	PublishText          string    `json:"publish_text,omitempty"`
 	ActorID              string    `json:"actor_id,omitempty"`
+	MetadataPending      bool      `json:"metadata_pending,omitempty"`
 }
 
 type Episode struct {
@@ -655,7 +656,7 @@ func normalizeDrama(value any) (Drama, bool) {
 			object = nestedObject
 		}
 	}
-	id := firstNonEmpty(asString(object["series_id"]), asString(object["seriesId"]), asString(object["book_id"]), asString(object["id"]))
+	id := firstNonEmpty(asString(object["series_id_str"]), asString(object["series_id"]), asString(object["seriesId"]), asString(object["book_id"]), asString(object["id"]))
 	title := firstNonEmpty(asString(object["series_title"]), asString(object["series_name"]), asString(object["title"]), "未命名短剧")
 	if id == "" {
 		return Drama{}, false

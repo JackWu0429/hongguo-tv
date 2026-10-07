@@ -15,13 +15,15 @@ import (
 // from the number of visible cards: calendar/search may contain non-video rows.
 type ListResult struct {
 	CategoryResult
-	SearchID string          `json:"search_id,omitempty"`
-	Passback string          `json:"passback,omitempty"`
-	Calendar *CalendarSchema `json:"calendar,omitempty"`
-	Ranks    []RankOption    `json:"ranks,omitempty"`
-	Source   string          `json:"source,omitempty"`
-	FeedCell string          `json:"feed_cell,omitempty"`
-	FeedPlan string          `json:"feed_plan,omitempty"`
+	SearchID     string          `json:"search_id,omitempty"`
+	Passback     string          `json:"passback,omitempty"`
+	Calendar     *CalendarSchema `json:"calendar,omitempty"`
+	Ranks        []RankOption    `json:"ranks,omitempty"`
+	Source       string          `json:"source,omitempty"`
+	FeedCell     string          `json:"feed_cell,omitempty"`
+	FeedPlan     string          `json:"feed_plan,omitempty"`
+	OnlineTotal  *int            `json:"online_total_count,omitempty"`
+	OfflineTotal *int            `json:"offline_total_count,omitempty"`
 }
 type CalendarSchema struct {
 	Dates       []string `json:"dates"`
@@ -366,6 +368,24 @@ func (c *passportClient) SubscriptionList(ctx context.Context, q url.Values, cal
 	}
 	out := ListResult{CategoryResult: listCursor(d)}
 	rows, _ := d["subscribe_items"].([]any)
+	if !calendar {
+		if value, ok := d["online_total_count"]; ok {
+			count := asInt(value)
+			if count >= 0 {
+				out.OnlineTotal = &count
+			}
+		}
+		if value, ok := d["offline_total_count"]; ok {
+			count := asInt(value)
+			if count >= 0 {
+				out.OfflineTotal = &count
+			}
+		}
+		// Official Reservations also advances by 20 if the API omits a cursor.
+		if out.HasMore && out.NextOffset <= asInt(q.Get("offset")) && len(rows) > 0 {
+			out.NextOffset = asInt(q.Get("offset")) + 20
+		}
+	}
 	for _, v := range rows {
 		if item, ok := reservationDrama(v); ok {
 			if !calendar {

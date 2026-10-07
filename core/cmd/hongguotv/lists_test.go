@@ -64,6 +64,20 @@ func TestReservationWriteUsesItemIDAndConfirmedResponse(t *testing.T) {
 		close()
 	}
 }
+
+func TestReservationCountersAndMissingCursor(t *testing.T) {
+	c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("is_online") != "true" || r.URL.Query().Get("limit") != "20" {
+			t.Error("wrong reservation mode")
+		}
+		ioJSON(w, `{"code":0,"data":{"online_total_count":48,"offline_total_count":0,"has_more":true,"subscribe_items":[{"item_id":"7692049770637954110","is_online":true,"subscribe_data":{"series_id":"7690163276214176792","title":"已上线剧","episode_cnt":80}}]}}`)
+	})
+	defer close()
+	out, err := c.SubscriptionList(context.Background(), url.Values{"mode": {"online"}, "offset": {"20"}}, false)
+	if err != nil || out.OnlineTotal == nil || *out.OnlineTotal != 48 || out.OfflineTotal == nil || *out.OfflineTotal != 0 || out.NextOffset != 40 || !out.HasMore || len(out.Items) != 1 || out.Items[0].Upcoming {
+		t.Fatalf("bad counts/cursor: %+v %v", out, err)
+	}
+}
 func TestSearchGroupingAndPagination(t *testing.T) {
 	p := map[string]any{}
 	d := json.NewDecoder(strings.NewReader(`{"data":{"search_tabs":[{"tab_type":1,"data":[]},{"tab_type":11,"has_more":true,"next_offset":"100","search_id":"search-s","passback":"p","data":[{"video_data":[{"series_id":7690163276214176792,"title":"第十三季","episode_cnt":209}]},{"lynx_data":"{\"items\":[{\"video_data\":[{\"series_id\":\"7690163276214176793\",\"title\":\"第二季\",\"episode_cnt\":50}]}]}"}]}]}}`))

@@ -161,6 +161,9 @@ func trimLibrary(data *LibraryData) {
 
 func cleanLibraryDrama(drama Drama) Drama {
 	drama.VidList, drama.Episodes = nil, nil
+	// Cloud history thumb_url can also be HEIC. Rebuild the JPEG alternative
+	// on restore and merge, just as for category/detail cards.
+	drama.CoverFallback = browserCoverFallback(drama.Cover)
 	// Current-episode identity lives in VideoID. A saved card must resolve its
 	// target episode from details, especially when restarting a completed show.
 	drama.Vid = ""
