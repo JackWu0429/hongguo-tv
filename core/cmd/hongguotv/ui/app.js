@@ -1949,7 +1949,7 @@
         item.reserved = true; reservationPager.loaded = false; calendarPager.loaded = false;
         // Refetch exact counts next time; other pages may have changed remotely.
         reservationCounts.upcoming = null; updateReservationCounts({});
-        seriesItems.forEach(function (season) { if (season.reservation_id === item.reservation_id) season.reserved = true; });
+        updateSeasonReservation(item.reservation_id, true);
         updateSeriesRows();
         showNotice('已预约' + label + '，上线后可在“我的预约”查看');
         return true;
@@ -2655,6 +2655,15 @@
     while (seasonCatalogKeys.length > 24) delete seasonCatalogCache[seasonCatalogKeys.shift()];
   }
 
+  function updateSeasonReservation(id, reserved) {
+    function update(items) { items.forEach(function (item) { if (item.reservation_id === id) item.reserved = reserved; }); }
+    update(seriesItems);
+    seasonCatalogKeys.forEach(function (key) {
+      var entry = seasonCatalogCache[key];
+      if (entry && entry.items) update(entry.items);
+    });
+  }
+
   function resetSeasonCatalog() {
     seasonCatalogRequests.forEach(function (request) { request.abort(); });
     seasonCatalogRequests = []; seasonCatalogCache = {}; seasonCatalogKeys = [];
@@ -2816,7 +2825,8 @@
     updateSeriesRows(); seriesMessage('');
     fetchData('/api/v1/reservation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: item.reservation_id, reserved: reserved }), signal: request.signal }).then(function () {
       if (epoch !== accountEpoch || generation !== seriesGeneration || !detailModalOpen) return;
-      item.reserved = reserved; reservationPager.loaded = false; calendarPager.loaded = false;
+      item.reserved = reserved; updateSeasonReservation(item.reservation_id, reserved);
+      reservationPager.loaded = false; calendarPager.loaded = false;
       if (reservationCounts.upcoming !== null) { reservationCounts.upcoming = Math.max(0, reservationCounts.upcoming + (reserved ? 1 : -1)); updateReservationCounts({}); }
       document.querySelectorAll('.publication-row').forEach(function (row) {
         if (row.__item && row.__item.reservation_id === item.reservation_id) {
