@@ -63,7 +63,13 @@
       // Other page shortcuts cannot escape this focus surface.
       return true;
     }
-    return { open: open, close: close, move: move, choose: choose, press: press, handleKey: handleKey, snapshot: snapshot, isOpen: function () { return active; } };
+    function completeRemote(field, digits) {
+      if (!active || field !== kind || typeof digits !== 'string' || !(kind === 'phone' ? /^1[3-9][0-9]{9}$/.test(digits) : /^[0-9]{4,8}$/.test(digits))) return false;
+      value = digits;
+      if (options.change) options.change(kind, value);
+      return close('complete');
+    }
+    return { open: open, close: close, move: move, choose: choose, press: press, handleKey: handleKey, completeRemote: completeRemote, snapshot: snapshot, isOpen: function () { return active; } };
   }
   return { create: create, keys: keys };
 }));

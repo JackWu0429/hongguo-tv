@@ -30,6 +30,7 @@ type server struct {
 	hongguo      *hongguoClient
 	libraryStore *libraryStore
 	accounts     *accountManager
+	numberInputs *numberInputManager
 }
 
 type statusResponse struct {
@@ -61,6 +62,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	s := &server{instanceID: *instanceID, startedAt: time.Now().UTC(), hongguo: newHongguoClient(), libraryStore: library}
+	s.numberInputs = newNumberInputManager()
+	defer s.numberInputs.close()
 	s.accounts, err = newAccountManager(*dataDir, library, s.hongguo)
 	if err != nil {
 		log.Fatalf("prepare account: %v", err)
@@ -76,6 +79,7 @@ func main() {
 	mux.HandleFunc("/api/v1/library", s.library)
 	mux.HandleFunc("/api/v1/account", s.account)
 	mux.HandleFunc("/api/v1/account/", s.account)
+	mux.HandleFunc("/api/v1/number-input", s.numberInput)
 	mux.HandleFunc("/api/v1/category", s.category)
 	mux.HandleFunc("/api/v1/Category", s.category)
 	mux.HandleFunc("/api/v1/rank", s.rank)
@@ -118,7 +122,7 @@ func serveUI(root fs.FS) http.Handler {
 
 func (s *server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/v1/account") || strings.HasPrefix(r.URL.Path, "/api/v1/lists/") || strings.HasPrefix(r.URL.Path, "/api/v1/player/") || r.URL.Path == "/api/v1/series/seasons" || r.URL.Path == "/api/v1/replies" || r.URL.Path == "/api/v1/reservation" || r.URL.Path == "/api/v1/comments" || r.URL.Path == "/api/v1/danmaku" || r.URL.Path == "/api/v1/library" {
+		if strings.HasPrefix(r.URL.Path, "/api/v1/account") || r.URL.Path == "/api/v1/number-input" || strings.HasPrefix(r.URL.Path, "/api/v1/lists/") || strings.HasPrefix(r.URL.Path, "/api/v1/player/") || r.URL.Path == "/api/v1/series/seasons" || r.URL.Path == "/api/v1/replies" || r.URL.Path == "/api/v1/reservation" || r.URL.Path == "/api/v1/comments" || r.URL.Path == "/api/v1/danmaku" || r.URL.Path == "/api/v1/library" {
 			if !privateLocalRequest(r) {
 				writeError(w, http.StatusForbidden, "只允许应用本身访问账号和记录")
 				return

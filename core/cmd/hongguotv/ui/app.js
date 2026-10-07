@@ -51,6 +51,7 @@
   var shell = document.querySelector('.app-shell');
   var androidShell = /HongguoTV-Android/.test(navigator.userAgent);
   var numericKeypad;
+  var accountNumberScan;
   var accountKeypadReturnFocus = null;
   var accountKeypadPhase = '';
   var mainSurface = document.getElementById('main-surface');
@@ -1082,7 +1083,8 @@
     if (!numericKeypad || !field || field.disabled || accountBusy || pageMode() !== 'account' || accountKeypadOpen()) return;
     accountKeypadReturnFocus = field;
     accountKeypadPhase = accountData && accountData.phase || 'phone';
-    numericKeypad.open(field.id === 'account-code' ? 'code' : 'phone', field.value);
+    var kind = field.id === 'account-code' ? 'code' : 'phone';
+    if (numericKeypad.open(kind, field.value)) accountNumberScan.start(kind);
   }
 
   function normalizedKey(event) {
@@ -1214,6 +1216,7 @@
       if (zoneOf(document.activeElement) === 'feed') goFocus(document.getElementById('player-retry'));
     }
   }
+  function episodeLoadingText(episode) { return episode > 0 ? '正在加载第 ' + episode + ' 集…' : '正在加载…'; }
   function setControlIcon(action, label, icon) {
     var button = document.querySelector('[data-action="' + action + '"]');
     var text = button.querySelector('.control-label');
@@ -1318,7 +1321,7 @@
       playbackPreferences.quality = value; savePlaybackPreferences();
       if (playbackRequest) playbackRequest.position = position;
       video.src = data.path; video.load(); updatePlaybackControls(); closePlayerOptions();
-      setPlayerStatus('正在加载视频…');
+      setPlayerStatus(episodeLoadingText(playback.episode));
       if (previous.playing && !document.hidden && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus(''); revealControls(); });
     }).catch(function (error) {
       if (epoch !== qualityEpoch || generation !== feedGeneration) return;
@@ -1917,7 +1920,7 @@
     if (source) loader.src = source;
   }
 
-  function setFeatured(item) {
+  function setFeatured(item, waitingForProgress) {
     if (!item || !item.series_id) return;
     featuredItem = item;
     var backdrop = document.getElementById('hero-backdrop');
@@ -1932,10 +1935,10 @@
       setBackdrop(backdrop, item);
     }
     if (title) title.textContent = item.title || '红果短剧';
-    if (episode) episode.textContent = '第' + (item.start_episode || 1) + '集' + (item.episode_count ? ' · 全' + item.episode_count + '集' : '');
+    if (episode) episode.textContent = waitingForProgress ? item.episode_count ? '全' + item.episode_count + '集' : '' : '第' + (item.start_episode || 1) + '集' + (item.episode_count ? ' · 全' + item.episode_count + '集' : '');
     if (summary) summary.textContent = item.intro || '';
     if (topTitle) topTitle.textContent = item.title || '红果短剧';
-    if (topEpisode) topEpisode.textContent = '第' + (item.start_episode || 1) + '集';
+    if (topEpisode) topEpisode.textContent = waitingForProgress ? '' : '第' + (item.start_episode || 1) + '集';
     if (placeholderTitle) placeholderTitle.textContent = item.title || '红果短剧';
     if (placeholderSummary) placeholderSummary.textContent = item.intro || '';
     updateSavedButtons();
@@ -2062,7 +2065,7 @@
     function finishContinuation() { playback.continuationPending = false; playback.continuationToken = 0; }
     playback.continuationPending = true;
     playback.continuationToken = ++continuationGeneration;
-    setPlayerStatus('正在读取下一集…');
+    setPlayerStatus(episodeLoadingText(playback.item.episode_count > playback.episode ? playback.episode + 1 : 0));
     getDetail(playback.item).then(function (detail) {
       if (!canContinuePlayback(playback)) return;
       if (detail.vid_list && detail.vid_list[playback.episode]) {
@@ -2073,7 +2076,7 @@
       if (!detail.vid_list || !detail.vid_list.length || playback.episode < Math.max(detail.episode_count || 0, detail.vid_list.length)) {
         throw new Error('本季集列表不完整');
       }
-      setPlayerStatus('正在确认下一季…');
+      setPlayerStatus(episodeLoadingText());
       return fetch('/api/v1/series/next-season?series_id=' + encodeURIComponent(playback.item.series_id))
         .then(function (response) { return response.json().then(function (payload) {
           if (!response.ok || !payload.ok || !payload.data || !Object.prototype.hasOwnProperty.call(payload.data, 'next')) throw new Error(payload.error || '季关系响应无效');
@@ -2222,9 +2225,10 @@
     hero.classList.remove('is-catalog-loading');
     placeholder.classList.add('is-hidden');
     updateFeedCounter();
-    setFeatured(item);
+    var incomingEpisode = forcedEpisode || (libraryLoaded ? resumeEpisode(libraryEntry(item.series_id), item) : 0);
+    setFeatured(Object.assign({}, item, { start_episode: incomingEpisode }), !incomingEpisode);
     updateSeriesRows();
-    setPlayerStatus('正在准备播放…');
+    setPlayerStatus(episodeLoadingText(incomingEpisode));
     // Hide the old WebView video surface before resetting its native source.
     // Opacity alone can leave a grey hardware-video rectangle during load().
     video.classList.remove('has-source');
@@ -2238,6 +2242,8 @@
       var episode = forcedEpisode || resumeEpisode(entry, item);
       var position = forcedPosition !== undefined ? forcedPosition : entry && episode === entry.episode && !entry.completed ? entry.position || 0 : 0;
       playbackRequest.episode = episode; playbackRequest.position = position;
+      setFeatured(Object.assign({}, item, { start_episode: episode }));
+      setPlayerStatus(episodeLoadingText(episode));
       var source = episode === 1 && firstVid(item) ? Promise.resolve(item) : getDetail(item, request.signal);
       return source.then(function (detail) {
         if (generation !== feedGeneration || request.signal.aborted) return null;
@@ -2246,7 +2252,7 @@
         var playing = Object.assign({}, item, detail, { start_episode: episode, vid: vid });
         activePlayback = { item: playing, episode: episode, vid: vid, position: position, generation: generation, started: false, lastWrite: 0, completed: false };
         setFeatured(playing);
-        setPlayerStatus('正在准备第 ' + episode + ' 集…');
+        setPlayerStatus(episodeLoadingText(episode));
         var target = { series_id: item.series_id, vid: vid, episode: episode, quality: playbackPreferences.quality, owner: accountEpoch };
         var handoff = episodePrefetch.consume(target);
         playbackPrefetchHandoff = handoff;
@@ -2273,7 +2279,7 @@
         video.classList.add('has-source');
         placeholder.classList.add('is-hidden');
         video.load();
-        setPlayerStatus('正在加载视频…');
+        setPlayerStatus(episodeLoadingText(activePlayback.episode));
         if (!document.hidden && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus(''); revealControls(); showNotice('视频已准备好，请按确认键开始播放'); });
         else { setPlayerStatus(''); revealControls(); }
       })
@@ -3497,7 +3503,7 @@
   media.addEventListener('ratechange', updatePlaybackControls);
   media.addEventListener('volumechange', updatePlaybackControls);
   media.addEventListener('emptied', updatePlaybackControls);
-  media.addEventListener('waiting', function () { if (activePlayback) setPlayerStatus(activePlayback.started ? '正在缓冲…' : '正在加载视频…'); });
+  media.addEventListener('waiting', function () { if (activePlayback) setPlayerStatus(activePlayback.started ? '正在缓冲…' : episodeLoadingText(activePlayback.episode)); });
   media.addEventListener('canplay', function () {
     if (media.paused && activePlayback && activePlayback.generation === feedGeneration && media.readyState >= 2) {
       document.getElementById('hero').classList.remove('is-preparing-video');
@@ -3552,6 +3558,7 @@
       field.value = value; renderAccountNumber(field);
     },
     close: function (result) {
+      accountNumberScan.stop();
       var origin = accountKeypadReturnFocus; accountKeypadReturnFocus = null; accountKeypadPhase = '';
       if (result.reason !== 'complete' && result.reason !== 'back') return;
       renderAccount();
@@ -3559,6 +3566,20 @@
       var next = result.reason === 'back' ? origin : result.kind === 'code' ? firstVisible('#account-login') : firstVisible('#account-code') || firstVisible('#account-send-code');
       goFocus(next || (origin && !origin.disabled ? origin : firstContentFocus()));
     }
+  });
+  accountNumberScan = window.HongguoNumberInput.create({
+    request: function (method, session, kind) {
+      var options = { method: method };
+      if (method === 'POST') { options.headers = { 'Content-Type': 'application/json' }; options.body = JSON.stringify({ kind: kind }); }
+      return fetchData('/api/v1/number-input' + (session ? '?session=' + encodeURIComponent(session) : ''), options);
+    },
+    render: function (state) {
+      var image = document.getElementById('account-number-qr');
+      image.classList.toggle('is-hidden', state.state !== 'waiting');
+      if (state.state === 'waiting') image.src = state.qr; else image.removeAttribute('src');
+      document.getElementById('account-number-scan-status').textContent = state.state === 'creating' ? '正在生成二维码…' : state.state === 'waiting' ? '手机扫码，填写或粘贴数字后回填电视' : state.state === 'closed' ? '' : state.message;
+    },
+    complete: function (kind, value) { numericKeypad.completeRemote(kind, value); }
   });
   window.HongguoNumericKeypad.keys.forEach(function (key, index) {
     var button = document.createElement('button'); button.type = 'button'; button.className = 'account-keypad-key';
