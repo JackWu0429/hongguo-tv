@@ -8,6 +8,8 @@
 
 登录成功后可查看当前账号及云同步状态，左右键可在账号和同步两栏之间切换。“立即同步”主动触发一轮同步，退出前有确认弹窗。验证码错误、接口失败、验证等待和同步失败分别显示，不把等待或 HTTP 200 当作成功。
 
+登录成功以 Passport 短信登录 / MFA 重试的明确成功响应、有效且一致的账号 ID、会话 Cookie / Token 为依据。立即保存成功会话后再异步同步；同步服务异常只显示在同步状态中，不要求再次输入已经使用过的验证码。
+
 ## 记录与合并
 
 - 未登录时继续使用原 `library.json`。登录后使用 `accounts/<uid>/library.json`，不同账号互相隔离；登录前的记录不会自动上传。退出后返回原本机记录，再次登录同一账号会恢复该账号的待同步队列。
@@ -26,7 +28,7 @@
 | 获取验证码 | POST `/passport/mobile/send_code/v1/` |
 | 短信登录 | POST `/passport/mobile/sms_login/` |
 | 上行短信验证 | POST `/passport/upsms/verify/` |
-| 用户信息 | GET `/reading/user/info/v1/` |
+| 阅读资料（不用于认证） | GET `/reading/user/info/v1/` |
 | 历史读取 / 更新 | GET `/reading/bookapi/read_history/list/v` / POST `/reading/bookapi/read_history/update/v` |
 | 进度读取 / 上传 | POST `/reading/bookapi/read_progress/get/v` / POST `/reading/bookapi/read_progress/upload/v` |
 | 收藏读取 / 更新 | GET `/reading/bookapi/bookshelf/video/list/v` / POST `/reading/bookapi/bookshelf/video/update/v` |
@@ -50,6 +52,16 @@
 - 独立 Python hashlib/gzip + OpenSSL 固定向量验证设备加密；fixture 验证注册先后顺序、持久保存/重启/退出、失败阻止发码、取消以及计时状态。
 
 ## 验证范围
+
+### 短信提交后的身份误判修复
+
+2026-10-07，用户已收到短信，提交验证码后出现“账号会话已失效或身份不一致”。该提示来自本项目 `finishLogin` 中额外的 Reading 资料接口比较，并非发码接口失败。没有读取或记录用户真实登录响应，不能据此断言具体返回 ID 或上游原因。
+
+Mac v1.1.6 `service.Auth.Login` 的静态链路是 `LoginFull` → `Session.SetUID` → 捕获 Cookie / Token → `SaveAccount`，没有 Reading 资料校验门槛。匿名注册设备后，只读请求 Reading 资料接口即返回 `code=0` 和资料字段，说明它的成功状态不能证明账号已登录。移除登录和同步中的这项错误认证依赖，未换用未经账号实测的认证接口。
+
+登录仍拒绝失败响应、缺失 / 零 ID、同一 Passport 响应中数值和字符串 ID 不一致、缺失会话凭证及取消后的迟到回复。同步检查本机账号记录归属及凭证，通过实际历史 / 收藏 / 进度接口的明确成功状态读取和写入；任一步失败或响应结构无效均停止合并和上传，保留本机记录与待上传队列。不能把本机归属检查描述为上游会话身份验证。
+
+新增 fixture 覆盖 19 位 ID 精度、有效 Passport 登录不被无关资料接口否决、同步失败不撤销登录、会话过期 / 嵌套业务错误禁止合并与上传。没有重发或复用截图中的真实手机号 / 验证码；真实登录及跨设备云同步仍由用户在更新后验证。
 
 Go race/vet、签名固定向量、登录/MFA fixture、双向同步字段、进度冲突、失败保留队列、账号隔离、退出取消和写盘失败测试已完成。浏览器验证 1280×720 与 1920×1080 的账号界面、输入删除、方向键、等待/取消及退出焦点。
 

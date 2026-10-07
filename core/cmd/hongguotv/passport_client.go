@@ -238,6 +238,29 @@ func passportSuccess(p map[string]any) bool {
 	}
 	return asString(p["message"]) == "success" && passportData(p) != nil
 }
+
+func passportLoginUID(p map[string]any) (string, error) {
+	if !passportSuccess(p) {
+		return "", passportFailure(p)
+	}
+	d := passportData(p)
+	uid, numeric := asString(d["user_id_str"]), asString(d["user_id"])
+	if uid == "" {
+		uid = numeric
+	}
+	if !validID(uid) || uid == "0" || (numeric != "" && (!validID(numeric) || numeric == "0")) {
+		return "", errors.New("登录响应缺少有效账号身份")
+	}
+	if numeric != "" && numeric != uid {
+		return "", errors.New("登录响应中的账号身份不一致，请重试")
+	}
+	return uid, nil
+}
+
+func hasAccountCredentials(s accountSession) bool {
+	return s.Token != "" || s.Cookies["sessionid"] != "" || s.Cookies["sessionid_ss"] != ""
+}
+
 func passportFailure(p map[string]any) error {
 	code := passportErrorCode(p)
 	if code == "" {

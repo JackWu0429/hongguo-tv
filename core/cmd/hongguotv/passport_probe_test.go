@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"sort"
 	"testing"
 	"time"
 )
@@ -20,6 +21,40 @@ func TestLiveAnonymousPassport(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("anonymous user-info: code=%q message=%q data-present=%t", asString(p["code"]), asString(p["message"]), p["data"] != nil)
+}
+
+func TestLiveAnonymousIdentityEndpoints(t *testing.T) {
+	if os.Getenv("HONGGUO_LIVE_IDENTITY_PROBE") != "1" {
+		t.Skip("anonymous identity endpoints only; no SMS or account credentials")
+	}
+	d, err := newPassportDevice()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := newPassportClient(accountSession{Device: d})
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	if err := c.registerDevice(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/reading/user/info/v1/", "/passport/user/info/"} {
+		q := urlValues("user_id", "123456789") // Synthetic, never a real account from a screenshot.
+		if path == "/passport/user/info/" {
+			q = nil
+		}
+		p, err := c.request(ctx, path, http.MethodGet, q, nil, "")
+		if err != nil {
+			t.Log(path, err)
+			continue
+		}
+		d := passportData(p)
+		keys := make([]string, 0, len(d))
+		for k := range d {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		t.Logf("%s code=%q error_code=%q success=%t user_id_zero=%t fields=%v", path, asString(p["code"]), passportErrorCode(p), passportSuccess(p), asString(d["user_id"]) == "0", keys)
+	}
 }
 
 func TestLiveAnonymousRegisteredPassport(t *testing.T) {

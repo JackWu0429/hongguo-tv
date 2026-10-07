@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -34,6 +35,85 @@ func fixtureAccount(t *testing.T, h http.HandlerFunc) *accountManager {
 		return c
 	}
 	return m
+}
+
+func TestPassportLoginIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name, response, want string
+	}{
+		{"string", `{"message":"success","data":{"user_id_str":"7391234567890123456"}}`, "7391234567890123456"},
+		{"number", `{"message":"success","data":{"user_id":7391234567890123456}}`, "7391234567890123456"},
+		{"both", `{"message":"success","data":{"user_id_str":"7391234567890123456","user_id":7391234567890123456}}`, "7391234567890123456"},
+		{"zero", `{"message":"success","data":{"user_id":0}}`, ""},
+		{"empty", `{"message":"success","data":{}}`, ""},
+		{"disagree", `{"message":"success","data":{"user_id_str":"123456789","user_id":987654321}}`, ""},
+		{"invalid number", `{"message":"success","data":{"user_id_str":"123456789","user_id":0}}`, ""},
+		{"rejected", `{"message":"error","data":{"user_id_str":"123456789","error_code":1105}}`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var p map[string]any
+			d := json.NewDecoder(bytes.NewBufferString(tc.response))
+			d.UseNumber()
+			if err := d.Decode(&p); err != nil {
+				t.Fatal(err)
+			}
+			got, err := passportLoginUID(p)
+			if got != tc.want || (err != nil) != (tc.want == "") {
+				t.Fatalf("identity result=%q error=%v", got, err)
+			}
+		})
+	}
+}
+
+func TestAccountLoginDoesNotUseReadingProfileAsIdentity(t *testing.T) {
+	var profileCalls atomic.Int32
+	var failCloud atomic.Bool
+	m := fixtureAccount(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/reading/user/info/v1/" {
+			profileCalls.Add(1)
+			ioJSON(w, `{"code":0,"data":{"user_id":0}}`)
+			return
+		}
+		if failCloud.Load() {
+			ioJSON(w, `{"code":401,"message":"expired"}`)
+			return
+		}
+		accountFixtureResponse(w, r.URL.Path, false)
+	})
+	if err := m.sendCode(context.Background(), "13800000000"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.loginSMS(context.Background(), "13800000000", "123456"); err != nil {
+		t.Fatal(err)
+	}
+	if profileCalls.Load() != 0 || !m.status().LoggedIn || m.status().Error != "" {
+		t.Fatal("valid Passport login vetoed by unrelated profile API")
+	}
+	// A cloud read failure must not consume another SMS code or undo login.
+	failCloud.Store(true)
+	m.synchronize(context.Background())
+	if !m.status().LoggedIn || m.status().Error != "" || m.status().Sync.Error == "" {
+		t.Fatal("cloud failure turned a successful login into an SMS error")
+	}
+}
+
+func TestAccountLoginRejectsMissingCredentials(t *testing.T) {
+	m := fixtureAccount(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/passport/mobile/sms_login/" {
+			ioJSON(w, `{"message":"success","data":{"user_id_str":"123456789"}}`)
+			return
+		}
+		accountFixtureResponse(w, r.URL.Path, false)
+	})
+	if err := m.sendCode(context.Background(), "13800000000"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.loginSMS(context.Background(), "13800000000", "123456"); err == nil {
+		t.Fatal("login without session accepted")
+	}
+	if m.status().LoggedIn || m.librarySnapshot().OwnerID != "" {
+		t.Fatal("invalid login changed account")
+	}
 }
 func accountFixtureResponse(w http.ResponseWriter, path string, mfa bool) {
 	switch path {

@@ -421,23 +421,17 @@ func (m *accountManager) finishLogin(ctx context.Context, g uint64, a *loginAtte
 		return errors.New("登录已取消")
 	}
 	d := passportData(p)
-	uid := asString(d["user_id_str"])
-	if uid == "" {
-		uid = asString(d["user_id"])
-	}
-	if !validID(uid) {
-		return errors.New("登录响应缺少有效账号身份")
-	}
-	if a.client.session.Token == "" && a.client.session.Cookies["sessionid"] == "" && a.client.session.Cookies["sessionid_ss"] == "" {
-		return errors.New("登录响应缺少会话凭证")
-	}
-	info, err := a.client.cloudJSON(ctx, "/reading/user/info/v1/", http.MethodGet, urlValues("user_id", uid), nil)
+	uid, err := passportLoginUID(p)
 	if err != nil {
 		return err
 	}
-	if err := validateAccountIdentity(info, uid); err != nil {
-		return err
+	if !hasAccountCredentials(a.client.session) {
+		return errors.New("登录响应缺少会话凭证")
 	}
+	// Passport's successful SMS/MFA response is the login authority, as in
+	// service.Auth.Login in the reference client. Reading user-info is a separate
+	// profile API: even anonymous requests can return code=0. Its fields must
+	// neither veto a valid Passport login nor authenticate a cloud session.
 	profile := &accountProfile{UID: uid, Name: asString(d["screen_name"]), Avatar: asString(d["avatar_url"]), Phone: maskPhone(a.phone)}
 	if profile.Name == "" {
 		profile.Name = asString(d["name"])
@@ -454,7 +448,7 @@ func (m *accountManager) finishLogin(ctx context.Context, g uint64, a *loginAtte
 	if g != m.generation || ctx.Err() != nil {
 		return errors.New("登录已取消")
 	}
-	disk := accountDisk{Version: 1, Session: a.client.session, Profile: profile}
+	disk := accountDisk{Version: 1, Session: cloneAccountSession(a.client.session), Profile: profile}
 	if err = m.saveDisk(disk); err != nil {
 		return err
 	}
@@ -465,23 +459,6 @@ func (m *accountManager) finishLogin(ctx context.Context, g uint64, a *loginAtte
 	m.syncError = ""
 	m.lastSync = storeCloudLastSync(store)
 	m.signalSync()
-	return nil
-}
-func validateAccountIdentity(info map[string]any, uid string) error {
-	details := passportData(info)
-	if u, ok := asMap(details["user_info"]); ok {
-		details = u
-	}
-	got := asString(details["user_id_str"])
-	if got == "" {
-		got = asString(details["user_id"])
-	}
-	if got != "" && got != uid {
-		return errors.New("账号会话已失效或身份不一致，请退出后重新登录")
-	}
-	if len(details) == 0 {
-		return errors.New("账号身份响应无效，请重新登录")
-	}
 	return nil
 }
 func urlValues(k, v string) url.Values { return url.Values{k: {v}} }

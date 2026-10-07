@@ -160,6 +160,7 @@ func (m *accountManager) synchronize(parent context.Context) {
 	}
 	g, store, uid := m.generation, m.store, m.disk.Profile.UID
 	client := m.newClient(m.disk.Session)
+	client.uid = uid
 	m.syncing = true
 	ctx, cancel := context.WithTimeout(parent, 3*time.Minute)
 	m.cancelSync = cancel
@@ -167,9 +168,11 @@ func (m *accountManager) synchronize(parent context.Context) {
 	defer cancel()
 	// Pull first: stale offline progress must not overwrite another device's
 	// newer watch position. Merge reconciles only matching progress mutations.
-	identity, err := client.cloudJSON(ctx, "/reading/user/info/v1/", http.MethodGet, urlValues("user_id", uid), nil)
-	if err == nil {
-		err = validateAccountIdentity(identity, uid)
+	var err error
+	if !validID(uid) || uid == "0" || store.snapshot().OwnerID != uid {
+		err = errors.New("账号记录身份不匹配，请重新登录")
+	} else if !hasAccountCredentials(client.session) {
+		err = errors.New("账号会话凭证缺失，请重新登录")
 	}
 	var remote []LibraryEntry
 	if err == nil {

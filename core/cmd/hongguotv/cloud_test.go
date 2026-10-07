@@ -19,7 +19,7 @@ const fixtureVideo = "7690163276214176793"
 func loggedFixture(t *testing.T, h http.HandlerFunc) *accountManager {
 	t.Helper()
 	m := fixtureAccount(t, func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/passport/") || r.URL.Path == "/reading/user/info/v1/" || r.URL.Path == "/service/2/device_register/" {
+		if strings.HasPrefix(r.URL.Path, "/passport/") || r.URL.Path == "/service/2/device_register/" {
 			accountFixtureResponse(w, r.URL.Path, false)
 			return
 		}
@@ -221,12 +221,45 @@ func TestAccountRejectsReboundHostname(t *testing.T) {
 	}
 }
 
-func TestAccountExpiredIdentityCannotMergeCloud(t *testing.T) {
-	for _, payload := range []string{`{"code":0,"data":{"user_id":0}}`, `{"code":0,"data":{}}`, `{"code":0,"data":{"user_id_str":"987654321"}}`} {
-		var response map[string]any
-		_ = json.Unmarshal([]byte(payload), &response)
-		if err := validateAccountIdentity(response, "123456789"); err == nil {
-			t.Fatalf("invalid identity accepted: %s", payload)
+func TestExpiredCloudSessionCannotMergeOrUpload(t *testing.T) {
+	for _, payload := range []string{`{"code":401,"data":{}}`, `{"code":0,"data":{"error_code":401}}`, `{"code":0,"data":{}}`} {
+		t.Run(payload, func(t *testing.T) {
+			var calls atomic.Int32
+			m := loggedFixture(t, func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if r.URL.Path != "/reading/bookapi/read_history/list/v" {
+					t.Errorf("continued after failed cloud read: %s", r.URL.Path)
+				}
+				ioJSON(w, payload)
+			})
+			owner, yes := m.status().Profile.UID, true
+			_, err := m.changeLibrary(LibraryChange{OwnerID: &owner, Action: "favorite", Drama: Drama{SeriesID: fixtureSeries, Title: "保留的收藏"}, Value: &yes})
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.synchronize(context.Background())
+			d := m.librarySnapshot()
+			if calls.Load() != 1 || len(d.Entries) != 1 || d.Entries[0].FavoriteAt == 0 || len(d.Cloud.Pending) != 1 || m.status().Sync.LastSync != 0 || m.status().Sync.Error == "" || !m.status().LoggedIn {
+				t.Fatal("failed session merged/acknowledged data or undid login")
+			}
+		})
+	}
+}
+
+func TestCloudLocalAccountMismatchAndMissingCredentialsStopBeforeNetwork(t *testing.T) {
+	for _, mismatch := range []bool{false, true} {
+		m := loggedFixture(t, func(w http.ResponseWriter, r *http.Request) { t.Error("invalid local account made network request") })
+		m.mu.Lock()
+		if mismatch {
+			m.disk.Profile.UID = "987654321"
+		} else {
+			m.disk.Session.Token = ""
+			m.disk.Session.Cookies = map[string]string{}
+		}
+		m.mu.Unlock()
+		m.synchronize(context.Background())
+		if m.status().Sync.Error == "" || m.status().Sync.LastSync != 0 {
+			t.Fatal("invalid local identity accepted")
 		}
 	}
 }
