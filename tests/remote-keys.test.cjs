@@ -14,14 +14,15 @@ function keyboard() {
     var androidShell=false; function accountKeypadOpen(){return false}
     function firstVisible(selector){return {id:selector.slice(1)}}
     var shell={classList:{contains:function(){return false}}};
-    var moved=[],focused=[],clicks=0;
+    var moved=[],focused=[],clicks=0,backs=0,searches=0;
     function pageMode(){return 'search'}
     function isPlaybackPage(){return false}
     function zoneOf(){return 'sidebar'}
     function moveFrom(current,direction){moved.push(direction);return {id:direction}}
     function goFocus(target){focused.push(target.id)}
     function handleMediaCommand(){return false}
-    function handleBack(){return true}
+    function handleBack(){backs++;return true}
+    function submitSearch(){searches++}
     current.click=function(){clicks++};
   ` + keyNames + keys, c);
   return c;
@@ -60,6 +61,26 @@ test('text editing retains native left and right keys instead of moving focus', 
     for (const keyCode of [37,39]) c.handleKey({keyCode,preventDefault(){assert.fail('editing key consumed')},stopPropagation(){assert.fail('editing key stopped')}});
   }
   assert.equal(c.moved.length,0);
+});
+test('search deletion stays native for modern and legacy keys, including held Backspace', () => {
+  const c=keyboard();c.document.activeElement.id='search-input';
+  for(const event of [{key:'Backspace'},{keyIdentifier:'U+0008',keyCode:8},{key:'Unknown',keyCode:8},{which:8},{keyCode:8,repeat:true},{key:'Delete'},{keyCode:46}]) {
+    c.handleKey({...event,preventDefault(){assert.fail('editing key consumed')},stopPropagation(){assert.fail('editing key stopped')}});
+  }
+  assert.equal(c.backs,0);assert.equal(c.moved.length,0);assert.equal(c.focused.length,0);assert.equal(c.searches,0);
+});
+test('application Backspace outside search and Escape inside search retain back navigation', () => {
+  const c=keyboard();let prevented=0,stopped=0;
+  const event={preventDefault(){prevented++},stopPropagation(){stopped++}};
+  c.handleKey({...event,keyCode:8});c.document.activeElement.id='search-input';c.handleKey({...event,keyCode:27});
+  assert.equal(c.backs,2);assert.equal(prevented,2);assert.equal(stopped,2);
+});
+test('search Enter still submits once while up/down retain focus navigation', () => {
+  const c=keyboard();c.document.activeElement.id='search-input';
+  const event={preventDefault(){},stopPropagation(){}};
+  c.handleKey({...event,keyCode:13});c.handleKey({...event,keyCode:13,repeat:true});
+  c.handleKey({...event,keyCode:38});c.handleKey({...event,keyCode:40});
+  assert.equal(c.searches,1);assert.deepEqual(Array.from(c.moved),['up','down']);assert.equal(c.backs,0);
 });
 test('native vertical bridge uses the existing router once and ignores text editing keys', () => {
   const c=keyboard();

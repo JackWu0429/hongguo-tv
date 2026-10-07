@@ -1124,7 +1124,7 @@
       event.preventDefault(); event.stopPropagation(); return;
     }
 
-    if (current && current.id === 'search-input' && (key === 'ArrowLeft' || key === 'ArrowRight')) return;
+    if (current && current.id === 'search-input' && ['ArrowLeft', 'ArrowRight', 'Backspace', 'Delete'].indexOf(key) >= 0) return;
 
     if (key === 'Enter') {
       if (event.repeat) { event.preventDefault(); return; }
