@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+var errCloudMetadataIdentity = errors.New("云端详情身份不一致")
+
 type cloudMutation struct {
 	Sequence uint64       `json:"sequence"`
 	Kind     string       `json:"kind"`
@@ -433,7 +435,16 @@ func (c *passportClient) pullLibrary(ctx context.Context, uid string, local Libr
 		batch := missing[start:min(start+20, len(missing))]
 		cards, err := c.libraryMetadata(ctx, batch)
 		if err != nil {
-			return nil, errors.New("云端剧集资料读取失败：" + err.Error())
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if errors.Is(err, errCloudMetadataIdentity) {
+				return nil, err
+			}
+			// Membership has already been read completely. A down/unavailable
+			// metadata endpoint must not block progress reconciliation/upload.
+			// Keep existing card data or a placeholder and retry on later sync.
+			cards = nil
 		}
 		for _, id := range batch {
 			e := remote[id]
@@ -535,7 +546,7 @@ func (c *passportClient) libraryMetadata(ctx context.Context, ids []string) (map
 		}
 		card, ok := normalizeDrama(v)
 		if !ok || card.SeriesID != id {
-			return nil, errors.New("云端详情身份不一致")
+			return nil, errCloudMetadataIdentity
 		}
 		if asString(v["series_title"]) == "" {
 			continue

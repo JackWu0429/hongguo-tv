@@ -122,6 +122,50 @@ func TestCloudBatchMetadataAndUnavailableFavorite(t *testing.T) {
 	}
 }
 
+func TestCloudUnavailableMetadataDoesNotBlockMembershipOrUpload(t *testing.T) {
+	const unavailable = "7690163276214176794"
+	var uploads atomic.Int32
+	m := loggedFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/reading/bookapi/read_history/list/v":
+			ioJSON(w, `{"code":0,"data":{"data_list":[{"book_id_str":"7690163276214176792","book_name":"已有历史","vid_index":1,"read_timestamp_ms":1700000000000}],"has_more":false}}`)
+		case "/reading/bookapi/bookshelf/video/list/v":
+			ioJSON(w, `{"code":0,"data":{"video_shelf_info":[{"series_id":"7690163276214176794","collect_time":1700000000}]}}`)
+		case "/novel/player/multi_video_detail/preload/v1":
+			ioJSON(w, `{"code":101000}`)
+		case "/reading/bookapi/read_progress/get/v":
+			ioJSON(w, `{"code":0,"video_data":[]}`)
+		case "/reading/bookapi/read_history/update/v", "/reading/bookapi/read_progress/upload/v":
+			uploads.Add(1)
+			ioJSON(w, `{"code":0}`)
+		default:
+			t.Error("unexpected cloud route")
+		}
+	})
+	m.synchronize(context.Background())
+	var history LibraryEntry
+	found := false
+	for _, e := range m.librarySnapshot().Entries {
+		if e.Drama.SeriesID == unavailable {
+			found = e.FavoriteAt > 0 && e.Drama.MetadataPending && e.Drama.Title != ""
+		}
+		if e.Drama.SeriesID == fixtureSeries {
+			history = e
+		}
+	}
+	if !found || m.status().Sync.Error != "" {
+		t.Fatal("missing metadata blocked complete membership sync")
+	}
+	owner := m.status().Profile.UID
+	if _, err := m.changeLibrary(LibraryChange{OwnerID: &owner, Action: "progress", Drama: history.Drama, Episode: 2, VideoID: fixtureVideo, Position: 10, Duration: 90}); err != nil {
+		t.Fatal(err)
+	}
+	m.synchronize(context.Background())
+	if uploads.Load() != 2 || m.status().Sync.Pending != 0 || m.status().Sync.Error != "" {
+		t.Fatal("metadata failure blocked playback upload")
+	}
+}
+
 func TestCloudMetadataMismatchedIdentityCannotMerge(t *testing.T) {
 	c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
 		ioJSON(w, `{"code":0,"data":{"7690163276214176792":{"video_data":{"series_id":"7690163276214176794","series_title":"错误身份"}}}}`)
