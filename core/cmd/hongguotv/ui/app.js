@@ -1437,7 +1437,7 @@
         var card = document.createElement('button');
         card.className = 'library-card';
         card.dataset.focus = 'library-' + id;
-        var image = document.createElement('img'); image.loading = 'lazy'; card.appendChild(image);
+        var image = document.createElement('img'); image.loading = 'lazy'; card.appendChild(dramaPoster(image, entry.drama));
         ['title', 'meta', 'time'].forEach(function (name) { var span = document.createElement('span'); span.className = 'library-card-' + name; card.appendChild(span); });
         var progress = document.createElement('span'); progress.className = 'library-progress'; progress.appendChild(document.createElement('span')); card.appendChild(progress);
         card.addEventListener('click', function () { if (libraryEditing) goFocus(tile.querySelector('.library-remove')); else startPlayer(tile.__entry.drama, card); });
@@ -1463,6 +1463,7 @@
       keep[id] = true;
       var card = tile.querySelector('.library-card');
       if (card.querySelector('img').alt !== entry.drama.title) setCover(card.querySelector('img'), entry.drama);
+      updatePosterSeason(card.querySelector('.drama-poster'), entry.drama);
       card.querySelector('.library-card-title').textContent = entry.drama.title;
       card.querySelector('.library-card-meta').textContent = entry.last_played_at ? entry.completed && entry.drama.episode_count && entry.episode >= entry.drama.episode_count ? '已看完 · 全' + entry.episode + '集' : '继续第' + resumeEpisode(entry, entry.drama) + '集' + (!entry.completed && entry.position ? ' · ' + clockText(entry.position) : '') : entry.drama.episode_count ? '全' + entry.drama.episode_count + '集' : '从第一集播放';
       card.querySelector('.library-card-time').textContent = new Date(libraryTime(entry, kind)).toLocaleDateString();
@@ -2078,6 +2079,41 @@
     else goFocus(firstContentFocus());
   }
 
+  function posterSeasonLabel(item) {
+    var season = Number(item && item.season_index);
+    if (season > 0 && season <= 999 && Math.floor(season) === season) return '第' + season + '季';
+    var match = String(item && item.title || '').match(/第\s*([0-9０-９零〇一二两三四五六七八九十百]+)\s*季/);
+    if (!match) return '';
+    var text = match[1].replace(/[０-９]/g, function (digit) { return String(digit.charCodeAt(0) - 65296); });
+    var digits = { '零': 0, '〇': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9 };
+    if (/^[0-9]+$/.test(text)) season = Number(text);
+    else if (/[0-9]/.test(text)) return '';
+    else if (!/[十百]/.test(text)) season = Number(text.split('').map(function (digit) { return digits[digit]; }).join(''));
+    else {
+      season = 0; var digit = 0;
+      text.split('').forEach(function (character) {
+        var unit = character === '百' ? 100 : character === '十' ? 10 : 0;
+        if (unit) { season += (digit || 1) * unit; digit = 0; }
+        else digit = digits[character];
+      });
+      season += digit;
+    }
+    return season > 0 && season <= 999 && Math.floor(season) === season ? '第' + season + '季' : '';
+  }
+
+  // Normal posters share one decoration. Compact catalog/series/calendar
+  // thumbnails deliberately do not call this helper or gain focus targets.
+  function updatePosterSeason(poster, item) {
+    var label = posterSeasonLabel(item); var badge = poster.querySelector('.poster-season-badge');
+    if (!label) { if (badge) badge.remove(); return; }
+    if (!badge) { badge = document.createElement('span'); badge.className = 'poster-season-badge'; poster.appendChild(badge); }
+    badge.textContent = label;
+  }
+  function dramaPoster(image, item) {
+    var poster = document.createElement('span'); poster.className = 'drama-poster';
+    poster.appendChild(image); updatePosterSeason(poster, item); return poster;
+  }
+
   function renderCatalog(items) {
     var track = document.getElementById('catalog-track');
     document.getElementById('hero-placeholder').classList.remove('is-hidden');
@@ -2144,7 +2180,7 @@
       var meta = document.createElement('span');
       meta.className = 'search-result-card-meta';
       meta.textContent = catalogMeta(item);
-      card.appendChild(image);
+      card.appendChild(dramaPoster(image, item));
       card.appendChild(title);
       card.appendChild(meta);
       card.addEventListener('click', function () { startPlayer(item, card); });
@@ -2359,7 +2395,7 @@
       play.addEventListener('click', function (event) { event.stopPropagation(); startPlayer(item, play); });
       detail.addEventListener('click', function (event) { event.stopPropagation(); openDetail(item); });
       if (!item.actor_id) { side.appendChild(play); side.appendChild(detail); }
-      row.appendChild(rank); row.appendChild(image); row.appendChild(copy); row.appendChild(side);
+      row.appendChild(rank); row.appendChild(item.actor_id ? image : dramaPoster(image, item)); row.appendChild(copy); row.appendChild(side);
       row.addEventListener('click', function (event) { if (!item.actor_id && !event.target.closest('button')) startPlayer(item, row); });
       row.addEventListener('focus', function () { try { row.scrollIntoView({ block: 'nearest' }); } catch (ignore) {} });
       rankList.appendChild(row);
@@ -2384,11 +2420,11 @@
       var card = document.createElement('button');
       card.className = 'new-card';
       card.dataset.focus = prefix + item.series_id;
-      var poster = document.createElement('span'); poster.className = 'new-card-poster';
+      var poster = document.createElement('span'); poster.className = 'new-card-poster drama-poster';
       var image = document.createElement('img');
       image.className = 'new-card-image'; setCover(image, item);
       var episodeCount = document.createElement('span'); episodeCount.className = 'new-card-episodes'; episodeCount.textContent = item.episode_count ? '共' + item.episode_count + '集' : '';
-      poster.appendChild(image); if (episodeCount.textContent) poster.appendChild(episodeCount);
+      poster.appendChild(image); if (episodeCount.textContent) poster.appendChild(episodeCount); updatePosterSeason(poster, item);
       var title = document.createElement('span'); title.className = 'new-card-title'; title.textContent = item.title || '未命名短剧';
       var meta = document.createElement('span'); meta.className = 'new-card-meta'; meta.textContent = (item.tags || []).slice(0, 3).join(' · ') || (prefix === 'reservation-' ? '已上线' : '新剧');
       var score = document.createElement('span'); score.className = 'new-card-score'; score.textContent = item.score ? item.score + ' 分' : (item.episode_count ? '共' + item.episode_count + '集' : '');

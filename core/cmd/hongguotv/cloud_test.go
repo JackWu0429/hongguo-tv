@@ -14,6 +14,41 @@ import (
 	"time"
 )
 
+func TestCloudHistoryPreservesOfficialAndSavedSeasonNumbers(t *testing.T) {
+	for _, fixture := range []struct {
+		serverSeason int
+		title        string
+		savedSeason  int
+	}{
+		{0, "基础剧名", 13},
+		{13, "基础剧名", 0},
+		{13, "", 2},
+		{0, "", 13},
+	} {
+		c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/reading/bookapi/read_history/list/v":
+				ioJSON(w, fmt.Sprintf(`{"code":0,"data":{"data_list":[{"book_id_str":"7690163276214176792","book_name":%q,"vid_index":1,"read_timestamp_ms":1700000000000,"season_index":%d,"is_multi_season":%t}],"has_more":false}}`, fixture.title, fixture.serverSeason, fixture.serverSeason > 0))
+			case "/reading/bookapi/bookshelf/video/list/v":
+				ioJSON(w, `{"code":0,"data":{"video_shelf_info":[]}}`)
+			case "/reading/bookapi/read_progress/get/v":
+				ioJSON(w, `{"code":0,"video_data":[]}`)
+			default:
+				t.Error("unexpected route")
+			}
+		})
+		local := LibraryData{}
+		if fixture.savedSeason > 0 {
+			local.Entries = []LibraryEntry{{Drama: Drama{SeriesID: fixtureSeries, Title: "基础剧名", SeasonIndex: fixture.savedSeason, MultiSeason: true}}}
+		}
+		rows, e := c.pullLibrary(context.Background(), "123456789", local, nil)
+		close()
+		if e != nil || len(rows) != 1 || rows[0].Drama.SeasonIndex != 13 || !rows[0].Drama.MultiSeason {
+			t.Fatal("history sync lost confirmed season", e)
+		}
+	}
+}
+
 func TestCloudHistoryBeyondFivePagesAndOfficialCursorFallback(t *testing.T) {
 	for _, missingCursor := range []bool{false, true} {
 		t.Run(fmt.Sprint(missingCursor), func(t *testing.T) {

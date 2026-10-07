@@ -354,14 +354,21 @@ func (c *passportClient) pullLibrary(ctx context.Context, uid string, local Libr
 			if asBool(r["is_delete"]) {
 				continue
 			}
-			e := LibraryEntry{Drama: Drama{SeriesID: id, Title: asString(r["book_name"]), Cover: asString(r["thumb_url"]), EpisodeCount: asInt(r["episode_cnt"])}, VideoID: asString(r["vid"]), Episode: asInt(r["vid_index"]), Position: accountSeconds(r["current_play_position"]) / 1000, Duration: accountSeconds(r["duration"]) / 1000, LastPlayedAt: accountEpoch(r["read_timestamp_ms"])}
+			e := LibraryEntry{Drama: Drama{SeriesID: id, Title: asString(r["book_name"]), Cover: asString(r["thumb_url"]), EpisodeCount: asInt(r["episode_cnt"]), SeasonIndex: asInt(r["season_index"]), MultiSeason: asBool(r["is_multi_season"])}, VideoID: asString(r["vid"]), Episode: asInt(r["vid_index"]), Position: accountSeconds(r["current_play_position"]) / 1000, Duration: accountSeconds(r["duration"]) / 1000, LastPlayedAt: accountEpoch(r["read_timestamp_ms"])}
 			if e.Episode < 1 || e.Episode > 10000 || e.Position < 0 || e.Position > 86400 || e.LastPlayedAt <= 0 {
 				continue
 			}
 			if old, ok := entries[id]; ok {
+				seasonIndex, multiSeason := e.Drama.SeasonIndex, e.Drama.MultiSeason
 				if e.Drama.Title == "" {
 					e.Drama = old.Drama
 				}
+				if seasonIndex > 0 {
+					e.Drama.SeasonIndex = seasonIndex
+				} else if e.Drama.SeasonIndex <= 0 {
+					e.Drama.SeasonIndex = old.Drama.SeasonIndex
+				}
+				e.Drama.MultiSeason = multiSeason || old.Drama.MultiSeason
 				if e.Duration == 0 && old.Episode == e.Episode {
 					e.Duration = old.Duration
 				}
