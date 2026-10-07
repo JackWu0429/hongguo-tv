@@ -46,7 +46,7 @@
 - 注册主机 `https://log.snssdk.com`，POST `/service/2/device_register/`，`application/octet-stream;tt-data=a`，TTEncrypt V5（gzip、SHA-512 校验、派生密钥、AES-128-CBC）。注册请求不含手机号、验证码、账号 Cookie 或 Token。
 - 身份种子 CDID、ClientUDID、OpenUDID 稳定保存；响应严格解析 JSON，支持加密响应，数字 ID 使用 `json.Number` 防止丢精度。只有返回有效的 device_id 和 install_id 并成功保存后，才允许提交验证码请求；不会回退到随机 ID。
 - Passport 请求使用注册返回的身份、区域信息，以及核对后的 SDK/BDTuring 请求头。注册与登录沿用当前签名的应用/设备参数；没有修改媒体解析签名或加入其它服务回退。
-- 取消注册/登录、换页面或迟到回复不能触发后续发码或恢复旧账号。网络结果不确定时保留发送保护，明确拒绝与服务限流分别处理。
+- 取消注册/登录后，迟到回复不能触发后续发码或恢复旧账号。网络结果不确定时保留发送保护，明确拒绝与服务限流分别处理。
 - 独立 Python hashlib/gzip + OpenSSL 固定向量验证设备加密；fixture 验证注册先后顺序、持久保存/重启/退出、失败阻止发码、取消以及计时状态。
 
 ## 验证范围
