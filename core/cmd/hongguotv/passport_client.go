@@ -216,7 +216,9 @@ func parseAccountMFA(data map[string]any) *accountMFA {
 
 func (c *passportClient) verifyMFA(ctx context.Context, m *accountMFA) (map[string]any, error) {
 	biz, _ := json.Marshal(map[string]string{"passport_mfa_retry_tag": "1", "sms_code_key": m.CodeKey})
-	f := url.Values{"encrypt_uid": {m.EncryptUID}, "verify_ticket": {""}, "verify_scene": {"sms_login"}, "verify_reason": {"atom"}, "copywriting_key": {"sms_login"}, "ies_safety_diversion_tag": {"mfa"}, "new_verify_flow": {"1"}, "new_authn_sdk_version": {"1.1.3"}, "new_authn_sdk_verify_reason": {"atom"}, "new_authn_sdk_verify_scene": {"sms_login"}, "request_tag_from": {"h5"}, "biz_params": {string(biz)}, "new_authn_sdk_log_id": {m.LogID}}
+	// Reference UpsmsVerify uses string lengths 3/6/0 for ato/1.1.31/empty.
+	// Its adjacent binary string previews are not the actual field values.
+	f := url.Values{"encrypt_uid": {m.EncryptUID}, "verify_ticket": {""}, "verify_scene": {"sms_login"}, "verify_reason": {"ato"}, "copywriting_key": {"sms_login"}, "ies_safety_diversion_tag": {"mfa"}, "new_verify_flow": {""}, "new_authn_sdk_version": {"1.1.31"}, "new_authn_sdk_verify_reason": {"ato"}, "new_authn_sdk_verify_scene": {"sms_login"}, "request_tag_from": {"h5"}, "biz_params": {string(biz)}, "new_authn_sdk_log_id": {m.LogID}}
 	return c.request(ctx, "/passport/upsms/verify/", http.MethodPost, nil, []byte(f.Encode()), "application/x-www-form-urlencoded; charset=UTF-8")
 }
 

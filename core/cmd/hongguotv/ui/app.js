@@ -1082,10 +1082,19 @@
     accountEditingInput = null; input.blur();
     input.setAttribute('aria-label', input.id === 'account-phone' ? '手机号，确认键输入' : '短信验证码，确认键输入');
     if (window.HongguoTVInput) window.HongguoTVInput.finishEditing();
-    if (moveFocus) {
+    if (moveFocus && pageMode() === 'account' && !accountBusy && !confirmOpen && !supportModalOpen) {
       var next = input.id === 'account-code' ? firstVisible('#account-login') : firstVisible('#account-code') || firstVisible('#account-send-code') || firstVisible('#account-login');
       goFocus(next || activeSidebar());
     }
+  }
+  function accountInputBlur(input) {
+    // WebView's IME Done action may blur and select an unrelated button before
+    // Android reports that the keyboard closed. Keep the input owner until
+    // that focus change has settled. Explicit goFocus/page changes clear it
+    // synchronously and therefore never get pulled back by this callback.
+    setTimeout(function () {
+      if (accountEditingInput === input) finishAccountEditing(true);
+    }, 0);
   }
 
   function normalizedKey(event) {
@@ -1752,7 +1761,7 @@
     document.getElementById('account-verify').disabled = accountBusy || mfaExpired || verification.state === 'waiting';
     document.getElementById('account-verify').textContent = verification.state === 'waiting' ? '等待确认…' : verification.state === 'timeout' ? '再次查询' : '我已发送';
     document.getElementById('account-cancel').textContent = mfaExpired ? '重新获取验证码' : '取消验证';
-    document.getElementById('account-mfa-session').textContent = mfaExpired ? '验证会话已过期，请重新获取验证码。' : mfa && data.mfa_expires_at ? '验证会话剩余 ' + clockText(Math.ceil((data.mfa_expires_at - Date.now()) / 1000)) + '，红果也可能提前要求重新验证。' : '';
+    document.getElementById('account-mfa-session').textContent = mfaExpired ? '本机验证等待时间已结束，请重新获取验证码。' : mfa && data.mfa_expires_at ? '本机验证等待剩余 ' + clockText(Math.ceil((data.mfa_expires_at - Date.now()) / 1000)) + '，红果也可能提前要求重新验证。' : '';
     document.getElementById('account-mfa-wait').textContent = verification.state === 'waiting' ? '正在等待短信确认 · 本轮剩余 ' + verification.remaining + ' 秒' : verification.state === 'timeout' ? '本轮等待已结束。会话仍有效时可以再次查询，无需重复发送短信。' : '';
     document.getElementById('account-change-phone').disabled = false;
     var remaining = Math.max(0, Math.ceil((accountCountdownUntil - Date.now()) / 1000));
@@ -3535,7 +3544,7 @@
     if (androidShell) {
       input.addEventListener('focus', function () { startAccountEditing(input); });
       input.addEventListener('click', function () { startAccountEditing(input); });
-      input.addEventListener('blur', function () { if (accountEditingInput === input) finishAccountEditing(false); });
+      input.addEventListener('blur', function () { accountInputBlur(input); });
     }
   });
   document.querySelector('.account-input-help').classList.toggle('is-hidden', !androidShell);
@@ -3565,7 +3574,7 @@
       }) };
     },
     onState: function (value) {
-      if (value.state === 'expired') accountNotice = '短信验证会话已过期，请重新获取验证码';
+      if (value.state === 'expired') accountNotice = '本机验证等待时间已结束，请重新获取验证码';
       renderAccount();
       if (value.state === 'timeout' && pageMode() === 'account' && !supportModalOpen) goFocus(document.getElementById('account-verify'));
       if (value.state === 'expired' && !document.hidden) pollAccount();

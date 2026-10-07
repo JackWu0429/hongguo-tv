@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -46,6 +47,7 @@ type loginAttempt struct {
 	mfa           *accountMFA
 	smsQRCode     string
 	expires       time.Time
+	mfaExpires    time.Time
 	requestCtx    context.Context
 	cancelRequest context.CancelFunc
 }
@@ -187,11 +189,11 @@ func (m *accountManager) statusLocked() accountStatus {
 	}
 	if m.login != nil {
 		s.Phone = maskPhone(m.login.phone)
-		if m.login.mfa != nil && m.phase == "mfa" && time.Now().Before(m.login.expires) {
+		if m.login.mfa != nil && m.phase == "mfa" && time.Now().Before(m.login.mfaExpires) {
 			s.SMSNumber = m.login.mfa.Number
 			s.SMSContent = m.login.mfa.Content
 			s.SMSQRCode = m.login.smsQRCode
-			s.MFAExpires = m.login.expires.UnixMilli()
+			s.MFAExpires = m.login.mfaExpires.UnixMilli()
 		}
 	}
 	if left := time.Until(m.codeAfter); left > 0 {
@@ -201,11 +203,16 @@ func (m *accountManager) statusLocked() accountStatus {
 }
 
 // The session deadline is independent of every 90-second UI polling round.
-// Neither polling nor opening the QR can extend the login attempt's lifetime.
+// It starts when the upstream challenge arrives, independently of SMS-code
+// entry time. Neither polling nor opening the QR extends it.
 func (m *accountManager) expireMFALocked() bool {
-	if m.phase != "mfa" || m.login == nil || time.Now().Before(m.login.expires) {
+	if m.phase != "mfa" || m.login == nil || time.Now().Before(m.login.mfaExpires) {
 		return false
 	}
+	m.clearMFALocked("本机短信验证等待时间已结束，请重新获取验证码")
+	return true
+}
+func (m *accountManager) clearMFALocked(reason string) {
 	if m.login.cancelRequest != nil {
 		m.login.cancelRequest()
 	}
@@ -213,8 +220,24 @@ func (m *accountManager) expireMFALocked() bool {
 	m.login = nil
 	m.busy = false
 	m.phase = "phone"
-	m.lastError = "短信验证会话已过期，请重新获取验证码"
-	return true
+	m.lastError = reason
+}
+func (m *accountManager) rejectExpiredMFA(g uint64, p map[string]any) error {
+	if passportSuccess(p) || passportErrorCode(p) == "1045" {
+		return nil
+	}
+	err := passportFailure(p)
+	text := err.Error()
+	if !strings.Contains(text, "验证已过期") && !strings.Contains(text, "验证过期") && !strings.Contains(text, "验证已失效") && !strings.Contains(text, "长时间未操作") {
+		return nil
+	}
+	err = errors.New("红果已结束本次短信验证，请重新获取验证码：" + text)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if g == m.generation && m.phase == "mfa" {
+		m.clearMFALocked(err.Error())
+	}
+	return err
 }
 func maskPhone(phone string) string {
 	if len(phone) == 11 {
@@ -376,6 +399,7 @@ func (m *accountManager) loginSMS(ctx context.Context, phone, code string) error
 			}
 			a.mfa = mfa
 			a.smsQRCode = qr
+			a.mfaExpires = time.Now().Add(10 * time.Minute)
 			m.mu.Unlock()
 			m.endLogin(g, "mfa", nil)
 			return nil
@@ -393,9 +417,13 @@ func (m *accountManager) loginSMS(ctx context.Context, phone, code string) error
 func (m *accountManager) verifyLogin(ctx context.Context) error {
 	m.mu.Lock()
 	expired := m.expireMFALocked()
-	if expired || m.login == nil || m.login.mfa == nil || time.Now().After(m.login.expires) {
+	if expired || m.login == nil || m.login.mfa == nil || !time.Now().Before(m.login.mfaExpires) {
+		message := m.lastError
+		if message == "" {
+			message = "当前短信验证不存在或已结束，请重新获取验证码"
+		}
 		m.mu.Unlock()
-		return errors.New("验证已过期，请重新登录")
+		return errors.New(message)
 	}
 	if m.busy {
 		m.mu.Unlock()
@@ -413,6 +441,9 @@ func (m *accountManager) verifyLogin(ctx context.Context) error {
 		return nil
 	}
 	if err == nil && !passportSuccess(p) {
+		if expired := m.rejectExpiredMFA(g, p); expired != nil {
+			return expired
+		}
 		err = passportFailure(p)
 	}
 	if err == nil {
@@ -428,6 +459,9 @@ func (m *accountManager) verifyLogin(ctx context.Context) error {
 		} else {
 			p, err = a.client.smsLogin(ctx, a.phone, a.code, ticket)
 			if err == nil && !passportSuccess(p) {
+				if expired := m.rejectExpiredMFA(g, p); expired != nil {
+					return expired
+				}
 				err = passportFailure(p)
 			}
 			if err == nil {

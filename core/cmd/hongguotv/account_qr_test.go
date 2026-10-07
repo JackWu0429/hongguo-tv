@@ -39,7 +39,7 @@ func TestSMSQRDataURL(t *testing.T) {
 
 func TestMFASessionDeadlineIsIndependentAndClearsQRCode(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Minute)
-	m := &accountManager{phase: "mfa", login: &loginAttempt{phone: "13800000000", expires: deadline, mfa: &accountMFA{Number: "1060000", Content: "ONLY-FIXTURE"}, smsQRCode: smsQRDataURL("1060000", "ONLY-FIXTURE")}}
+	m := &accountManager{phase: "mfa", login: &loginAttempt{phone: "13800000000", expires: time.Now().Add(-time.Minute), mfaExpires: deadline, mfa: &accountMFA{Number: "1060000", Content: "ONLY-FIXTURE"}, smsQRCode: smsQRDataURL("1060000", "ONLY-FIXTURE")}}
 	for i := 0; i < 3; i++ {
 		s := m.status()
 		if s.MFAExpires != deadline.UnixMilli() || s.SMSQRCode == "" {
@@ -48,7 +48,7 @@ func TestMFASessionDeadlineIsIndependentAndClearsQRCode(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m.login.cancelRequest = cancel
-	m.login.expires = time.Now().Add(-time.Second)
+	m.login.mfaExpires = time.Now().Add(-time.Second)
 	s := m.status()
 	if ctx.Err() == nil {
 		t.Fatal("expired session did not cancel its pending query")

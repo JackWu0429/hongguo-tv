@@ -10,14 +10,16 @@ function account(phase='phone') {
   const c=vm.createContext({});
   vm.runInContext(`
     var androidShell=true,accountEditingInput=null,accountBusy=false,accountData={phase:'${phase}'};
-    var started=0,finished=0,submissions=0,moved=[];
+    var started=0,finished=0,submissions=0,moved=[],timers=[],currentPage='account';
+    function setTimeout(callback){timers.push(callback)}
+    function flushTimers(){var pending=timers;timers=[];pending.forEach(function(callback){callback()})}
     var window={HongguoTVInput:{startAccountEditing:function(){started++},finishEditing:function(){finished++}}};
     var document={activeElement:null};
     function input(id){return {id:id,value:'',readOnly:false,disabled:false,classList:{contains:function(n){return n==='account-input'}},
-      setAttribute:function(){},focus:function(){document.activeElement=this},blur:function(){document.activeElement=null}}}
+      setAttribute:function(){},focus:function(){document.activeElement=this},blur:function(){if(document.activeElement===this)document.activeElement=null}}}
     var phone=input('account-phone'),code=input('account-code');
     function button(id){return {id:id,classList:{contains:function(){return false}}}}
-    var send=button('account-send-code'),login=button('account-login'),sidebar=button('sidebar-account');
+    var send=button('account-send-code'),login=button('account-login'),sidebar=button('sidebar-account'),update=button('app-check-update');
     document.activeElement=phone;
     function firstVisible(selector){return selector==='#account-code'?accountData.phase==='code'?code:null:selector==='#account-login'?accountData.phase==='code'?login:null:selector==='#account-send-code'?send:null}
     function goFocus(target){document.activeElement=target}
@@ -26,9 +28,9 @@ function account(phase='phone') {
     function handleMediaCommand(){return false}
     function zoneOf(){return 'accountInputs'}
     function moveFrom(current,direction){moved.push(direction);return send}
-    function pageMode(){return 'account'}
+    function pageMode(){return currentPage}
     function isPlaybackPage(){return false}
-    var detailModalOpen=false,playerOptionsOpen=false,confirmOpen=false,discussionOpen=false;
+    var detailModalOpen=false,playerOptionsOpen=false,confirmOpen=false,discussionOpen=false,supportModalOpen=false;
     var shell={classList:{contains:function(){return false}}};
     function accountSendCode(){submissions++}function accountLogin(){submissions++}
   ` + keyNames + editing + keys,c);
@@ -84,4 +86,27 @@ test('native input keys are not intercepted even before the focus bridge has mar
   const c=account();
   for(const n of [37,38,39,40,13,23,66,8]) assert.equal(key(c,n),0);
   assert.equal(c.moved.length,0);assert.equal(c.submissions,0);assert.equal(c.finished,0);
+});
+test('IME Done blurs before native closure and default focus on update returns to the phone action',()=>{
+  const c=account();c.startAccountEditing(c.phone);c.phone.value='13800000000';
+  c.accountInputBlur(c.phone);c.document.activeElement=c.update;
+  assert.equal(c.accountEditingInput,c.phone);
+  c.flushTimers();c.finishAccountEditing(true);
+  assert.equal(c.document.activeElement,c.send);assert.equal(c.finished,1);assert.equal(c.submissions,0);
+});
+test('code Done returns to login even when native closure arrives before the deferred blur',()=>{
+  const c=account('code');c.startAccountEditing(c.code);c.code.value='012345';
+  c.accountInputBlur(c.code);c.document.activeElement=c.update;c.finishAccountEditing(true);c.flushTimers();
+  assert.equal(c.document.activeElement,c.login);assert.equal(c.finished,1);assert.equal(c.code.value,'012345');
+});
+test('explicit navigation, a new field and leaving the account page cannot be undone by old blur',()=>{
+  const navigation=account();navigation.startAccountEditing(navigation.phone);navigation.accountInputBlur(navigation.phone);
+  navigation.finishAccountEditing(false);navigation.document.activeElement=navigation.update;navigation.flushTimers();
+  assert.equal(navigation.document.activeElement,navigation.update);
+  const replacement=account('code');replacement.startAccountEditing(replacement.phone);replacement.accountInputBlur(replacement.phone);
+  replacement.document.activeElement=replacement.code;replacement.startAccountEditing(replacement.code);replacement.flushTimers();
+  assert.equal(replacement.document.activeElement,replacement.code);assert.equal(replacement.accountEditingInput,replacement.code);
+  const away=account();away.startAccountEditing(away.phone);away.accountInputBlur(away.phone);
+  away.currentPage='recommend';away.document.activeElement=away.sidebar;away.flushTimers();
+  assert.equal(away.document.activeElement,away.sidebar);assert.equal(away.accountEditingInput,null);
 });
