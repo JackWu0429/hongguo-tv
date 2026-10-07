@@ -2213,20 +2213,24 @@
     playbackQualities = [];
     feedIndex = index;
     if (pageMode() === 'recommend' && feedIndex >= feedItems.length - 3 && !feedPager.error) feedPager.load();
-    updateFeedCounter();
-    setFeatured(item);
-    updateSeriesRows();
     var hero = document.getElementById('hero');
     var video = document.getElementById('hero-video');
     var placeholder = document.getElementById('hero-placeholder');
     var generation = ++feedGeneration;
+    clearTimeout(controlsTimer);
     hero.classList.add('is-feed', 'is-preparing-video');
     hero.classList.remove('is-catalog-loading');
+    placeholder.classList.add('is-hidden');
+    updateFeedCounter();
+    setFeatured(item);
+    updateSeriesRows();
+    setPlayerStatus('正在准备播放…');
+    // Hide the old WebView video surface before resetting its native source.
+    // Opacity alone can leave a grey hardware-video rectangle during load().
     video.classList.remove('has-source');
+    video.pause();
     video.removeAttribute('src');
     video.load();
-    placeholder.classList.add('is-hidden');
-    setPlayerStatus('正在准备播放…');
     updatePlaybackControls();
     Promise.resolve(libraryReady).then(function () { return libraryQueue.catch(function () {}); }).then(function () {
       if (generation !== feedGeneration || request.signal.aborted) return null;
