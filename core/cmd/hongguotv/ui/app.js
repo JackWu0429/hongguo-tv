@@ -968,14 +968,19 @@
     }
     if (zone === 'appUpdates') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstVisible('#account-sync') || firstVisible('#account-profile .account-action') || firstVisible('#account-login-form .account-action');
+      if (direction === 'up') return firstVisible('#account-import-history') || firstVisible('#account-sync') || firstVisible('#account-profile .account-action') || firstVisible('#account-login-form .account-action');
       return null;
     }
     if (zone === 'accountInputs' || zone === 'accountActions') {
       if (current.id === 'account-sms-qr') return direction === 'down' ? firstVisible('#account-verify') || firstVisible('#account-cancel') : direction === 'left' || direction === 'up' ? activeSidebar() : null;
       if (accountData && accountData.phase === 'mfa' && direction === 'up' && (current.id === 'account-verify' || current.id === 'account-cancel')) return firstVisible('#account-sms-qr') || activeSidebar();
       var leftSelector = '#account-login-form .account-input, #account-login-form .account-action, #account-mfa .account-action, #account-profile .account-action';
-      if (current.id === 'account-sync') return direction === 'down' ? firstVisible('.app-update-action') : direction === 'left' ? (focusables(leftSelector).indexOf(accountLeftFocus) >= 0 ? accountLeftFocus : firstVisible(leftSelector)) : null;
+      if (current.id === 'account-sync' || current.id === 'account-import-history') {
+        if (direction === 'left') return focusables(leftSelector).indexOf(accountLeftFocus) >= 0 ? accountLeftFocus : firstVisible(leftSelector) || activeSidebar();
+        if (direction === 'down') return current.id === 'account-sync' ? firstVisible('#account-import-history') || firstVisible('.app-update-action') : firstVisible('.app-update-action');
+        if (direction === 'up') return current.id === 'account-import-history' ? firstVisible('#account-sync') || firstVisible(leftSelector) : null;
+        return null;
+      }
       if (zone === 'accountInputs' && direction === 'down') {
         if (current.id === 'account-phone' && firstVisible('#account-code')) return document.getElementById('account-code');
         return firstVisible('#account-login') || firstVisible('#account-send-code') || firstVisible('#account-change-phone');
@@ -985,7 +990,7 @@
       }
       var target = moveGrid(leftSelector, current, direction);
       if (target) return target;
-      if (direction === 'right' && firstVisible('#account-sync')) { accountLeftFocus = current; return document.getElementById('account-sync'); }
+      if (direction === 'right' && (firstVisible('#account-sync') || firstVisible('#account-import-history'))) { accountLeftFocus = current; return firstVisible('#account-sync') || firstVisible('#account-import-history'); }
       return direction === 'down' ? firstVisible('.app-update-action') : direction === 'left' || direction === 'up' ? activeSidebar() : null;
     }
     if (zone === 'libraryItems') {
@@ -1518,6 +1523,7 @@
         libraryData = payload.data;
         libraryLoaded = true;
         updateSavedButtons();
+        updateDetailProgress();
         if (isLibraryPage()) renderLibrary(true);
         return true;
       }).catch(function (error) { libraryError = error.message; if (isLibraryPage()) renderLibrary(true); return false; });
@@ -1753,6 +1759,9 @@
     send.disabled = accountBusy || remaining > 0;
     send.textContent = remaining > 0 ? remaining + (data.phase === 'code' && data.sms_state === 'sent' ? ' 秒后重发' : ' 秒后可重试') : data.phase === 'code' ? '重新发送' : '获取验证码';
     document.getElementById('account-sync').disabled = !logged || accountBusy || data.sync && data.sync.state === 'syncing';
+    var guestHistory = data.guest_history || {};
+    document.getElementById('account-import-history').disabled = !logged || accountBusy || !(guestHistory.available > 0);
+    document.getElementById('account-import-detail').textContent = !logged ? '登录后可将本机观看历史合并到当前账号。' : guestHistory.available > 0 ? '有 ' + guestHistory.available + ' 部登录前观看的短剧可合并。' : guestHistory.total > 0 ? '没有待合并的新记录；已合并、删除或较旧的进度不会重复加入。' : '本机暂无登录前的观看历史。';
     if (logged) {
       document.getElementById('account-name').textContent = data.profile.name;
       document.getElementById('account-phone-mask').textContent = data.profile.phone || '';
@@ -1814,6 +1823,10 @@
         if (payload.data) acceptAccountStatus(payload.data);
         restoreRequestFocus();
         if (!payload.ok) throw new Error(payload.error || '账号请求失败');
+        if (action === 'import-history' && payload.import_history && payload.data && payload.data.profile && payload.data.profile.uid === value.owner_id) {
+          var imported = payload.import_history;
+          setAccountMessage(imported.imported > 0 ? '已合并 ' + imported.imported + ' 部短剧。' + (imported.remaining > 0 ? '还有 ' + imported.remaining + ' 部待合并，请完成同步后再试。' : '将自动同步到当前账号，网络恢复后会重试。') : '没有需要合并的新记录。');
+        }
         return true;
       }).catch(function (error) {
         if (generation !== accountRequestGeneration) return false;
@@ -3407,6 +3420,17 @@
   document.getElementById('account-change-phone').addEventListener('click', cancelAccountVerification);
   document.getElementById('account-logout').addEventListener('click', confirmAccountLogout);
   document.getElementById('account-sync').addEventListener('click', function () { accountRequest('sync').then(function () { if (pageMode() === 'account') goFocus(document.getElementById('account-logout')); }); });
+  document.getElementById('account-import-history').addEventListener('click', function () {
+    var owner = accountData && accountData.profile && accountData.profile.uid;
+    if (!owner || this.disabled) return;
+    var epoch = accountEpoch;
+    accountRequest('import-history', { owner_id: owner }).then(function (ok) {
+      if (!ok || epoch !== accountEpoch) return;
+      libraryQueue = libraryQueue.catch(function () {}).then(function () { if (epoch === accountEpoch) return loadLibrary(); });
+      libraryReady = libraryQueue;
+      if (pageMode() === 'account') goFocus(firstVisible('#account-import-history') || firstVisible('#account-sync') || firstVisible('#account-logout'));
+    });
+  });
   setInterval(function () { if (pageMode() === 'account' && !accountBusy) renderAccount(); }, 1000);
   document.getElementById('detail-play').addEventListener('click', function () {
     if (!currentDetail) return;

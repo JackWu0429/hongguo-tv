@@ -28,18 +28,19 @@ type accountDisk struct {
 	Profile *accountProfile `json:"profile,omitempty"`
 }
 type accountStatus struct {
-	LoggedIn   bool            `json:"logged_in"`
-	Profile    *accountProfile `json:"profile,omitempty"`
-	Phase      string          `json:"phase"`
-	Phone      string          `json:"phone,omitempty"`
-	RetryAfter int             `json:"retry_after"`
-	SMSState   string          `json:"sms_state,omitempty"`
-	SMSNumber  string          `json:"sms_number,omitempty"`
-	SMSContent string          `json:"sms_content,omitempty"`
-	SMSQRCode  string          `json:"sms_qr,omitempty"`
-	MFAExpires int64           `json:"mfa_expires_at,omitempty"` // Local login-session safety deadline, not a server TTL.
-	Error      string          `json:"error,omitempty"`
-	Sync       syncStatus      `json:"sync"`
+	LoggedIn     bool               `json:"logged_in"`
+	Profile      *accountProfile    `json:"profile,omitempty"`
+	Phase        string             `json:"phase"`
+	Phone        string             `json:"phone,omitempty"`
+	RetryAfter   int                `json:"retry_after"`
+	SMSState     string             `json:"sms_state,omitempty"`
+	SMSNumber    string             `json:"sms_number,omitempty"`
+	SMSContent   string             `json:"sms_content,omitempty"`
+	SMSQRCode    string             `json:"sms_qr,omitempty"`
+	MFAExpires   int64              `json:"mfa_expires_at,omitempty"` // Local login-session safety deadline, not a server TTL.
+	Error        string             `json:"error,omitempty"`
+	Sync         syncStatus         `json:"sync"`
+	GuestHistory guestHistoryStatus `json:"guest_history"`
 }
 type loginAttempt struct {
 	client        *passportClient
@@ -182,6 +183,9 @@ func (m *accountManager) status() accountStatus {
 func (m *accountManager) statusLocked() accountStatus {
 	m.expireMFALocked()
 	s := accountStatus{LoggedIn: m.disk.Profile != nil, Phase: m.phase, Error: m.lastError, SMSState: m.smsState, Sync: syncStatus{State: "local"}}
+	if m.guest != nil && m.store != nil {
+		s.GuestHistory = historyImportStatus(m.guest.snapshot(), m.store.snapshot())
+	}
 	if m.disk.Profile != nil {
 		p := *m.disk.Profile
 		s.Profile = &p
@@ -577,6 +581,10 @@ func (s *server) account(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/api/v1/account" && r.Method == http.MethodGet {
 		writeJSON(w, 200, map[string]any{"ok": true, "data": s.accounts.status()})
+		return
+	}
+	if r.URL.Path == "/api/v1/account/import-history" {
+		s.importGuestHistory(w, r)
 		return
 	}
 	if r.Method != http.MethodPost {

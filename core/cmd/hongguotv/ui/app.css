@@ -454,6 +454,8 @@ button:focus { outline: none; }
 .account-message { min-height: 1.5em; margin-bottom: 0; color: #f3b6bf !important; word-wrap: break-word; overflow-wrap: anywhere; }
 .account-sync-state { font-size: 1.25rem; color: #fff !important; }
 .account-footnote { margin-top: 2rem; font-size: 1rem; }
+.account-history-import { margin-top: 1.1rem; }
+.account-history-import p { margin: .7rem 0 0; font-size: 1rem; }
 .account-avatar svg { width: 3.5rem; height: 3.5rem; margin-bottom: 1rem; }
 .account-card dd { margin: .5rem 0 1.2rem; padding: .6rem; background: #101016; font-size: 1.35rem; letter-spacing: .08em; word-wrap: break-word; overflow-wrap: anywhere; }
 .account-sms-details { display: flex; flex-wrap: wrap; align-items: center; }

@@ -23,10 +23,11 @@ type cloudMutation struct {
 	Entry    LibraryEntry `json:"entry"`
 }
 type cloudLibraryState struct {
-	Sequence uint64           `json:"sequence"`
-	Pending  []cloudMutation  `json:"pending,omitempty"`
-	Hidden   map[string]int64 `json:"hidden,omitempty"`
-	LastSync int64            `json:"last_sync,omitempty"`
+	Sequence     uint64           `json:"sequence"`
+	Pending      []cloudMutation  `json:"pending,omitempty"`
+	Hidden       map[string]int64 `json:"hidden,omitempty"`
+	LastSync     int64            `json:"last_sync,omitempty"`
+	GuestHistory map[string]int64 `json:"guest_history,omitempty"`
 }
 type syncStatus struct {
 	State    string `json:"state"`
