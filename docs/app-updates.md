@@ -19,4 +19,6 @@ Android 6/API 23 起支持。首次安装 0.2.7 需要手动覆盖升级，此�
 
 Release workflow 从 build.gradle 读取版本，生成 APK/SHA256SUMS/update.json，先在公开仓库创建草稿、上传并验证文件，再发布 Release，最后更新稳定 JSON。公开发布任务串行，同版本不替换不同 APK，旧版本不能覆盖较新的 update.json。上传脚本只允许明确的三项发行文件，不上传工程源码或打包整个目录。
 
+凭证迟到、短暂断网或公开上传失败时，可以手动运行 `Publish signed download` 并指定已完成的版本标签。它下载原有正式 Release 的签名文件并核验 SHA256 后，只重试公开发布，不重新编译或更换同版本的安装包。
+
 测试区分 Go/JS/JVM/Android Lint/签名和包内容验证，与真实 Android 6 安装来源、遥控器、代理网络及跨版本覆盖安装验收；浏览器模拟不能替代后者。

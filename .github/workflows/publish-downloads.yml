@@ -1,0 +1,52 @@
+name: Publish signed download
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing signed release tag
+        required: true
+        type: string
+        default: v0.2.7
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: hongguo-signed-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the existing signed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          assert re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', os.environ['RELEASE_TAG'])
+          PY
+          mkdir -p "$RUNNER_TEMP/signed-download"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "hongguo-tv-${RELEASE_TAG#v}.apk" --pattern SHA256SUMS.txt --pattern update.json --dir "$RUNNER_TEMP/signed-download"
+          python3 - <<'PY'
+          import os, json, hashlib
+          from pathlib import Path
+          folder = Path(os.environ['RUNNER_TEMP']) / 'signed-download'
+          metadata = json.loads((folder / 'update.json').read_text())
+          assert 'v' + metadata['version_name'] == os.environ['RELEASE_TAG']
+          apk = folder / ('hongguo-tv-' + metadata['version_name'] + '.apk')
+          sha = hashlib.sha256(apk.read_bytes()).hexdigest()
+          assert sha == metadata['sha256'] and apk.stat().st_size == metadata['size']
+          assert (folder / 'SHA256SUMS.txt').read_text().split() == [sha, apk.name]
+          (folder / 'release-notes.md').write_text(metadata['release_notes'])
+          print('Verified exact signed release artifact:', apk.name)
+          PY
+      - name: Publish only the verified download files
+        env:
+          GH_TOKEN: ${{ secrets.HONGGUO_RELEASES_TOKEN }}
+        run: |
+          test -n "$GH_TOKEN" || { echo "Configure the scoped HONGGUO_RELEASES_TOKEN" >&2; exit 1; }
+          python3 scripts/publish_public_release.py --directory "$RUNNER_TEMP/signed-download" --notes "$RUNNER_TEMP/signed-download/release-notes.md"
