@@ -22,9 +22,10 @@ import (
 //go:embed ui
 var uiFiles embed.FS
 
-var version = "0.2.1-dev"
+var version = "0.2.2-dev"
 
 type server struct {
+	instanceID   string
 	startedAt    time.Time
 	hongguo      *hongguoClient
 	libraryStore *libraryStore
@@ -35,6 +36,7 @@ type statusResponse struct {
 	OK             bool     `json:"ok"`
 	Service        string   `json:"service"`
 	Version        string   `json:"version"`
+	InstanceID     string   `json:"instance_id,omitempty"`
 	Implementation string   `json:"implementation"`
 	StartedAt      string   `json:"started_at"`
 	Capabilities   []string `json:"capabilities"`
@@ -42,6 +44,8 @@ type statusResponse struct {
 
 func main() {
 	port := flag.Int("port", 8797, "local HTTP port")
+	instanceID := flag.String("instance-id", "", "Android child process identity")
+	parentPID := flag.Int("parent-pid", 0, "exit when the Android host process ends")
 	dataDir := flag.String("data-dir", defaultLibraryDir(), "persistent local library directory")
 	flag.Parse()
 
@@ -54,12 +58,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("prepare local library: %v", err)
 	}
-	s := &server{startedAt: time.Now().UTC(), hongguo: newHongguoClient(), libraryStore: library}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := &server{instanceID: *instanceID, startedAt: time.Now().UTC(), hongguo: newHongguoClient(), libraryStore: library}
 	s.accounts, err = newAccountManager(*dataDir, library, s.hongguo)
 	if err != nil {
 		log.Fatalf("prepare account: %v", err)
 	}
-	go s.accounts.run(context.Background())
+	go s.accounts.run(ctx)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/health", s.health)
 	mux.HandleFunc("/api/v1/status", s.status)
@@ -90,9 +96,7 @@ func main() {
 	mux.HandleFunc("/minireel-proxy/media/", handleMiniReelMedia)
 	mux.Handle("/", serveUI(root))
 
-	addr := "127.0.0.1:" + strconv.Itoa(*port)
-	log.Printf("hongguo-tv core %s listening on %s", version, addr)
-	if err := http.ListenAndServe(addr, s.withCORS(mux)); err != nil {
+	if err := serveLocalCore(ctx, *port, *instanceID, *parentPID, s.withCORS(mux)); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -178,6 +182,7 @@ func (s *server) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) status(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -186,6 +191,7 @@ func (s *server) status(w http.ResponseWriter, r *http.Request) {
 		OK:             true,
 		Service:        "hongguo-tv-core",
 		Version:        version,
+		InstanceID:     s.instanceID,
 		Implementation: "go-api-adapter+embedded-playback",
 		StartedAt:      s.startedAt.Format(time.RFC3339),
 		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "search", "series-detail", "play-info", "embedded-playback", "cenc-mp4", "range-media", "local-history", "local-favorites", "local-likes", "resume-playback", "next-episode", "next-season", "account-login", "account-mfa", "cloud-library", "new-series", "release-calendar", "reservations", "recommend-feed", "comments", "danmaku", "infinite-scroll"},

@@ -28,9 +28,12 @@ import android.widget.TextView;
 import android.widget.Button;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import org.json.JSONObject;
 
 public class MainActivity extends Activity {
-    private static final String CORE_URL = "http://127.0.0.1:8797/";
+    private String coreUrl;
     private WebView webView;
     private boolean backPending;
     private boolean activityForeground;
@@ -72,6 +75,7 @@ public class MainActivity extends Activity {
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
+        webView.addJavascriptInterface(new PlaybackPreferences(this), "HongguoTVPreferences");
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
@@ -88,7 +92,7 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                if (!pageLoadFailed && url.startsWith(CORE_URL)) startupPanel.setVisibility(View.GONE);
+                if (!pageLoadFailed && coreUrl != null && url.startsWith(coreUrl)) startupPanel.setVisibility(View.GONE);
                 view.evaluateJavascript("window.HongguoTV && window.HongguoTV." +
                         (activityForeground ? "resumeFromBackground()" : "pauseForBackground()"), null);
             }
@@ -104,6 +108,12 @@ public class MainActivity extends Activity {
         startupMessage.setTextColor(Color.WHITE);
         startupMessage.setTextSize(22);
         startupPanel.addView(startupMessage);
+        TextView versionLabel = new TextView(this);
+        versionLabel.setText("版本 " + BuildConfig.VERSION_NAME);
+        versionLabel.setTextColor(0xFFA9A9B3);
+        versionLabel.setTextSize(14);
+        versionLabel.setPadding(0, 16, 0, 16);
+        startupPanel.addView(versionLabel);
         startupRetry = new Button(this);
         startupRetry.setText("重试");
         startupRetry.setOnClickListener(view -> { startCoreService(); waitForCore(); });
@@ -137,27 +147,50 @@ public class MainActivity extends Activity {
         startupPanel.setVisibility(View.VISIBLE);
         startupThread = new Thread(() -> {
             long deadline = SystemClock.elapsedRealtime() + 30000;
-            boolean ready = false;
+            CoreEndpoint ready = null;
+            String failure = "本机服务连接失败，请重试";
             while (!Thread.currentThread().isInterrupted() && SystemClock.elapsedRealtime() < deadline) {
                 HttpURLConnection connection = null;
+                CoreEndpoint candidate = CoreService.endpoint();
+                String error = CoreService.startupError();
+                if (error != null) { failure = error; break; }
                 try {
-                    connection = (HttpURLConnection) new URL(CORE_URL + "api/v1/health").openConnection();
-                    connection.setConnectTimeout(1000);
-                    connection.setReadTimeout(1000);
-                    ready = connection.getResponseCode() == 200;
+                    if (candidate != null) {
+                        connection = (HttpURLConnection) new URL(candidate.url + "api/v1/status").openConnection();
+                        connection.setConnectTimeout(1000);
+                        connection.setReadTimeout(1000);
+                        connection.setUseCaches(false);
+                        if (connection.getResponseCode() == 200) {
+                            StringBuilder body = new StringBuilder();
+                            try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), "UTF-8"))) {
+                                String line;
+                                while ((line = reader.readLine()) != null && body.length() < 8192) body.append(line);
+                            }
+                            JSONObject status = new JSONObject(body.toString());
+                            if (status.optBoolean("ok") && candidate.matches(status.optString("service"),
+                                    status.optString("instance_id"), status.optString("version"), BuildConfig.CORE_VERSION)
+                                    && candidate == CoreService.endpoint()) ready = candidate;
+                            else { failure = "本机服务版本不匹配，请重试"; break; }
+                        }
+                    }
                 } catch (Exception ignored) {
                     // Retry only the local process; no external endpoints here.
                 } finally {
                     if (connection != null) connection.disconnect();
                 }
-                if (ready) break;
+                if (ready != null) break;
                 try { Thread.sleep(250); } catch (InterruptedException interrupted) { return; }
             }
-            final boolean coreReady = ready;
+            final CoreEndpoint coreReady = ready;
+            final String failureMessage = failure;
             runOnUiThread(() -> {
                 if (destroyed || isFinishing()) return;
-                if (coreReady) { webView.loadUrl(CORE_URL); webView.requestFocus(); }
-                else showStartupFailure();
+                if (coreReady != null) {
+                    if (coreReady != CoreService.endpoint()) { showStartupFailure(); return; }
+                    coreUrl = coreReady.url;
+                    webView.loadUrl(coreUrl);
+                    webView.requestFocus();
+                } else { showStartupFailure(); startupMessage.setText(failureMessage); }
             });
         }, "hongguo-tv-startup");
         startupThread.start();
@@ -205,6 +238,7 @@ public class MainActivity extends Activity {
     }
 
     private void startCoreService() {
+        CoreService.prepareStart();
         Intent intent = new Intent(this, CoreService.class);
         if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent);
         else startService(intent);

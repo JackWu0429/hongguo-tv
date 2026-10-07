@@ -1155,11 +1155,16 @@
     setControlIcon('fullscreen', cinema ? '退出全屏' : '全屏', cinema ? 'icon-fullscreen-exit' : 'icon-fullscreen');
   }
   function savePlaybackPreferences() {
-    try { localStorage.setItem('hongguo-tv-playback', JSON.stringify(playbackPreferences)); } catch (error) { showNotice('播放设置未保存'); }
+    try {
+      var value = JSON.stringify(playbackPreferences);
+      if (androidShell && window.HongguoTVPreferences) window.HongguoTVPreferences.write(value);
+      else localStorage.setItem('hongguo-tv-playback', value);
+    } catch (error) { showNotice('播放设置未保存'); }
   }
   function restorePlaybackPreferences() {
     try {
-      var saved = JSON.parse(localStorage.getItem('hongguo-tv-playback') || '{}');
+      var value = androidShell && window.HongguoTVPreferences ? window.HongguoTVPreferences.read() : localStorage.getItem('hongguo-tv-playback');
+      var saved = JSON.parse(value || '{}');
       if (playbackSpeeds.indexOf(saved.speed) >= 0) playbackPreferences.speed = saved.speed;
       if (Number.isFinite(saved.volume) && saved.volume >= 0 && saved.volume <= 100) playbackPreferences.volume = saved.volume;
       if (/^[1-9][0-9]{2,3}P$/.test(saved.quality || '')) playbackPreferences.quality = saved.quality;
@@ -3236,6 +3241,7 @@
         var data = JSON.parse(request.responseText);
         status.textContent = request.status === 200 && data.ok ? '已连接' : '连接异常';
         status.dataset.ok = request.status === 200 && data.ok ? 'true' : 'false';
+        if (request.status === 200 && data.ok) status.title = '版本 ' + data.version;
       } catch (error) { failed(); }
     };
     request.onerror = failed; request.ontimeout = failed;

@@ -15,17 +15,27 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
 import java.util.Map;
+import java.util.UUID;
 
 public class CoreService extends Service {
     private static final String CHANNEL_ID = "hongguo_tv_core";
     private static final int NOTIFICATION_ID = 8797;
-    private static final int PORT = 8797;
-    private Process process;
+    private volatile Process process;
     private Thread logThread;
+    private static volatile CoreEndpoint endpoint;
+    private static volatile String startupError;
+    private static volatile boolean startRequested;
+
+    static CoreEndpoint endpoint() { return endpoint; }
+    static String startupError() { return startRequested ? null : startupError; }
+
+    static void prepareStart() { startupError = null; startRequested = true; }
 
     @Override
     public void onCreate() {
         super.onCreate();
+        endpoint = null;
+        startupError = null;
         createChannel();
     }
 
@@ -33,11 +43,13 @@ public class CoreService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         startForegroundCompat();
         startProcess();
+        startRequested = false;
         return START_STICKY;
     }
 
     @Override
-    public void onDestroy() {
+    public synchronized void onDestroy() {
+        endpoint = null;
         if (process != null) {
             process.destroy();
             process = null;
@@ -54,7 +66,7 @@ public class CoreService extends Service {
         return null;
     }
 
-    private void startProcess() {
+    private synchronized void startProcess() {
         if (process != null) {
             try {
                 process.exitValue();
@@ -62,13 +74,18 @@ public class CoreService extends Service {
                 return;
             }
         }
+        endpoint = null;
+        startupError = null;
         try {
             File binary = new File(getApplicationInfo().nativeLibraryDir, "libhongguotv.so");
             if (!binary.exists()) {
                 Log.e("HongguoTv", "core binary missing: " + binary.getAbsolutePath());
+                startupError = "应用文件不完整，请重新安装";
                 return;
             }
-            ProcessBuilder builder = new ProcessBuilder(binary.getAbsolutePath(), "-port", String.valueOf(PORT))
+            String instanceId = UUID.randomUUID().toString();
+            ProcessBuilder builder = new ProcessBuilder(binary.getAbsolutePath(), "-port", "0",
+                    "-instance-id", instanceId, "-parent-pid", String.valueOf(android.os.Process.myPid()))
                     .redirectErrorStream(true);
             // Android may expose /data/local/tmp as os.TempDir to the native
             // process.  Point the embedded MiniReel cache at the app-private
@@ -80,18 +97,33 @@ public class CoreService extends Service {
             // User records must survive Android reclaiming the media cache.
             environment.put("HONGGUO_TV_DATA_DIR", new File(getFilesDir(), "hongguo-tv").getAbsolutePath());
             process = builder.start();
-            consumeLogs(process);
+            consumeLogs(process, instanceId);
         } catch (Exception error) {
+            startupError = "本机服务启动失败，请重试";
             Log.e("HongguoTv", "failed to start core", error);
         }
     }
 
-    private void consumeLogs(final Process running) {
+    private void consumeLogs(final Process running, final String instanceId) {
         logThread = new Thread(() -> {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(running.getInputStream()))) {
                 String line;
-                while ((line = reader.readLine()) != null) Log.i("HongguoTv", line);
+                while ((line = reader.readLine()) != null) {
+                    CoreEndpoint ready = CoreEndpoint.fromReadyLine(line, instanceId);
+                    if (ready != null) {
+                        synchronized (CoreService.this) {
+                            if (process == running) endpoint = ready;
+                        }
+                    } else Log.i("HongguoTv", line);
+                }
             } catch (Exception ignored) {
+            } finally {
+                synchronized (CoreService.this) {
+                    if (process == running) {
+                        endpoint = null;
+                        startupError = "本机服务已停止，请重试";
+                    }
+                }
             }
         }, "hongguo-tv-core-log");
         logThread.start();

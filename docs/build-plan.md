@@ -39,7 +39,7 @@
 
 Android 壳启动 Go 二进制的参考做法：Go 按 `GOOS=android` 编译 PIE 可执行文件，打包进 `jniLibs/<abi>/`，使用 `.so` 文件名携带，由壳通过进程启动。这不同于 JNI 共享库，具体进程、权限、缓存路径和退出逻辑需在新项目实现。
 
-新应用使用独立的 applicationId、本地通信端口和签名配置，方便与 8787 APK 同时安装。TV 播放仍由本 APK 内的 Go 服务处理，8797 只承载自身 UI、API 和本地媒体路由。
+新应用使用独立的 applicationId、本地通信端口和签名配置，方便与 8787 APK 同时安装。TV 播放仍由本 APK 内的 Go 服务处理。Android 使用动态本机端口承载自身 UI、API 和媒体路由，8797 仅作为桌面预览默认值。
 
 ## 签名与下载
 
@@ -52,7 +52,7 @@ ANDROID_KEY_ALIAS
 ANDROID_KEY_PASSWORD
 ```
 
-项目签名材料保存在 GitHub Secrets，不写入代码。私有仓库的 Artifact 和 Release 下载需要有仓库访问权限，不能假定 APK 可以匿名访问私有 Release 实现自动更新。
+正式版 Gradle signingConfigs 已接入上述四项 GitHub Secrets；缺少任一项时中止正式构建，产物上传前通过 apksigner 验证。项目签名材料不写入代码。私有仓库的 Artifact 和 Release 下载需要有仓库访问权限，不能假定 APK 可以匿名访问私有 Release 实现自动更新。
 
 ## 当前状态
 

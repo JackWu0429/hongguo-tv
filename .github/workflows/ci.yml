@@ -11,6 +11,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      HONGGUO_CORE_VERSION: 0.2.2-${{ github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,9 +49,9 @@ jobs:
       - name: Build Android native binaries
         run: bash scripts/build_android_binaries.sh
         env:
-          VERSION: 0.2.1-${{ github.sha }}
+          VERSION: ${{ env.HONGGUO_CORE_VERSION }}
       - name: Build and lint debug APK
-        run: gradle -p android assembleDebug lintDebug
+        run: gradle -p android testDebugUnitTest assembleDebug lintDebug
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
