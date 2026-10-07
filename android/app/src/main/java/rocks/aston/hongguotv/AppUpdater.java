@@ -81,7 +81,7 @@ final class AppUpdater {
             name = json.getString("version_name"); packageName = json.getString("package_name");
             bytes = json.getLong("size"); sha256 = json.getString("sha256").toLowerCase(java.util.Locale.ROOT);
             url = json.getString("download_url"); notes = json.optString("release_notes", "");
-            UpdatePolicy.validate(packageName, code, name, minSdk, bytes, sha256, url, installedPackage);
+            UpdatePolicy.validate(packageName, code, name, minSdk, bytes, sha256, url, installedPackage, BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME);
             if (notes.length() > 16000) throw new IOException("版本说明过长");
         }
     }

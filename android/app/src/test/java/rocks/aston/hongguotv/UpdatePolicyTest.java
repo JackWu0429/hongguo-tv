@@ -32,10 +32,20 @@ public class UpdatePolicyTest {
     }
     @Test public void manifestRejectsForeignOrMutableDownloadTargets() {
         String url = "https://github.com/aston314/hongguo-tv-releases/releases/download/v0.2.7/hongguo-tv-0.2.7.apk";
-        UpdatePolicy.validate("app", 9, "0.2.7", 23, 100, new String(new char[64]).replace('\0', 'a'), url, "app");
+        UpdatePolicy.validate("app", 9, "0.2.7", 23, 100, new String(new char[64]).replace('\0', 'a'), url, "app", 8, "0.2.6");
         for (String bad : new String[]{url.replace("github.com", "github.com.evil.test"), url.replace("download/v0.2.7", "latest/download"), url + "?token=x", url.replace("hongguo-tv-releases", "private-source")}) {
-            try { UpdatePolicy.validate("app", 9, "0.2.7", 23, 100, new String(new char[64]).replace('\0', 'a'), bad, "app"); fail(bad); }
+            try { UpdatePolicy.validate("app", 9, "0.2.7", 23, 100, new String(new char[64]).replace('\0', 'a'), bad, "app", 8, "0.2.6"); fail(bad); }
             catch (IllegalArgumentException expected) { /* expected */ }
         }
+    }
+    @Test public void staleOrInconsistentMetadataNeverClaimsCurrentVersion() {
+        String sha = new String(new char[64]).replace('\0', 'a');
+        for (String name : new String[]{"0.2.6", "0.2.8"}) {
+            String url = "https://github.com/aston314/hongguo-tv-releases/releases/download/v" + name + "/hongguo-tv-" + name + ".apk";
+            try { UpdatePolicy.validate("app", name.equals("0.2.6") ? 8 : 9, name, 23, 100, sha, url, "app", 9, "0.2.7"); fail("stale metadata accepted"); }
+            catch (IllegalArgumentException expected) { /* Try the next transport. */ }
+        }
+        String url = "https://github.com/aston314/hongguo-tv-releases/releases/download/v0.2.7/hongguo-tv-0.2.7.apk";
+        UpdatePolicy.validate("app", 9, "0.2.7", 23, 100, sha, url, "app", 9, "0.2.7");
     }
 }

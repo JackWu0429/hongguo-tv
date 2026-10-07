@@ -22,7 +22,7 @@ import (
 //go:embed ui
 var uiFiles embed.FS
 
-var version = "0.2.7-dev"
+var version = "0.2.8-dev"
 
 type server struct {
 	instanceID   string

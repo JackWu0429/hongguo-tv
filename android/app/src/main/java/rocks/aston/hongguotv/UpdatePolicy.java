@@ -32,7 +32,9 @@ final class UpdatePolicy {
     }
 
     static void validate(String packageName, int code, String name, int minSdk, long bytes,
-                         String sha256, String download, String installedPackage) {
+                         String sha256, String download, String installedPackage, int installedCode, String installedName) {
+        if (code < installedCode || code == installedCode && !installedName.equals(name))
+            throw new IllegalArgumentException("更新信息尚未刷新或版本不一致，请稍后重试");
         if (!installedPackage.equals(packageName) || code <= 0 || name == null
                 || !name.matches("[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?")
                 || minSdk < 23 || bytes <= 0 || bytes > MAX_APK_BYTES
