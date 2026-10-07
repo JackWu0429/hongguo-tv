@@ -92,7 +92,10 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                if (!pageLoadFailed && coreUrl != null && url.startsWith(coreUrl)) startupPanel.setVisibility(View.GONE);
+                if (!pageLoadFailed && coreUrl != null && url.startsWith(coreUrl)) {
+                    startupPanel.setVisibility(View.GONE);
+                    webView.requestFocus();
+                }
                 view.evaluateJavascript("window.HongguoTV && window.HongguoTV." +
                         (activityForeground ? "resumeFromBackground()" : "pauseForBackground()"), null);
             }
@@ -103,21 +106,25 @@ public class MainActivity extends Activity {
         startupPanel = new LinearLayout(this);
         startupPanel.setOrientation(LinearLayout.VERTICAL);
         startupPanel.setGravity(Gravity.CENTER);
+        int startupInset = Math.round(24 * getResources().getDisplayMetrics().density);
+        startupPanel.setPadding(startupInset, startupInset, startupInset, startupInset);
         startupPanel.setBackgroundColor(0xFF0C0D12);
         startupMessage = new TextView(this);
         startupMessage.setTextColor(Color.WHITE);
         startupMessage.setTextSize(22);
-        startupPanel.addView(startupMessage);
+        startupMessage.setGravity(Gravity.CENTER);
+        startupPanel.addView(startupMessage, new LinearLayout.LayoutParams(-2, -2));
         TextView versionLabel = new TextView(this);
         versionLabel.setText("版本 " + BuildConfig.VERSION_NAME);
         versionLabel.setTextColor(0xFFA9A9B3);
         versionLabel.setTextSize(14);
+        versionLabel.setGravity(Gravity.CENTER);
         versionLabel.setPadding(0, 16, 0, 16);
-        startupPanel.addView(versionLabel);
+        startupPanel.addView(versionLabel, new LinearLayout.LayoutParams(-2, -2));
         startupRetry = new Button(this);
         startupRetry.setText("重试");
         startupRetry.setOnClickListener(view -> { startCoreService(); waitForCore(); });
-        startupPanel.addView(startupRetry);
+        startupPanel.addView(startupRetry, new LinearLayout.LayoutParams(-2, -2));
         content.addView(startupPanel, new FrameLayout.LayoutParams(-1, -1));
         setContentView(content);
         View decor = getWindow().getDecorView();

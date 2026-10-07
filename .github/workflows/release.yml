@@ -13,7 +13,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      HONGGUO_CORE_VERSION: 0.2.2-${{ github.sha }}
+      HONGGUO_CORE_VERSION: 0.2.3-${{ github.sha }}
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
     steps:
       - name: Checkout
@@ -50,7 +50,7 @@ jobs:
           node --test tests/*.test.cjs
       - name: Check release tag
         if: startsWith(github.ref, 'refs/tags/')
-        run: test "$GITHUB_REF_NAME" = "v0.2.2"
+        run: test "$GITHUB_REF_NAME" = "v0.2.3"
       - name: Build Android native binaries
         run: bash scripts/build_android_binaries.sh
         env:
@@ -76,13 +76,21 @@ jobs:
       - name: Remove temporary signing key
         if: always()
         run: rm -f "$RUNNER_TEMP/hongguo-release.keystore"
+      - name: Prepare versioned release files
+        run: |
+          mkdir -p "$RUNNER_TEMP/hongguo-release"
+          cp android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/hongguo-release/hongguo-tv-0.2.3.apk"
+          cd "$RUNNER_TEMP/hongguo-release"
+          sha256sum hongguo-tv-0.2.3.apk > SHA256SUMS.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: hongguo-tv-release-apk
-          path: android/app/build/outputs/apk/release/*.apk
+          path: ${{ runner.temp }}/hongguo-release/*
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: android/app/build/outputs/apk/release/*.apk
+          name: 红果短剧 TV v0.2.3
+          body_path: docs/releases/v0.2.3.md
+          files: ${{ runner.temp }}/hongguo-release/*

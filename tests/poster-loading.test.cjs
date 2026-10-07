@@ -1,0 +1,45 @@
+const {test} = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'), 'utf8');
+const functions = source.slice(source.indexOf('  function setCover('), source.indexOf('  function setFeatured('));
+function posters() {
+  const c=vm.createContext({});
+  vm.runInContext(`
+    var images=[],frames=[];
+    function Image(){this.style={};this.names=[];this.complete=false;this.naturalWidth=0;images.push(this);}
+    Image.prototype.getAttribute=function(name){return this[name]||null};
+    Image.prototype.removeAttribute=function(name){delete this[name]};
+    function node(){var image=new Image();image.classList={add:function(name){if(image.names.indexOf(name)<0)image.names.push(name)},remove:function(name){var at=image.names.indexOf(name);if(at>=0)image.names.splice(at,1)}};return image;}
+    function requestAnimationFrame(fn){frames.push(fn)}
+    function paint(){while(frames.length)frames.shift()()}
+  `+functions,c);
+  return c;
+}
+test('poster pixels stay hidden until loaded and laid out, without changing the reserved dimensions', () => {
+  const c=posters();
+  vm.runInContext(`image=node();image.style.width='100%';image.style.height='100%';setCover(image,{title:'剧',cover:'poster.jpg'})`,c);
+  assert.equal(c.image.names.includes('is-cover-pending'),true);
+  c.image.onload();assert.equal(c.image.names.includes('is-cover-pending'),true);
+  c.paint();assert.equal(c.image.names.includes('is-cover-pending'),false);
+  assert.equal(c.image.style.width,'100%');assert.equal(c.image.style.height,'100%');
+  const oldLoaded=c.image.onload;
+  c.setCover(c.image,{cover:'next.jpg'});oldLoaded();c.paint();
+  assert.equal(c.image.names.includes('is-cover-pending'),true);
+  c.image.onload();c.paint();assert.equal(c.image.names.includes('is-cover-pending'),false);
+});
+test('a failed cover does not display a broken or stretched image and recovers on another cover', () => {
+  const c=posters();vm.runInContext(`image=node();setCover(image,{cover:'bad.jpg'})`,c);
+  c.image.onerror();assert.equal(c.image.src,undefined);assert.equal(c.image.names.includes('is-cover-pending'),true);
+  c.setCover(c.image,{cover:'good.jpg'});c.image.onload();c.paint();
+  assert.equal(c.image.names.includes('is-empty'),false);assert.equal(c.image.names.includes('is-cover-pending'),false);
+});
+test('loading backdrop uses the decoded current source and rejects late previous images', () => {
+  const c=posters();vm.runInContext(`backdrop=node();setBackdrop(backdrop,{cover:'first.jpg'});first=backdrop.__coverLoader;setBackdrop(backdrop,{cover:'second.jpg'});second=backdrop.__coverLoader`,c);
+  c.first.onload();c.paint();assert.equal(c.backdrop.style.backgroundImage,'none');
+  c.second.onload();assert.equal(c.backdrop.names.includes('is-cover-pending'),true);
+  c.paint();assert.equal(c.backdrop.style.backgroundImage,'url("second.jpg")');
+  assert.equal(c.backdrop.names.includes('is-cover-pending'),false);
+  const count=c.images.length;c.setBackdrop(c.backdrop,{cover:'second.jpg'});assert.equal(c.images.length,count);
+});

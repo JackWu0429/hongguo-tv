@@ -173,6 +173,10 @@
   var playbackPreferences = { speed: 1, volume: 100, quality: '', danmaku: false };
   var playbackSpeeds = [.5, .75, 1, 1.25, 1.5, 2];
   var keyNames = {
+    // WebView delivers DOM key codes, not Android KeyEvent constants.
+    // Chromium 44 may omit event.key entirely.
+    37: 'ArrowLeft', 38: 'ArrowUp', 39: 'ArrowRight', 40: 'ArrowDown',
+    13: 'Enter', 27: 'Escape', 8: 'Backspace', 32: ' ',
     19: 'ArrowUp', 20: 'ArrowDown', 21: 'ArrowLeft', 22: 'ArrowRight',
     23: 'Enter', 66: 'Enter', 4: 'Escape', 111: 'Escape'
   };
@@ -618,7 +622,9 @@
   function goFocus(element) {
     if (!element || element.disabled || !element.getClientRects().length) return;
     if (window.getComputedStyle(element).visibility !== 'visible') return;
-    element.focus({ preventScroll: false });
+    // The default scroll behavior is sufficient; old WebViews have no
+    // focus-options overload.
+    element.focus();
     markFocus(element);
     if (!detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zoneOf(element) !== 'sidebar') {
       lastContentFocus = element;
@@ -1003,9 +1009,14 @@
   }
 
   function normalizedKey(event) {
-    var key = event.key;
-    if (!key || key === 'Unidentified' || key === 'Unknown') key = keyNames[event.keyCode] || '';
-    if (key === 'GoBack' || key === 'BrowserBack') key = 'Escape';
+    var key = event.key || event.keyIdentifier;
+    var aliases = { Left: 'ArrowLeft', Up: 'ArrowUp', Right: 'ArrowRight', Down: 'ArrowDown',
+      Return: 'Enter', Esc: 'Escape', Spacebar: ' ', GoBack: 'Escape', BrowserBack: 'Escape',
+      'U+000D': 'Enter', 'U+001B': 'Escape', 'U+0008': 'Backspace', 'U+0020': ' ' };
+    if (aliases[key]) return aliases[key];
+    if (!key || key === 'Unidentified' || key === 'Unknown' || /^U\+/.test(key)) {
+      key = keyNames[event.keyCode || event.which] || key || '';
+    }
     return key;
   }
 
@@ -1747,8 +1758,43 @@
 
   function setCover(image, item) {
     image.alt = item.title || '';
-    image.src = item.cover_fallback || item.cover || '';
-    image.onerror = function () { image.removeAttribute('src'); image.alt = ''; image.classList.add('is-empty'); };
+    var source = item.cover_fallback || item.cover || '';
+    if (image.getAttribute('src') === source && image.complete && image.naturalWidth) return;
+    var generation = image.__coverGeneration = (image.__coverGeneration || 0) + 1;
+    image.classList.remove('is-empty');
+    image.classList.add('is-cover-pending');
+    image.onload = function () {
+      // Let the reserved poster box settle before showing decoded pixels.
+      requestAnimationFrame(function () {
+        if (image.__coverGeneration === generation) image.classList.remove('is-cover-pending');
+      });
+    };
+    image.onerror = function () {
+      image.removeAttribute('src'); image.alt = ''; image.classList.add('is-empty');
+    };
+    if (source) image.src = source;
+    else image.onerror();
+  }
+
+  function setBackdrop(backdrop, item) {
+    var source = item.cover_fallback || item.cover || '';
+    if (backdrop.__coverSource === source) return;
+    backdrop.__coverSource = source;
+    var loader = new Image();
+    backdrop.__coverLoader = loader;
+    backdrop.classList.add('is-cover-pending');
+    backdrop.style.backgroundImage = 'none';
+    loader.onload = function () {
+      if (backdrop.__coverLoader !== loader) return;
+      // Background cover preserves the intrinsic ratio even on old WebViews;
+      // the loading poster is never painted as a stretched full-size img.
+      backdrop.style.backgroundImage = 'url(' + JSON.stringify(loader.src) + ')';
+      requestAnimationFrame(function () {
+        if (backdrop.__coverLoader === loader) backdrop.classList.remove('is-cover-pending');
+      });
+    };
+    loader.onerror = function () { if (backdrop.__coverLoader === loader) backdrop.style.backgroundImage = 'none'; };
+    if (source) loader.src = source;
   }
 
   function setFeatured(item) {
@@ -1763,7 +1809,7 @@
     var placeholderTitle = document.getElementById('hero-placeholder-title');
     var placeholderSummary = document.getElementById('hero-placeholder-summary');
     if (backdrop) {
-      setCover(backdrop, item);
+      setBackdrop(backdrop, item);
     }
     if (title) title.textContent = item.title || '红果短剧';
     if (episode) episode.textContent = '第' + (item.start_episode || 1) + '集' + (item.episode_count ? ' · 全' + item.episode_count + '集' : '');
