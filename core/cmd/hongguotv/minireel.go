@@ -61,6 +61,9 @@ type miniReelMediaJob struct {
 	Qualities []string
 	Err       error
 	Accessed  time.Time
+	Context   context.Context
+	Cancel    context.CancelFunc
+	Waiters   int
 }
 
 var miniReelState = struct {
@@ -145,6 +148,13 @@ func resolveMiniReelMedia(ctx context.Context, seriesID, vid string) (map[string
 }
 
 func resolveMiniReelMediaQuality(ctx context.Context, seriesID, vid, quality string, fallback bool) (map[string]any, error) {
+	return resolveMiniReelMediaWith(ctx, seriesID, vid, quality, fallback, prepareMiniReelMedia)
+}
+
+// Every foreground or speculative request joins the same preparation. Closing
+// one request only cancels networking when no other consumer needs the job.
+func resolveMiniReelMediaWith(ctx context.Context, seriesID, vid, quality string, fallback bool,
+	prepare func(context.Context, *miniReelMediaJob, string, string, string, string, bool)) (map[string]any, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -153,23 +163,66 @@ func resolveMiniReelMediaQuality(ctx context.Context, seriesID, vid, quality str
 		return nil, err
 	}
 	token := miniReelQualityToken(seriesID, vid, quality, fallback)
+	// A just-aborted speculative job must finish cleaning its partial file before
+	// another job for the same token writes to that directory.
+acquire:
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	miniReelState.Lock()
 	miniReelCleanupLocked()
 	job := miniReelState.jobs[token]
+	if job != nil && !isMiniReelReady(job.Ready) && job.Context != nil && job.Context.Err() != nil {
+		ready := job.Ready
+		miniReelState.Unlock()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ready:
+			goto acquire
+		}
+	}
 	// Failed preparations must be retryable, rather than cached for the TTL.
 	if job != nil && isMiniReelReady(job.Ready) && job.Err != nil {
 		delete(miniReelState.jobs, token)
 		job = nil
 	}
+	if job != nil && isMiniReelReady(job.Ready) && job.Path != "" {
+		if _, err := os.Stat(job.Path); err != nil {
+			delete(miniReelState.jobs, token)
+			job = nil
+		}
+	}
 	if job == nil {
-		job = &miniReelMediaJob{Ready: make(chan struct{}), Accessed: time.Now()}
+		jobCtx, cancel := context.WithTimeout(context.Background(), 95*time.Second)
+		job = &miniReelMediaJob{Ready: make(chan struct{}), Accessed: time.Now(), Context: jobCtx, Cancel: cancel}
 		miniReelState.jobs[token] = job
-		go prepareMiniReelMedia(job, token, seriesID, vid, quality, fallback)
+		go func() {
+			prepare(jobCtx, job, token, seriesID, vid, quality, fallback)
+			miniReelState.Lock()
+			job.Accessed = time.Now()
+			cancel()
+			close(job.Ready)
+			miniReelCleanupLocked()
+			miniReelState.Unlock()
+		}()
 	} else {
 		job.Accessed = time.Now()
 	}
 	ready := job.Ready
+	job.Waiters++
 	miniReelState.Unlock()
+	defer func() {
+		miniReelState.Lock()
+		job.Waiters--
+		if job.Waiters == 0 && !isMiniReelReady(job.Ready) && job.Cancel != nil {
+			job.Cancel()
+		}
+		if isMiniReelReady(job.Ready) {
+			miniReelCleanupLocked()
+		}
+		miniReelState.Unlock()
+	}()
 
 	timer := time.NewTimer(95 * time.Second)
 	defer timer.Stop()
@@ -193,15 +246,14 @@ func resolveMiniReelMediaQuality(ctx context.Context, seriesID, vid, quality str
 	}, nil
 }
 
-func prepareMiniReelMedia(job *miniReelMediaJob, token, seriesID, vid, quality string, fallback bool) {
-	defer close(job.Ready)
+func prepareMiniReelMedia(ctx context.Context, job *miniReelMediaJob, token, seriesID, vid, quality string, fallback bool) {
 	directory := ""
 	defer func() {
 		if job.Err != nil && directory != "" {
 			_ = os.RemoveAll(directory)
 		}
 	}()
-	options, err := miniReelNativeOptions(context.Background(), vid)
+	options, err := miniReelNativeOptions(ctx, vid)
 	if err != nil {
 		job.Err = err
 		return
@@ -227,7 +279,11 @@ func prepareMiniReelMedia(job *miniReelMediaJob, token, seriesID, vid, quality s
 		return
 	}
 	path := filepath.Join(directory, token+".mp4")
-	if err := downloadMiniReelMedia(option.URL, path); err != nil {
+	if err := downloadMiniReelMedia(ctx, option.URL, path); err != nil {
+		job.Err = err
+		return
+	}
+	if err := ctx.Err(); err != nil {
 		job.Err = err
 		return
 	}
@@ -237,10 +293,11 @@ func prepareMiniReelMedia(job *miniReelMediaJob, token, seriesID, vid, quality s
 			return
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		job.Err = err
+		return
+	}
 	job.Path = path
-	miniReelState.Lock()
-	miniReelCleanupLocked()
-	miniReelState.Unlock()
 	_ = seriesID // kept in the job key so the same vid cannot cross series contexts.
 }
 
@@ -289,7 +346,7 @@ func ensureMiniReelRoot() error {
 func miniReelCleanupLocked() {
 	now := time.Now()
 	for token, job := range miniReelState.jobs {
-		if now.Sub(job.Accessed) <= miniReelTTL || job.Ready != nil && !isMiniReelReady(job.Ready) {
+		if job.Waiters > 0 || now.Sub(job.Accessed) <= miniReelTTL || job.Ready != nil && !isMiniReelReady(job.Ready) {
 			continue
 		}
 		if miniReelState.root != "" {
@@ -313,6 +370,9 @@ func miniReelCleanupLocked() {
 		}
 		size := miniReelDirectorySize(filepath.Dir(job.Path))
 		total += size
+		if job.Waiters > 0 {
+			continue
+		}
 		entries = append(entries, cacheEntry{token: token, accessed: job.Accessed, size: size})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].accessed.Before(entries[j].accessed) })
@@ -639,8 +699,8 @@ func chooseMiniReelOption(options []miniReelOption) miniReelOption {
 	return best
 }
 
-func downloadMiniReelMedia(target, path string) error {
-	req, err := http.NewRequest(http.MethodGet, target, nil)
+func downloadMiniReelMedia(ctx context.Context, target, path string) (err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return err
 	}
@@ -660,7 +720,12 @@ func downloadMiniReelMedia(target, path string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+		if err != nil {
+			_ = os.Remove(path)
+		}
+	}()
 	reader := io.LimitReader(resp.Body, miniReelMaxBytes+1)
 	n, err := io.Copy(file, reader)
 	if err != nil {
@@ -671,6 +736,9 @@ func downloadMiniReelMedia(target, path string) error {
 	}
 	if n < 12 {
 		return errors.New("media response is too small")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	return file.Sync()
 }

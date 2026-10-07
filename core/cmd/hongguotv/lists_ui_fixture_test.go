@@ -16,7 +16,8 @@ func TestListsBrowserFixture(t *testing.T) {
 	browseFixture := os.Getenv("HONGGUO_BROWSE_UI_FIXTURE") == "1"
 	seriesFixture := os.Getenv("HONGGUO_SERIES_UI_FIXTURE") == "1"
 	likesFixture := os.Getenv("HONGGUO_LIKES_UI_FIXTURE") == "1"
-	playerFixture := os.Getenv("HONGGUO_PLAYER_UI_FIXTURE") == "1" || seriesFixture || likesFixture
+	prefetchFixture := os.Getenv("HONGGUO_PREFETCH_UI_FIXTURE") == "1"
+	playerFixture := os.Getenv("HONGGUO_PLAYER_UI_FIXTURE") == "1" || seriesFixture || likesFixture || prefetchFixture
 	if os.Getenv("HONGGUO_LISTS_UI_FIXTURE") != "1" && !playerFixture {
 		t.Skip("isolated UI fixture")
 	}
@@ -24,6 +25,9 @@ func TestListsBrowserFixture(t *testing.T) {
 	calls := []string{}
 	var failNew bool
 	var failQuality bool
+	var failPrefetch bool
+	prefetchDelay, foregroundDelay := 300, 0
+	preparationEvents := []string{}
 	var guest bool
 	var failLike bool
 	likeWrites := []LibraryChange{}
@@ -56,7 +60,7 @@ func TestListsBrowserFixture(t *testing.T) {
 		vids := make([]string, 80)
 		for j := range vids {
 			vids[j] = "7690223053078268953"
-			if likesFixture {
+			if likesFixture || prefetchFixture {
 				vids[j] = fmt.Sprintf("769022305307826%04d", 8953+j)
 			}
 		}
@@ -80,7 +84,7 @@ func TestListsBrowserFixture(t *testing.T) {
 	mux.HandleFunc("/api/v1/library", func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
-		if (seriesFixture || likesFixture) && r.Method == http.MethodPost {
+		if (seriesFixture || likesFixture || prefetchFixture) && r.Method == http.MethodPost {
 			var action map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&action); err != nil {
 				writeError(w, 400, err.Error())
@@ -267,7 +271,16 @@ func TestListsBrowserFixture(t *testing.T) {
 			if r.URL.Query().Get("fail_like") == "1" {
 				failLike = true
 			}
-			writeJSON(w, 200, map[string]any{"writes": writes, "calls": calls, "like_writes": likeWrites})
+			if r.URL.Query().Get("fail_prefetch") == "1" {
+				failPrefetch = true
+			}
+			if r.URL.Query().Has("prefetch_ms") {
+				prefetchDelay, _ = strconv.Atoi(r.URL.Query().Get("prefetch_ms"))
+			}
+			if r.URL.Query().Has("foreground_ms") {
+				foregroundDelay, _ = strconv.Atoi(r.URL.Query().Get("foreground_ms"))
+			}
+			writeJSON(w, 200, map[string]any{"writes": writes, "calls": calls, "like_writes": likeWrites, "progress": progress, "preparation_events": preparationEvents})
 		})
 		mux.HandleFunc("/api/v1/player/action", func(w http.ResponseWriter, r *http.Request) {
 			var a PlayerAction
@@ -366,6 +379,30 @@ func TestListsBrowserFixture(t *testing.T) {
 		}
 		if r.URL.Path == "/api/v1/play/info" {
 			if playerFixture {
+				if prefetchFixture {
+					mu.Lock()
+					delay, fail := foregroundDelay, false
+					if q.Get("prefetch") == "1" {
+						delay, fail = prefetchDelay, failPrefetch
+						failPrefetch = false
+					}
+					mu.Unlock()
+					select {
+					case <-r.Context().Done():
+						mu.Lock()
+						preparationEvents = append(preparationEvents, "canceled:"+r.URL.RawQuery)
+						mu.Unlock()
+						return
+					case <-time.After(time.Duration(delay) * time.Millisecond):
+					}
+					mu.Lock()
+					preparationEvents = append(preparationEvents, "finished:"+r.URL.RawQuery)
+					mu.Unlock()
+					if fail {
+						writeError(w, 502, "测试下一集预备失败")
+						return
+					}
+				}
 				mu.Lock()
 				fail := failQuality && q.Get("quality") == "1080P"
 				if fail {
@@ -384,7 +421,7 @@ func TestListsBrowserFixture(t *testing.T) {
 					return
 				}
 				quality := firstNonEmpty(q.Get("quality"), "720P")
-				writeJSON(w, 200, map[string]any{"ok": true, "data": PlayInfo{Path: "/fixture-media.mp4?quality=" + quality, Quality: quality, Qualities: []string{"480P", "720P", "1080P"}, Vid: q.Get("vid")}})
+				writeJSON(w, 200, map[string]any{"ok": true, "data": PlayInfo{Path: "/fixture-media.mp4?quality=" + quality + "&vid=" + q.Get("vid"), Quality: quality, Qualities: []string{"480P", "720P", "1080P"}, Vid: q.Get("vid")}})
 				return
 			}
 			writeError(w, 502, "测试不播放媒体")
@@ -427,7 +464,7 @@ func TestListsBrowserFixture(t *testing.T) {
 		if r.URL.Path == "/api/v1/series/detail" {
 			d := drama(0)
 			d.SeriesID = q.Get("series_id")
-			if likesFixture {
+			if likesFixture || prefetchFixture {
 				for i, vid := range d.VidList {
 					d.Episodes = append(d.Episodes, Episode{Index: i + 1, VideoID: vid, Title: fmt.Sprintf("第%d集", i+1), Locked: i >= 3})
 				}
