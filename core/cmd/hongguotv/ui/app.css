@@ -332,7 +332,7 @@ button:focus { outline: none; }
 .confirm-button { min-width: 100px; min-height: 46px; padding: 0 22px; background: #3a3b47; border-radius: 9px; }
 .confirm-danger { background: #9c354e; }
 .confirm-button.is-focused, .confirm-button:focus-visible { outline: 3px solid #fff; }
-.new-date-strip { display: flex; gap: 10px; overflow-x: auto; padding: 0 0 20px; scrollbar-width: none; }
+.new-date-strip { display: flex; gap: 10px; overflow-x: auto; padding: 4px 4px 20px; scrollbar-width: none; }
 .new-date-strip::-webkit-scrollbar { display: none; }
 .calendar-day { flex: 0 0 88px; min-height: 70px; padding: 8px 6px; color: #9c9da8; background: #1b1c24; border: 1px solid #373846; border-radius: 13px; font-size: 13px; }
 .calendar-day strong, .calendar-day span { display: block; }
@@ -433,3 +433,5 @@ button:focus { outline: none; }
 .series-row.is-current .series-status { color: var(--accent); border-color: transparent; }
 .detail-series-message { flex-shrink: 0; max-height: 90px; overflow-y: auto; color: var(--muted); font-size: 17px; line-height: 1.6; margin-top: 12px; }
 .series-retry { min-height: 46px; margin-top: 12px; padding: 0 24px; border-radius: 8px; background: var(--accent-soft); }
+
+.confirm-reserve { background: var(--accent); }

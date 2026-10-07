@@ -76,25 +76,32 @@ func TestLibraryProgressPersistsAndCollectionsAreIndependent(t *testing.T) {
 	}
 }
 
-func TestLibraryCapsKeepSavedItemsWhenHistoryExpires(t *testing.T) {
+func TestLibraryPreservesAllSavedAndHistoryEntries(t *testing.T) {
 	data := LibraryData{Version: 1}
-	for i := 1; i <= 301; i++ {
+	for i := 1; i <= 1201; i++ {
 		data.Entries = append(data.Entries, LibraryEntry{Drama: Drama{SeriesID: fmt.Sprint(7000000000000000000 + int64(i))}, Episode: 1, LastPlayedAt: int64(i), FavoriteAt: int64(i), LikedAt: int64(i)})
 	}
-	trimLibrary(&data)
-	counts := map[string]int{}
-	for _, entry := range data.Entries {
-		for _, kind := range []string{"history", "favorites", "likes"} {
-			if libraryTimestamp(entry, kind) > 0 {
-				counts[kind]++
-			}
-		}
+	data.Entries = append(data.Entries, LibraryEntry{Drama: Drama{SeriesID: "999"}})
+	pruneLibraryEntries(&data)
+	if len(data.Entries) != 1201 {
+		t.Fatalf("lost records: %d", len(data.Entries))
 	}
-	if counts["history"] != historyLimit || counts["favorites"] != savedLimit || counts["likes"] != savedLimit || len(data.Entries) != savedLimit {
-		t.Fatalf("caps incorrect: %#v, total=%d", counts, len(data.Entries))
+	if data.Entries[0].LastPlayedAt != 1 || data.Entries[0].FavoriteAt != 1 || data.Entries[0].LikedAt != 1 {
+		t.Fatal("old records were trimmed")
 	}
-	if data.Entries[0].LastPlayedAt != 0 || data.Entries[0].FavoriteAt == 0 {
-		t.Fatal("older favorite must survive history expiry")
+	// A normal save and restart must preserve older memberships as well.
+	store, e := newLibraryStore(t.TempDir())
+	if e != nil {
+		t.Fatal(e)
+	}
+	store.data = data
+	saved, e := store.apply(LibraryChange{Action: "like", Drama: Drama{SeriesID: data.Entries[0].Drama.SeriesID, Title: "older entry"}, Value: func() *bool { v := false; return &v }()})
+	if e != nil || len(saved.Entries) != 1201 {
+		t.Fatal("normal write lost records", e)
+	}
+	reopened, e := newLibraryStore(filepath.Dir(store.path))
+	if e != nil || len(reopened.snapshot().Entries) != 1201 {
+		t.Fatal("restart lost records", e)
 	}
 }
 

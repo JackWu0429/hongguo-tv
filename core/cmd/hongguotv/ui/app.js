@@ -1411,7 +1411,7 @@
     var label = ({ history: '历史', favorites: '收藏', likes: '点赞' })[kind];
     document.getElementById('library-title').textContent = label;
     var storageLabel = libraryData.owner_id && kind !== 'likes' ? '当前账号 · 云同步' : '保存在本机';
-    document.getElementById('library-hint').textContent = storageLabel + (kind === 'history' ? ' · 自动记住集数和进度 · 最多 200 部' : ' · 最多 300 部');
+    document.getElementById('library-hint').textContent = storageLabel + (kind === 'history' ? ' · 自动记住集数和进度' : '');
     var grid = document.getElementById('library-grid');
     var entries = libraryData.entries.filter(function (entry) { return libraryTime(entry, kind) > 0; });
     entries.sort(function (a, b) { return libraryTime(b, kind) - libraryTime(a, kind); });
@@ -1492,6 +1492,9 @@
     confirmOperation = null;
     document.getElementById('confirm-modal').classList.add('is-hidden');
     document.getElementById('confirm-modal').setAttribute('aria-hidden', 'true');
+    document.getElementById('confirm-accept').classList.remove('confirm-reserve');
+    document.getElementById('confirm-accept').classList.add('confirm-danger');
+    document.getElementById('confirm-cancel').textContent = '取消';
     var target = confirmReturnFocus;
     confirmReturnFocus = null;
     goFocus(target && focusables().indexOf(target) >= 0 ? target : firstContentFocus());
@@ -1857,26 +1860,78 @@
         }); })
         .then(function (result) {
           if (!canContinuePlayback(playback)) return;
-          var next = result.next;
-          if (next) {
-            if (!next.series_id || next.series_id === playback.item.series_id || !next.vid || !(result.current_season > 0) || !(next.season_index > result.current_season) || !(next.episode_count > 0)) throw new Error('下一季数据无效');
-            // Keep the original page/card return target, but start the new
-            // series from episode 1 even when that series has old progress.
-            feedItems[feedIndex] = next;
-            playFeedItem(feedIndex, 1, 0);
-            refreshDetailAfterSeason(playback.item.series_id, next);
-            showNotice('继续播放第' + next.season_index + '季');
-          } else if (pageMode() === 'recommend' && feedItems.length > 1) {
-            playFeedItem(feedIndex + 1);
-          } else {
-            setPlayerStatus(''); revealControls(); showNotice('本剧已播放完，暂无可播放的下一季');
-          }
+          var epoch = accountEpoch;
+          return fetchData('/api/v1/series/seasons?series_id=' + encodeURIComponent(playback.item.series_id)).then(function (series) {
+            if (!canContinuePlayback(playback) || epoch !== accountEpoch) return;
+            if (!Array.isArray(series.items)) throw new Error('系列剧响应无效');
+            var current = series.items.filter(function (item) { return item.series_id === playback.item.series_id; })[0];
+            var season = current && current.season_index || result.current_season;
+            if (current && result.current_season > 0 && current.season_index !== result.current_season) throw new Error('系列季号不一致');
+            var successors = season > 0 ? series.items.filter(function (item) { return item.season_index === season + 1; }) : [];
+            if (successors.length > 1) throw new Error('下一季关系存在冲突');
+            var successor = successors[0];
+            // The full series selector takes precedence, including upcoming
+            // seasons. Never skip a reservable season to a later playable one.
+            if (successor && successor.upcoming) {
+              setPlayerStatus(''); revealControls();
+              if (successor.reservation_id) offerNextSeasonReservation(playback, successor, epoch);
+              else showNotice('本季已播放完，下一季待上线，尚未开放预约');
+              return;
+            }
+            if (successor && !successor.playable) { setPlayerStatus(''); revealControls(); showNotice('下一季暂不可播放'); return; }
+            var next = successor || (!current ? result.next : null);
+            if (next) {
+              if (!next.series_id || next.series_id === playback.item.series_id || !next.vid || !(season > 0) || next.season_index !== season + 1 || !(next.episode_count > 0)) throw new Error('下一季数据无效');
+              feedItems[feedIndex] = next;
+              playFeedItem(feedIndex, 1, 0);
+              refreshDetailAfterSeason(playback.item.series_id, next);
+              showNotice('继续播放第' + next.season_index + '季');
+            } else {
+              setPlayerStatus(''); revealControls();
+              if (pageMode() === 'recommend' && feedItems.length > 1) playFeedItem(feedIndex + 1);
+              else showNotice('本剧已播放完，暂无可播放的下一季');
+            }
+          });
+
         });
     }).catch(function (error) {
       if (!canContinuePlayback(playback)) return;
       setPlayerStatus(''); revealControls();
       showNotice('连续播放已暂停：' + error.message);
     }).then(finishContinuation, finishContinuation);
+  }
+
+  function offerNextSeasonReservation(playback, item, epoch) {
+    if (!canContinuePlayback(playback) || confirmOpen) return;
+    var label = item.label || '第' + item.season_index + '季';
+    if (item.reserved) { showNotice('本季已播放完，' + label + '已预约，等待上线'); return; }
+    if (!accountData || !accountData.logged_in) { showNotice('本季已播放完，' + label + '待上线。登录后可在“选集 → 系列剧”预约'); return; }
+    ++confirmationGeneration; var generation = confirmationGeneration;
+    confirmReturnFocus = document.activeElement; confirmOpen = true;
+    document.getElementById('confirm-title').textContent = '预约下一季？';
+    document.getElementById('confirm-copy').textContent = '本季已播放完，' + item.title + '尚未上线。预约后可在“我的预约”查看。';
+    var accept = document.getElementById('confirm-accept');
+    accept.textContent = '预约' + label; accept.classList.add('confirm-reserve'); accept.classList.remove('confirm-danger');
+    document.getElementById('confirm-cancel').textContent = '稍后';
+    document.getElementById('confirm-modal').classList.remove('is-hidden');
+    document.getElementById('confirm-modal').setAttribute('aria-hidden', 'false');
+    confirmOperation = function () {
+      if (epoch !== accountEpoch || activePlayback !== playback || !isPlaybackPage()) return Promise.resolve(true);
+      return fetchData('/api/v1/reservation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: item.reservation_id, reserved: true }) }).then(function () {
+        if (epoch !== accountEpoch) return true;
+        item.reserved = true; reservationPager.loaded = false; calendarPager.loaded = false;
+        // Refetch exact counts next time; other pages may have changed remotely.
+        reservationCounts.upcoming = null; updateReservationCounts({});
+        seriesItems.forEach(function (season) { if (season.reservation_id === item.reservation_id) season.reserved = true; });
+        updateSeriesRows();
+        showNotice('已预约' + label + '，上线后可在“我的预约”查看');
+        return true;
+      }).catch(function (error) {
+        if (epoch === accountEpoch && confirmOpen && generation === confirmationGeneration) document.getElementById('confirm-copy').textContent = '预约未确认成功：' + error.message + '。可以重试，或选择稍后。';
+        return false;
+      });
+    };
+    goFocus(document.getElementById('confirm-cancel'));
   }
 
   function refreshDetailAfterSeason(previousID, next) {
@@ -2354,7 +2409,7 @@
 
   function renderCalendarDays(schema) {
     if (!schema || !schema.dates || !schema.dates.length) return;
-    if (calendarSchema && JSON.stringify(calendarSchema.dates) === JSON.stringify(schema.dates)) return;
+    if (calendarSchema && JSON.stringify(calendarSchema) === JSON.stringify(schema)) return;
     calendarSchema = schema;
     if (!calendarDate) calendarDate = schema.default_date;
     var key = document.activeElement && document.activeElement.dataset.focus;
@@ -2422,11 +2477,15 @@
       var meta = document.createElement('span'); meta.textContent = dramaMeta(item);
       var summary = document.createElement('p'); summary.textContent = item.intro || '';
       var schedule = document.createElement('span'); schedule.className = 'publication-date';
-      schedule.textContent = (item.upcoming ? '待上线 · ' : '已上线 · ') + (item.publish_text || (item.publish_time ? new Date(item.publish_time * 1000).toLocaleString() : '上线时间待定'));
+      var scheduled = item.publish_time ? new Date(item.publish_time * 1000) : null;
+      var scheduleTime = scheduled && !isNaN(scheduled.getTime()) ? scheduled.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+      schedule.textContent = item.upcoming ? '待上线 · ' + (scheduleTime ? '预计 ' + scheduleTime + ' 上线' : item.publish_text || '上线时间待定') : '已上线' + (scheduleTime ? ' · ' + scheduleTime : '');
       copy.appendChild(title); copy.appendChild(meta); copy.appendChild(summary); copy.appendChild(schedule); row.appendChild(copy);
-      if (item.reservation_id) {
-        var action = document.createElement('button'); action.className = 'publication-action'; action.dataset.focus = row.dataset.focus + '-reserve'; action.textContent = item.reserved ? '取消预约' : '预约';
-        action.addEventListener('click', function (event) { event.stopPropagation(); changeReservation(item, action); }); row.appendChild(action);
+      if (!item.upcoming || item.reservation_id) {
+        var action = document.createElement('button'); action.className = 'publication-action';
+        action.dataset.focus = row.dataset.focus + (item.upcoming ? '-reserve' : '-play');
+        action.textContent = item.upcoming ? item.reserved ? '取消预约' : '预约' : '播放';
+        action.addEventListener('click', function (event) { event.stopPropagation(); if (item.upcoming) changeReservation(item, action); else startPlayer(item, row); }); row.appendChild(action);
       }
       row.addEventListener('click', function (event) { if (event.target.closest('button')) return; if (item.upcoming) { var action = row.querySelector('button'); if (action) goFocus(action); else showNotice('这部短剧尚未上线'); } else startPlayer(item, row); });
       row.addEventListener('focus', function () { row.scrollIntoView({ block: 'nearest' }); });
@@ -2434,10 +2493,12 @@
     });
   }
   function genderParam() { return ({ male: '1', female: '0' })[newGender] || '2'; }
-  function loadCalendar() { return calendarPager.reset({ date: calendarDate, gender: genderParam() }); }
+  function loadCalendar() { return calendarPager.reset({ date: calendarDate }); }
   function loadNew() { return newPager.reset({ gender: genderParam() }); }
   function renderNewMode() {
     var calendar = newMode === 'calendar';
+    // The confirmed calendar contract does not apply audience filters.
+    document.querySelector('.new-filters').classList.toggle('is-hidden', calendar);
     dateStrip.classList.toggle('is-hidden', !calendar); newGrid.classList.toggle('is-hidden', calendar); calendarList.classList.toggle('is-hidden', !calendar);
     document.getElementById('new-pagination').classList.toggle('is-hidden', calendar);
     document.getElementById('calendar-pagination').classList.toggle('is-hidden', !calendar);

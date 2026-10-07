@@ -612,6 +612,6 @@ func (s *libraryStore) mergeCloud(remote []LibraryEntry, stamp int64) error {
 	if stamp > 0 {
 		d.Cloud.LastSync = stamp
 	}
-	trimLibrary(&d)
+	pruneLibraryEntries(&d)
 	return s.persistLocked(d)
 }

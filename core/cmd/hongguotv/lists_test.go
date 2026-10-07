@@ -23,7 +23,7 @@ func TestOfficialListQueriesAndCursors(t *testing.T) {
 		if q.Get("offset") != "24" || q.Get("session_id") != "calendar-session" {
 			t.Error("lost cursor", q)
 		}
-		if q.Get("target_date") != "20261007" || q.Get("gender_type") != "1" || q.Get("subscribe_offset") != "24" || q.Get("tab_type") != "5" {
+		if q.Get("target_date") != "20261007" || q.Get("gender_type") != "2" || q.Get("subscribe_offset") != "24" || q.Get("tab_type") != "5" {
 			t.Error("wrong calendar contract", q)
 		}
 		ioJSON(w, `{"code":0,"data":{"next_offset":25,"has_more":false,"session_id":"s","calendar_schema":{"date_list":["20261007"],"default_date":"20261007","current_date":"20261007"},"subscribe_items":[{"item_id":"7692049770637954110","name":"待上线剧","cover":"https://example.com/cover.jpg","is_online":false,"has_subscribed":true,"schedule_publish_time":1791364920},{"item_id":"0","is_online":true,"subscribe_data":{"series_id":7692318643031395390,"title":"已上线剧","episode_cnt":69}}]}}`)

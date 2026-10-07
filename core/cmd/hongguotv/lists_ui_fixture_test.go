@@ -24,7 +24,7 @@ func TestListsBrowserFixture(t *testing.T) {
 	var failNew bool
 	var failQuality bool
 	var guest bool
-	var failSeries, emptySeries, slowDetail, failDetail, failReservation bool
+	var failSeries, emptySeries, slowDetail, failDetail, failReservation, upcomingNext, skipUpcoming bool
 	var reservations []map[string]any
 	var progress []map[string]any
 	reserved := false
@@ -121,6 +121,12 @@ func TestListsBrowserFixture(t *testing.T) {
 			mu.Lock()
 			defer mu.Unlock()
 			q := r.URL.Query()
+			if q.Has("skip_upcoming") {
+				skipUpcoming = q.Get("skip_upcoming") == "1"
+			}
+			if q.Has("upcoming_next") {
+				upcomingNext = q.Get("upcoming_next") == "1"
+			}
 			if q.Has("fail_series") {
 				failSeries = q.Get("fail_series") == "1"
 			}
@@ -326,10 +332,37 @@ func TestListsBrowserFixture(t *testing.T) {
 			return
 		}
 		if seriesFixture && r.URL.Path == "/api/v1/series/next-season" {
-			d := drama(0)
-			d.Title = "测试系列第13季"
-			d.SeasonIndex = 13
-			writeJSON(w, 200, map[string]any{"ok": true, "data": map[string]any{"current_season": 12, "next": d}})
+			mu.Lock()
+			upcoming := upcomingNext
+			skip := skipUpcoming
+			mu.Unlock()
+			if skip {
+				d := drama(15)
+				d.SeasonIndex = 15
+				writeJSON(w, 200, map[string]any{"ok": true, "data": map[string]any{"current_season": 13, "next": d}})
+				return
+			}
+			if upcoming {
+				writeJSON(w, 200, map[string]any{"ok": true, "data": map[string]any{"current_season": 13, "next": nil}})
+				return
+			}
+			season := 13
+			for n := 1; n <= 12; n++ {
+				if drama(n).SeriesID == q.Get("series_id") {
+					season = n
+				}
+			}
+			var next *Drama
+			if season < 13 {
+				d := drama(season + 1)
+				if season+1 == 13 {
+					d = drama(0)
+				}
+				d.Title = fmt.Sprintf("测试系列第%d季", season+1)
+				d.SeasonIndex = season + 1
+				next = &d
+			}
+			writeJSON(w, 200, map[string]any{"ok": true, "data": map[string]any{"current_season": season, "next": next}})
 			return
 		}
 		if r.URL.Path == "/api/v1/series/detail" {
@@ -407,6 +440,9 @@ func TestListsBrowserFixture(t *testing.T) {
 	}
 	if seriesFixture {
 		addr = "127.0.0.1:18997"
+	}
+	if override := os.Getenv("HONGGUO_UI_FIXTURE_ADDR"); override != "" {
+		addr = override
 	}
 	t.Log("UI fixture http://" + addr + "/")
 	t.Fatal(http.ListenAndServe(addr, mux))

@@ -9,13 +9,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 	"time"
 )
-
-const historyLimit = 200
-const savedLimit = 300
 
 var errLibrarySave = errors.New("保存本地记录失败")
 
@@ -131,25 +127,8 @@ func libraryTimestamp(entry LibraryEntry, kind string) int64 {
 	return 0
 }
 
-func trimLibrary(data *LibraryData) {
-	for _, kind := range []string{"history", "favorites", "likes"} {
-		indices := []int{}
-		for i, entry := range data.Entries {
-			if libraryTimestamp(entry, kind) > 0 {
-				indices = append(indices, i)
-			}
-		}
-		sort.SliceStable(indices, func(i, j int) bool {
-			return libraryTimestamp(data.Entries[indices[i]], kind) > libraryTimestamp(data.Entries[indices[j]], kind)
-		})
-		limit := savedLimit
-		if kind == "history" {
-			limit = historyLimit
-		}
-		for _, index := range indices[min(len(indices), limit):] {
-			clearLibraryKind(&data.Entries[index], kind)
-		}
-	}
+// Remove only empty records. Synced and local memberships have no count cap.
+func pruneLibraryEntries(data *LibraryData) {
 	kept := make([]LibraryEntry, 0, len(data.Entries))
 	for _, entry := range data.Entries {
 		if entry.LastPlayedAt > 0 || entry.FavoriteAt > 0 || entry.LikedAt > 0 {
@@ -238,7 +217,7 @@ func (s *libraryStore) apply(change LibraryChange) (LibraryData, error) {
 			}
 		}
 	}
-	trimLibrary(&data)
+	pruneLibraryEntries(&data)
 	if data.OwnerID != "" {
 		if err := recordCloudChange(&data, change, s.data); err != nil {
 			return LibraryData{}, err

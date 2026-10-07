@@ -208,7 +208,7 @@ filter_ids=<当前 series_id>
 
 ## 本机记录（2026-10-06）
 
-本地 `GET /api/v1/library` 读取记录；`POST` 的 `action` 支持 `progress`、`favorite`、`like`、`remove`、`clear`。移除和清空以 `kind=history/favorites/likes` 分别处理。历史最多 200 部，收藏与点赞各最多 300 部；仅保存精简卡片与当前集的 ID、时间，不复制完整集列表。当前集 ID 单独存为 `video_id`，重新播放仍按详情解析第一集，避免将上一集误当作第一集。
+本地 `GET /api/v1/library` 读取记录；`POST` 的 `action` 支持 `progress`、`favorite`、`like`、`remove`、`clear`。移除和清空以 `kind=history/favorites/likes` 分别处理。历史、收藏与点赞不再按数量截断；仅保存精简卡片与当前集的 ID、时间，不复制完整集列表。当前集 ID 单独存为 `video_id`，重新播放仍按详情解析第一集，避免将上一集误当作第一集。
 
 Android 使用应用私有 files 目录下的 `hongguo-tv/library.json`，与可清理的视频 cache 目录分开；Go 通过临时文件落盘后替换，失败时不公布新状态。桌面验证可通过 `-data-dir` 指定隔离目录。本机收藏/点赞尚不代表红果账号的云端状态。
 

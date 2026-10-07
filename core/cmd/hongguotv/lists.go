@@ -342,7 +342,8 @@ func (c *passportClient) SubscriptionList(ctx context.Context, q url.Values, cal
 		params.Set("tab_type", "5")
 		params.Set("tab_style", "2")
 		params.Set("active_panel", "6")
-		params.Set("gender_type", firstNonEmpty(q.Get("gender"), "2"))
+		// Original Calendar uses gender_type=2. Live reads show no audience filtering.
+		params.Set("gender_type", "2")
 		params.Set("need_calendar_schema", "true")
 		if date := q.Get("date"); date != "" {
 			if _, err := time.Parse("20060102", date); err != nil {
