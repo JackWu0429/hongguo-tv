@@ -7,10 +7,10 @@ const slice = (a,b) => source.slice(source.indexOf('  function '+a+'('), source.
 const tick = () => new Promise(r=>setImmediate(r));
 function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve}}
 function fixture({failWrite=false,ready=true}={}) {
-  const gate=deferred(), calls=[], writes=[], notices=[], frames=new Map();let frameID=0;
+  const gate=deferred(), calls=[], writes=[], notices=[], frames=new Map(), handlers={};let frameID=0;
   function classes(...initial){const names=new Set(initial);return {add(...x){x.forEach(n=>names.add(n))},remove(...x){x.forEach(n=>names.delete(n))},contains(n){return names.has(n)},toggle(n,on){if(on)names.add(n);else names.delete(n)},names}}
   const hero={classList:classes('is-feed'),style:{}};
-  const video={currentTime:120,duration:120,paused:false,ended:false,readyState:4,classList:classes('has-source'),pause(){this.paused=true},removeAttribute(n){delete this[n]},load(){calls.push('load');assert.equal(hero.classList.contains('is-preparing-video'),true)}};
+  const video={currentTime:120,duration:120,paused:false,ended:false,seeking:false,readyState:4,videoWidth:720,videoHeight:1280,muted:false,volume:.75,classList:classes('has-source'),getAttribute(n){return this[n]||null},addEventListener(name,fn){handlers[name]=fn},pause(){this.paused=true},removeAttribute(n){delete this[n]},load(){calls.push('load');assert.equal(hero.classList.contains('is-preparing-video'),true)}};
   const elem={classList:classes(),style:{}};
   const paint=()=>{const pending=[...frames.values()];frames.clear();pending.forEach(fn=>fn())};
   const c=vm.createContext({Promise,AbortController,URLSearchParams,Date,Object,Number,Math,clearTimeout,console,
@@ -28,7 +28,7 @@ function fixture({failWrite=false,ready=true}={}) {
     var detailModalOpen=false,qualityPrevious=null,applicationInBackground=false;
     var libraryData={owner_id:'123',entries:[]},libraryLoaded=${ready},libraryError='';
     var libraryReady=Promise.resolve(),libraryQueue=Promise.resolve();
-    var playbackInfoRequest=null,playbackPrefetchHandoff=null,playbackRequest=null,controlsTimer=null;
+    var playbackInfoRequest=null,playbackPrefetchHandoff=null,playbackRequest=null,controlsTimer=null,playbackAudioHold=null,playbackTiming=[];
     var playbackQuality='',playbackQualities=[],playbackPreferences={quality:'720P'},feedIndex=0;
     var feedItems=[{series_id:'9001',title:'fixture',episode_count:3,vid_list:['111','222','333']}];
     var activePlayback={item:feedItems[0],episode:1,vid:'111',owner:2,generation:1,started:true,lastWrite:0,completed:false};
@@ -39,11 +39,13 @@ function fixture({failWrite=false,ready=true}={}) {
     function closePlayerOptions(){}function closeDiscussion(){}function resetDanmaku(){}function cancelPlaybackPreparation(){}
     function updateFeedCounter(){}function setFeatured(){}function updateSeriesRows(){}function updatePlaybackControls(){}
     function updateSavedButtons(){}function updateDetailProgress(){}function renderLibrary(){}
-    function episodeLoadingText(){return 'loading'}function setPlayerStatus(){}function revealControls(){}
+    function episodeLoadingText(){return 'loading'}function setPlayerStatus(text,failed){calls.push('status:'+text);if(failed&&activePlayback&&activePlayback.presentation)activePlayback.presentation.failed=true}function revealControls(){}
+    function tickDanmaku(){}function scheduleControlsHide(){}function maybePrefetchNextEpisode(){}
     function showNotice(x){notices.push(x)}function playMedia(){calls.push('play');return Promise.resolve()}
   `+slice('changeLibrary','toggleSaved')+slice('saveProgress','continueAfterEpisode')+
-    slice('continueAfterEpisode','offerNextSeasonReservation')+slice('waitForPlaybackPaint','renderFeed'),c);
-  return {c,gate,calls,writes,notices,video,hero,paint,frames};
+    slice('continueAfterEpisode','offerNextSeasonReservation')+slice('holdPlaybackAudio','renderFeed'),c);
+  vm.runInContext('var media=video;'+source.slice(source.indexOf("  media.addEventListener('playing'"),source.indexOf("  media.addEventListener('ended'")),c);
+  return {c,gate,calls,writes,notices,video,hero,paint,frames,handlers};
 }
 test('automatic next starts while the completed history fsync is still pending, then saves both episodes in order',async()=>{
   const f=fixture(),old=f.c.activePlayback;
@@ -142,9 +144,106 @@ test('pause, buffering, or a superseding switch keeps its cover despite an older
     const playback=f.c.activePlayback;playback.started=true;playback.stableSince=Date.now();f.video.paused=false;
     f.c.finishPlaybackPreparation(playback);
     if(type==='pause')f.video.paused=true;
-    else if(type==='waiting')playback.stableSince=0;
+    else if(type==='waiting'){f.handlers.waiting();f.video.readyState=2;}
     else {f.c.playFeedItem(0,3,0);}
     f.paint();f.paint();await tick();
     assert.equal(f.hero.classList.contains('is-preparing-video'),true);
   }
+});
+
+async function prepared(options){
+  const f=fixture(options);f.gate.resolve();f.c.playFeedItem(0,2,0);
+  f.paint();f.paint();await tick();await tick();f.video.paused=false;f.video.currentTime=0;
+  return f;
+}
+async function present(f){f.paint();f.paint();await tick();f.paint();await tick();}
+test('history seeking between playing and cover paint retries without another playing event',async()=>{
+  const f=await prepared();f.handlers.playing();f.paint();
+  f.video.seeking=true;f.handlers.seeking();f.paint();await tick();
+  assert.equal(f.hero.classList.contains('is-preparing-video'),true);assert.equal(f.video.muted,true);
+  f.video.currentTime=39;f.video.seeking=false;f.handlers.seeked();
+  await present(f);
+  assert.equal(f.hero.classList.contains('is-preparing-video'),false);assert.equal(f.video.muted,false);
+  assert.equal(f.c.playbackTiming.length,1);assert.equal(f.c.activePlayback.episode,2);
+});
+test('waiting interrupted presentation recovers through current-source progress without playing or canplay',async()=>{
+  const f=await prepared();f.handlers.playing();f.paint();f.handlers.waiting();f.paint();await tick();
+  assert.equal(f.hero.classList.contains('is-preparing-video'),true);
+  f.video.currentTime=.25;f.handlers.timeupdate();await present(f);
+  assert.equal(f.hero.classList.contains('is-preparing-video'),false);assert.equal(f.video.muted,false);
+});
+test('advancing media can recover a missing playing event without recording the next episode before it starts',async()=>{
+  const f=await prepared();assert.equal(f.c.activePlayback.started,false);
+  f.video.currentTime=.25;f.handlers.timeupdate();await present(f);await f.c.libraryQueue;
+  assert.equal(f.hero.classList.contains('is-preparing-video'),false);assert.equal(f.video.muted,false);
+  assert.equal(f.c.activePlayback.started,true);assert.equal(f.c.playbackTiming.length,1);
+  assert.equal(f.c.libraryData.entries[0].episode,2);
+});
+test('early canplay and audio-only/no-video data cannot remove the cover or restore sound',async()=>{
+  const f=await prepared();f.handlers.canplay();await present(f);
+  assert.equal(f.hero.classList.contains('is-preparing-video'),true);assert.equal(f.video.muted,true);
+  f.video.videoWidth=0;f.video.videoHeight=0;f.handlers.playing();f.video.currentTime=.25;f.handlers.timeupdate();await present(f);
+  assert.equal(f.hero.classList.contains('is-preparing-video'),true);assert.equal(f.video.muted,true);
+  f.video.videoWidth=720;f.video.videoHeight=1280;f.handlers.loadeddata();await present(f);
+  assert.equal(f.hero.classList.contains('is-preparing-video'),false);assert.equal(f.video.muted,false);
+});
+test('sound is restored only after the cover and loading removal receive a paint',async()=>{
+  const f=await prepared();f.handlers.playing();
+  assert.equal(f.video.muted,true);f.paint();await tick();assert.equal(f.video.muted,true);
+  f.paint();await tick();assert.equal(f.hero.classList.contains('is-preparing-video'),false);
+  assert.equal(f.calls.at(-1),'status:');assert.equal(f.video.muted,true);
+  f.paint();await tick();assert.equal(f.video.muted,false);assert.equal(f.video.volume,.75);
+  assert.equal(f.c.playbackAudioHold,null);
+});
+test('temporary audio hold preserves prior mute and in-transition user choices without changing volume',async()=>{
+  for(const initial of [false,true]){
+    const f=fixture();f.video.muted=initial;f.gate.resolve();f.c.playFeedItem(0,2,0);
+    f.paint();f.paint();await tick();await tick();f.video.paused=false;f.handlers.playing();await present(f);
+    assert.equal(f.video.muted,initial);assert.equal(f.video.volume,.75);
+  }
+  const f=await prepared();f.c.setPlaybackMuted(true);f.handlers.playing();await present(f);assert.equal(f.video.muted,true);
+  f.c.holdPlaybackAudio(f.c.feedGeneration);f.c.setPlaybackMuted(false);assert.equal(f.video.muted,true);
+  f.c.finishPlaybackPreparation(f.c.activePlayback);f.paint();await tick();assert.equal(f.video.muted,false);assert.equal(f.video.volume,.75);
+});
+test('stale picture and sound callbacks cannot affect a rapid newer switch',async()=>{
+  for(const stage of ['cover','sound']){
+    const f=await prepared();f.handlers.playing();const old=f.c.activePlayback;
+    if(stage==='sound'){f.paint();f.paint();await tick();}
+    f.c.playFeedItem(0,3,0);f.paint();f.paint();await tick();await tick();
+    assert.equal(f.c.activePlayback.episode,3);assert.equal(f.hero.classList.contains('is-preparing-video'),true);
+    assert.equal(f.video.muted,true);f.c.releasePlaybackAudio(old);assert.equal(f.video.muted,true);
+    f.video.paused=false;f.handlers.playing();await present(f);assert.equal(f.video.muted,false);
+  }
+});
+test('pause, background, account changes, source replacement and failure prevent late reveal/unmute',async()=>{
+  for(const guard of ['pause','background','hidden','owner','source','error']){
+    const f=await prepared();f.handlers.playing();f.paint();
+    if(guard==='pause'){f.video.paused=true;f.handlers.pause();}
+    else if(guard==='background')f.c.applicationInBackground=true;
+    else if(guard==='hidden')f.c.document.hidden=true;
+    else if(guard==='owner')f.c.accountEpoch++;
+    else if(guard==='source')f.video.src='/other.mp4';
+    else f.handlers.error();
+    f.paint();await tick();f.video.currentTime=.25;f.handlers.timeupdate();f.handlers.canplay();await present(f);
+    assert.equal(f.hero.classList.contains('is-preparing-video'),true,guard);assert.equal(f.video.muted,true,guard);
+  }
+});
+test('sound restore interrupted after cover removal is retried after buffering resumes',async()=>{
+  const f=await prepared();f.handlers.playing();f.paint();f.paint();await tick();
+  f.handlers.waiting();f.video.readyState=2;f.paint();await tick();assert.equal(f.video.muted,true);
+  f.video.currentTime=.25;f.handlers.timeupdate();f.paint();await tick();assert.equal(f.video.muted,false);
+});
+test('ordinary playback buffering keeps the picture and does not reenter a transition audio hold',async()=>{
+  const f=await prepared();f.handlers.playing();await present(f);f.handlers.waiting();
+  assert.equal(f.hero.classList.contains('is-preparing-video'),false);assert.equal(f.video.muted,false);
+  assert.equal(f.c.playbackAudioHold,null);f.video.currentTime=.25;f.handlers.timeupdate();
+  assert.equal(f.calls.at(-1),'status:');assert.equal(f.video.muted,false);
+});
+test('rebinding quality invalidates old presentation callbacks; paused exit restores user mute safely',async()=>{
+  const f=await prepared();f.handlers.playing();f.paint();
+  f.c.bindPlaybackPresentation(f.c.activePlayback,'/new-quality.mp4');f.video.src='/new-quality.mp4';
+  f.paint();await tick();assert.equal(f.hero.classList.contains('is-preparing-video'),true);
+  f.handlers.playing();await present(f);assert.equal(f.hero.classList.contains('is-preparing-video'),false);
+  f.c.holdPlaybackAudio(f.c.feedGeneration);f.video.paused=true;f.c.releasePlaybackAudio();
+  assert.equal(f.video.muted,false);assert.equal(f.video.volume,.75);assert.equal(f.c.playbackAudioHold,null);
 });

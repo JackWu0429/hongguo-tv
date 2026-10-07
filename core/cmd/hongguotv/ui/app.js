@@ -181,6 +181,7 @@
   var playbackRequest = null;
   var playbackInfoRequest = null;
   var playbackPrefetchHandoff = null;
+  var playbackAudioHold = null;
   var playbackTiming = [];
   // Bounded, memory-only diagnostics. No drama IDs, titles or account data.
   window.HongguoTVPlaybackTiming = { snapshot: function () { return playbackTiming.map(function (item) { return Object.assign({}, item); }); } };
@@ -1216,6 +1217,7 @@
   function setPlayerStatus(message, failed) {
     var panel = document.getElementById('player-status');
     var hero = document.getElementById('hero');
+    if (failed && activePlayback && activePlayback.presentation) activePlayback.presentation.failed = true;
     var preparing = hero.classList.contains('is-preparing-video') || activePlayback && (activePlayback.continuationPending || !activePlayback.started);
     var transition = !!(message && !failed && preparing);
     hero.classList.toggle('is-transition-loading', transition);
@@ -1261,7 +1263,7 @@
     var paused = video.paused || video.ended;
     setControlIcon('pause', paused ? '播放' : '暂停', paused ? 'icon-play' : 'icon-pause');
     setControlIcon('speed', video.playbackRate + 'x', 'icon-speed');
-    var muted = video.muted || !video.volume;
+    var muted = (playbackAudioHold ? playbackAudioHold.muted : video.muted) || !video.volume;
     setControlIcon('volume', muted ? '静音' : '音量 ' + Math.round(video.volume * 100) + '%', muted ? 'icon-volume-muted' : 'icon-volume');
     setControlIcon('quality', playbackQuality ? (playbackPreferences.quality ? '' : '自动 · ') + playbackQuality : '清晰度', 'icon-quality');
     var cinema = shell.classList.contains('is-cinema');
@@ -1292,7 +1294,7 @@
     video.playbackRate = playbackPreferences.speed;
     video.defaultPlaybackRate = playbackPreferences.speed;
     video.volume = playbackPreferences.volume / 100;
-    video.muted = playbackPreferences.volume === 0;
+    setPlaybackMuted(playbackPreferences.volume === 0);
     updateDanmakuButton();
     updatePlaybackControls();
   }
@@ -1339,6 +1341,7 @@
       playbackQuality = data.quality || ''; playbackQualities = data.qualities || [];
       playbackPreferences.quality = value; savePlaybackPreferences();
       if (playbackRequest) playbackRequest.position = position;
+      bindPlaybackPresentation(playback, data.path);
       video.src = data.path; video.load(); updatePlaybackControls(); closePlayerOptions();
       setPlayerStatus(episodeLoadingText(playback.episode));
       if (previous.playing && !document.hidden && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus(''); revealControls(); });
@@ -1373,7 +1376,7 @@
     playerOptionsOpen = true;
     var video = document.getElementById('hero-video');
     var values = kind === 'speed' ? playbackSpeeds : kind === 'quality' ? [''].concat(playbackQualities) : [0, 25, 50, 75, 100];
-    var selected = kind === 'speed' ? video.playbackRate : kind === 'quality' ? playbackPreferences.quality : video.muted ? 0 : Math.round(video.volume * 100);
+    var selected = kind === 'speed' ? video.playbackRate : kind === 'quality' ? playbackPreferences.quality : (playbackAudioHold ? playbackAudioHold.muted : video.muted) ? 0 : Math.round(video.volume * 100);
     document.getElementById('player-options-title').textContent = ({ speed: '播放倍速', volume: '音量', quality: '清晰度', 'send-danmaku': '发弹幕' })[kind];
     document.getElementById('player-options-message').textContent = kind === 'quality' ? '切换后从当前时间继续播放' : '';
     document.getElementById('player-options').classList.toggle('is-composer', kind === 'send-danmaku');
@@ -1395,7 +1398,7 @@
         if (kind === 'quality') { switchQuality(value); return; }
         try {
           if (kind === 'speed') { video.playbackRate = value; video.defaultPlaybackRate = value; playbackPreferences.speed = value; }
-          else { video.volume = value / 100; video.muted = value === 0; playbackPreferences.volume = value; }
+          else { video.volume = value / 100; setPlaybackMuted(value === 0); playbackPreferences.volume = value; }
           updatePlaybackControls(); savePlaybackPreferences(); closePlayerOptions();
         } catch (error) { showNotice(kind === 'speed' ? '设备不支持这个倍速' : '请用遥控器音量键调整音量'); }
       });
@@ -1479,6 +1482,7 @@
   }
   function resetPlayerUI() {
     episodePrefetch.cancel(); cancelPlaybackPreparation();
+    if (document.getElementById('hero-video').paused) releasePlaybackAudio();
     closeDiscussion(false); resetDanmaku();
     closePlayerOptions(false); clearTimeout(controlsTimer);
     shell.classList.remove('is-controls-hidden'); exitCinema();
@@ -1716,9 +1720,9 @@
       ++accountEpoch;
       if (engagement) engagement.resetAccount();
       episodePrefetch.cancel();
-      var interruptedPlayback = playbackInfoRequest || playbackPrefetchHandoff;
+      var interruptedPlayback = playbackInfoRequest || playbackPrefetchHandoff || activePlayback && document.getElementById('hero').classList.contains('is-preparing-video');
       cancelPlaybackPreparation();
-      if (interruptedPlayback && pageMode() === 'player') setPlayerStatus('账号已切换，请重试播放', true);
+      if (interruptedPlayback && pageMode() === 'player') { document.getElementById('hero-video').pause(); setPlayerStatus('账号已切换，请重试播放', true); }
       resetSeasonCatalog();
       reservationCounts = { online: null, upcoming: null }; updateReservationCounts({});
       resetSeriesPanel();
@@ -2206,6 +2210,7 @@
   function cancelPlaybackPreparation() {
     if (playbackInfoRequest) playbackInfoRequest.abort(); playbackInfoRequest = null;
     if (playbackPrefetchHandoff) playbackPrefetchHandoff.cancel(); playbackPrefetchHandoff = null;
+    interruptPlaybackPresentation(activePlayback);
   }
   function maybePrefetchNextEpisode(video) {
     var playback = activePlayback;
@@ -2215,6 +2220,54 @@
       duration: Number(video.duration), position: Number(video.currentTime), paused: video.paused, ended: video.ended,
       stable_seconds: playback.stableSince ? Math.max(0, Date.now() - playback.stableSince) / 1000 : 0,
       started: playback.started, active: playback.generation === feedGeneration && isPlaybackPage() && !applicationInBackground && !document.hidden && !qualityPrevious });
+  }
+  function holdPlaybackAudio(generation) {
+    var video = document.getElementById('hero-video');
+    if (!playbackAudioHold) playbackAudioHold = { muted: video.muted, generation: generation };
+    playbackAudioHold.generation = generation;
+    video.muted = true;
+  }
+  function setPlaybackMuted(muted) {
+    if (playbackAudioHold) playbackAudioHold.muted = !!muted;
+    document.getElementById('hero-video').muted = playbackAudioHold ? true : !!muted;
+  }
+  function releasePlaybackAudio(playback) {
+    if (!playbackAudioHold || playback && playbackAudioHold.generation !== playback.generation) return;
+    var muted = playbackAudioHold.muted;
+    playbackAudioHold = null;
+    document.getElementById('hero-video').muted = muted;
+  }
+  function bindPlaybackPresentation(playback, source) {
+    playback.presentation = { source: source, position: Number(playback.position) || 0, epoch: 0, pending: false, waiting: false, failed: false };
+  }
+  function interruptPlaybackPresentation(playback) {
+    if (!playback || !playback.presentation) return;
+    playback.presentation.epoch++;
+    playback.presentation.pending = false;
+    playback.presentation.audioPending = false;
+  }
+  function currentPlaybackPresentation(playback, presentation, video) {
+    return !!(playback && presentation && activePlayback === playback && playback.presentation === presentation &&
+      playback.generation === feedGeneration && playback.owner === accountEpoch && isPlaybackPage() &&
+      !applicationInBackground && !document.hidden && !presentation.failed &&
+      video.classList.contains('has-source') && video.getAttribute('src') === presentation.source);
+  }
+  function playbackVideoReady(playback, presentation, video) {
+    return !!(currentPlaybackPresentation(playback, presentation, video) && !presentation.waiting &&
+      playback.started && !video.paused && !video.ended && !video.seeking && video.readyState >= 2 &&
+      video.videoWidth > 0 && video.videoHeight > 0);
+  }
+  function releasePresentedAudio(playback, presentation, video) {
+    if (!playbackAudioHold || presentation.audioPending || !playbackVideoReady(playback, presentation, video)) return;
+    presentation.audioPending = true;
+    var epoch = presentation.epoch;
+    var frame = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : function (callback) { return setTimeout(callback, 16); };
+    // The cover removal must get its own paint before sound is restored.
+    frame(function () {
+      if (playback.presentation !== presentation || presentation.epoch !== epoch) return;
+      presentation.audioPending = false;
+      if (!document.getElementById('hero').classList.contains('is-preparing-video') && playbackVideoReady(playback, presentation, video)) releasePlaybackAudio(playback);
+    });
   }
   function waitForPlaybackPaint(generation, signal) {
     // The first animation callback runs before paint. The second lets the
@@ -2241,16 +2294,60 @@
   }
   function finishPlaybackPreparation(playback) {
     var hero = document.getElementById('hero');
-    if (!hero.classList.contains('is-preparing-video')) { setPlayerStatus(''); return; }
+    var video = document.getElementById('hero-video');
+    var presentation = playback && playback.presentation;
+    if (!playbackVideoReady(playback, presentation, video)) return;
+    if (!hero.classList.contains('is-preparing-video')) { releasePresentedAudio(playback, presentation, video); return; }
+    if (presentation.pending) return;
     // Reveal the video underneath the opaque cover before removing that
     // cover. A canplay event alone must never expose an empty video surface.
     hero.classList.add('is-starting-video');
+    presentation.pending = true;
+    var epoch = presentation.epoch;
     waitForPlaybackPaint(playback.generation).then(function (painted) {
-      var video = document.getElementById('hero-video');
-      if (!painted || activePlayback !== playback || !playback.started || !playback.stableSince || video.paused || video.ended || video.readyState < 2) return;
+      if (playback.presentation !== presentation || presentation.epoch !== epoch) return;
+      presentation.pending = false;
+      if (!painted || !playbackVideoReady(playback, presentation, video)) return;
       hero.classList.remove('is-preparing-video', 'is-starting-video', 'is-episode-transition');
       setPlayerStatus('');
+      releasePresentedAudio(playback, presentation, video);
     });
+  }
+  function markPlaybackStarted(playback) {
+    var video = document.getElementById('hero-video');
+    var presentation = playback && playback.presentation;
+    if (applicationInBackground || document.hidden) { video.pause(); return; }
+    if (!presentation || presentation.failed) return;
+    if (!currentPlaybackPresentation(playback, presentation, video) || video.paused || video.ended || video.seeking || video.readyState < 2) return;
+    presentation.waiting = false;
+    playback.started = true;
+    playback.stableSince = Date.now();
+    finishPlaybackPreparation(playback);
+    if (!document.getElementById('hero').classList.contains('is-preparing-video')) setPlayerStatus('');
+    if (playback.timing && !playback.timing.reported) {
+      var timing = playback.timing;
+      timing.reported = true;
+      playbackTiming.push({ episode: timing.episode, automatic_next: timing.automatic_next, prefetch_ms: timing.prefetch_ms,
+        prepared_before_switch: timing.prepared_before_switch,
+        source_ready_ms: Math.max(0, timing.ready_at - timing.started_at),
+        video_start_ms: Math.max(0, Date.now() - timing.ready_at), total_ms: Math.max(0, Date.now() - timing.started_at) });
+      if (playbackTiming.length > 20) playbackTiming.shift();
+    }
+    updatePlaybackControls(); scheduleControlsHide(); saveProgress(true);
+  }
+  function checkPlaybackProgress(video) {
+    var playback = activePlayback, presentation = playback && playback.presentation;
+    if (!currentPlaybackPresentation(playback, presentation, video)) return;
+    var position = Number(video.currentTime) || 0;
+    var advancing = position > presentation.position + .001 && !video.seeking && !video.paused && !video.ended && video.readyState >= 2;
+    presentation.position = position;
+    if (advancing) {
+      presentation.waiting = false;
+      if (!playback.started) markPlaybackStarted(playback);
+      else if (!playback.stableSince) playback.stableSince = Date.now();
+      if (!document.getElementById('hero').classList.contains('is-preparing-video')) setPlayerStatus('');
+    }
+    finishPlaybackPreparation(playback);
   }
   function playFeedItem(index, forcedEpisode, forcedPosition, continuation) {
     closePlayerOptions(false);
@@ -2291,6 +2388,7 @@
     var video = document.getElementById('hero-video');
     var placeholder = document.getElementById('hero-placeholder');
     var generation = ++feedGeneration;
+    holdPlaybackAudio(generation);
     clearTimeout(controlsTimer);
     hero.classList.add('is-feed', 'is-preparing-video');
     hero.classList.remove('is-catalog-loading', 'is-starting-video');
@@ -2354,6 +2452,7 @@
         playbackInfoRequest = null;
         if (!data.path) throw new Error('播放服务没有返回地址');
         activePlayback.timing.ready_at = Date.now();
+        bindPlaybackPresentation(activePlayback, data.path);
         video.src = data.path;
         playbackQuality = data.quality || '';
         playbackQualities = data.qualities || [];
@@ -2920,6 +3019,7 @@
     episodePrefetch.cancel(); cancelPlaybackPreparation();
     saveProgress(true); activePlayback = null; ++feedGeneration;
     document.getElementById('hero-video').pause();
+    releasePlaybackAudio();
     document.getElementById('hero-video').removeAttribute('src');
     document.getElementById('hero-video').classList.remove('has-source');
     document.getElementById('hero').classList.remove('is-preparing-video');
@@ -3575,25 +3675,20 @@
   });
   media.addEventListener('playing', function () {
     document.getElementById('danmaku-layer').classList.remove('is-paused'); tickDanmaku();
-    if (!activePlayback || activePlayback.generation !== feedGeneration || !media.classList.contains('has-source')) return;
-    if (applicationInBackground || document.hidden) { media.pause(); return; }
-    activePlayback.started = true;
-    activePlayback.stableSince = Date.now();
-    finishPlaybackPreparation(activePlayback);
-    if (activePlayback.timing && !activePlayback.timing.reported) {
-      var timing = activePlayback.timing;
-      timing.reported = true;
-      playbackTiming.push({ episode: timing.episode, automatic_next: timing.automatic_next, prefetch_ms: timing.prefetch_ms,
-        prepared_before_switch: timing.prepared_before_switch,
-        source_ready_ms: Math.max(0, timing.ready_at - timing.started_at),
-        video_start_ms: Math.max(0, Date.now() - timing.ready_at), total_ms: Math.max(0, Date.now() - timing.started_at) });
-      if (playbackTiming.length > 20) playbackTiming.shift();
-    }
-    updatePlaybackControls(); scheduleControlsHide();
-    saveProgress(true);
+    markPlaybackStarted(activePlayback);
   });
+  function checkPlaybackData() {
+    if (!activePlayback) return;
+    var presentation = activePlayback.presentation;
+    if (!currentPlaybackPresentation(activePlayback, presentation, media)) return;
+    if (activePlayback.started && !media.paused && !media.seeking && media.readyState >= 3) presentation.waiting = false;
+    finishPlaybackPreparation(activePlayback);
+  }
+  media.addEventListener('loadeddata', checkPlaybackData);
+  media.addEventListener('canplay', checkPlaybackData);
   media.addEventListener('timeupdate', function () {
     tickDanmaku();
+    checkPlaybackProgress(media);
     if (!activePlayback || !activePlayback.started) return;
     updatePlaybackControls();
     maybePrefetchNextEpisode(media);
@@ -3601,6 +3696,7 @@
   });
   media.addEventListener('pause', function () {
     if (activePlayback) activePlayback.stableSince = 0;
+    interruptPlaybackPresentation(activePlayback);
     document.getElementById('danmaku-layer').classList.add('is-paused');
     saveProgress(true); updatePlaybackControls();
     if (activePlayback && activePlayback.started && media.getAttribute('src') && media.paused && !media.ended) revealControls();
@@ -3608,9 +3704,20 @@
   media.addEventListener('ratechange', updatePlaybackControls);
   media.addEventListener('volumechange', updatePlaybackControls);
   media.addEventListener('emptied', updatePlaybackControls);
-  media.addEventListener('waiting', function () { if (activePlayback) { activePlayback.stableSince = 0; setPlayerStatus(activePlayback.started ? '正在缓冲…' : episodeLoadingText(activePlayback.episode)); } });
-  media.addEventListener('seeking', function () { if (activePlayback) activePlayback.stableSince = 0; });
-  media.addEventListener('seeked', function () { if (activePlayback && activePlayback.started && !media.paused && !media.ended) activePlayback.stableSince = Date.now(); resetDanmaku(); tickDanmaku(); updatePlaybackControls(); saveProgress(true); if (media.paused) setPlayerStatus(''); });
+  media.addEventListener('waiting', function () {
+    if (!activePlayback) return;
+    activePlayback.stableSince = 0;
+    interruptPlaybackPresentation(activePlayback);
+    if (activePlayback.presentation) activePlayback.presentation.waiting = true;
+    setPlayerStatus(document.getElementById('hero').classList.contains('is-preparing-video') || !activePlayback.started ? episodeLoadingText(activePlayback.episode) : '正在缓冲…');
+  });
+  media.addEventListener('seeking', function () { if (activePlayback) activePlayback.stableSince = 0; interruptPlaybackPresentation(activePlayback); });
+  media.addEventListener('seeked', function () {
+    if (activePlayback && activePlayback.started && !media.paused && !media.ended) activePlayback.stableSince = Date.now();
+    if (activePlayback && activePlayback.presentation) activePlayback.presentation.position = Number(media.currentTime) || 0;
+    checkPlaybackData(); resetDanmaku(); tickDanmaku(); updatePlaybackControls(); saveProgress(true);
+    if (media.paused) setPlayerStatus('');
+  });
   media.addEventListener('error', function () { if (activePlayback && media.getAttribute('src')) setPlayerStatus('这集未能正常播放', true); });
   media.addEventListener('ended', function () {
     var playback = activePlayback;
