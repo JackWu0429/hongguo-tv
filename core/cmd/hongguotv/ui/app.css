@@ -136,6 +136,7 @@ button:focus { outline: none; }
 .player-option.is-selected { color: #fff; background: #f35d7b; }
 .player-option.is-focused { outline: none; box-shadow: 0 0 0 3px #fff; }
 .player-status { position: absolute; z-index: 6; top: 50%; left: 50%; display: flex; flex-direction: column; align-items: center; gap: 15px; max-width: 75%; padding: 22px 28px; background: rgba(10,11,16,.75); border-radius: 14px; transform: translate(-50%,-50%); font-size: 18px; text-align: center; }
+.player-status-title { min-width: 0; max-width: 100%; max-height: 2.8em; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 20px; font-weight: 600; line-height: 1.4; overflow-wrap: break-word; word-wrap: break-word; }
 .player-spinner { width: 34px; height: 34px; border: 3px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: player-spin .8s linear infinite; }
 @keyframes player-spin { to { transform: rotate(360deg); } }
 .discussion-panel { position: absolute; z-index: 25; right: 0; top: 0; bottom: 0; width: 380px; width: clamp(380px, 30vw, 480px); padding: 20px; background: rgba(22,23,30,.98); border-left: 1px solid #454652; display: flex; flex-direction: column; }
@@ -186,8 +187,12 @@ button:focus { outline: none; }
 .app-shell.is-controls-hidden .right-actions,
 .app-shell.is-controls-hidden .bottom-controls,
 .app-shell.is-controls-hidden .hero-gradient { visibility: hidden; pointer-events: none; }
-/* Keep the incoming drama identifiable without revealing playback controls. */
-.app-shell.is-controls-hidden .hero.is-preparing-video .hero-top-copy { visibility: visible; pointer-events: none; }
+/* Transition copy has one visual center. Normal control visibility resumes
+   when the original loading panel is cleared. */
+.hero.is-transition-loading .hero-top-copy,
+.hero.is-transition-loading .hero-title,
+.hero.is-transition-loading .hero-episode,
+.hero.is-transition-loading .hero-summary { visibility: hidden; pointer-events: none; }
 .app-shell.is-cinema .sidebar { display: none; }
 .app-shell.is-cinema { min-width: 0; min-height: 0; }
 .app-shell.is-cinema .hero { background: #000; }

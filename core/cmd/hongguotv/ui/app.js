@@ -1215,6 +1215,17 @@
   }
   function setPlayerStatus(message, failed) {
     var panel = document.getElementById('player-status');
+    var hero = document.getElementById('hero');
+    var preparing = hero.classList.contains('is-preparing-video') || activePlayback && (activePlayback.continuationPending || !activePlayback.started);
+    var transition = !!(message && !failed && preparing);
+    hero.classList.toggle('is-transition-loading', transition);
+    // Same-drama transitions need only the target episode. Keep the incoming
+    // title with the spinner for a first start or a different drama, never in
+    // the corner as a second, independently appearing loading label.
+    var title = document.getElementById('player-status-title');
+    var name = transition && hero.classList.contains('is-preparing-video') && !hero.classList.contains('is-episode-transition') && featuredItem && featuredItem.title || '';
+    title.textContent = name;
+    title.classList.toggle('is-hidden', !name);
     panel.classList.toggle('is-hidden', !message);
     document.getElementById('player-status-text').textContent = message || '';
     panel.querySelector('.player-spinner').classList.toggle('is-hidden', !!failed);
