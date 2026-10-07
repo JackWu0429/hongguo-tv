@@ -45,7 +45,6 @@ public class MainActivity extends Activity {
     private boolean keyboardVisible;
     private boolean accountEditing;
     private boolean inputBackPending;
-    private int accountEditGeneration;
     private LinearLayout startupPanel;
     private TextView startupMessage;
     private Button startupRetry;
@@ -122,7 +121,6 @@ public class MainActivity extends Activity {
                 pageLoadFailed = false;
                 pageReady = false;
                 accountEditing = false;
-                accountEditGeneration++;
                 super.onPageStarted(view, url, favicon);
             }
 
@@ -348,18 +346,9 @@ public class MainActivity extends Activity {
                 accountEditing = true;
                 inputBackPending = false;
                 routedVerticalKeys = 0;
-                final int generation = ++accountEditGeneration;
-                webView.requestFocus();
-                // The same DOM input was read-only during D-pad navigation.
-                // Refresh WebView's input connection after making it editable.
-                webView.post(() -> {
-                    if (destroyed || !pageReady || !activityForeground || !accountEditing || generation != accountEditGeneration) return;
-                    InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-                    if (keyboard != null) {
-                        keyboard.restartInput(webView);
-                        keyboard.showSoftInput(webView, InputMethodManager.SHOW_IMPLICIT);
-                    }
-                });
+                // Observe the original editable WebView field. Its natural
+                // activation creates the numeric IME connection; do not
+                // steal focus, restart that connection or force an IME open.
             });
         }
 
@@ -368,7 +357,6 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 if (destroyed || webView == null) return;
                 accountEditing = false;
-                accountEditGeneration++;
                 InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
                 if (keyboard != null) keyboard.hideSoftInputFromWindow(webView.getWindowToken(), 0);
                 scheduleFullscreen();
@@ -379,7 +367,6 @@ public class MainActivity extends Activity {
     private void completeAccountEditing() {
         if (!accountEditing) return;
         accountEditing = false;
-        accountEditGeneration++;
         if (!destroyed && pageReady && webView != null) {
             webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.finishAccountEditing()", null);
         }
@@ -462,7 +449,6 @@ public class MainActivity extends Activity {
         destroyed = true;
         pageReady = false;
         accountEditing = false;
-        accountEditGeneration++;
         if (appUpdater != null) appUpdater.destroy();
         if (startupAnimation != null) startupAnimation.stop();
         if (startupThread != null) startupThread.interrupt();

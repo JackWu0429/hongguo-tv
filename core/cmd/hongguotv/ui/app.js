@@ -1070,15 +1070,16 @@
     }
     if (accountEditingInput && accountEditingInput !== input) finishAccountEditing(false);
     if (accountEditingInput === input) return;
-    accountEditingInput = input; input.readOnly = false;
+    accountEditingInput = input;
     input.setAttribute('aria-label', input.id === 'account-phone' ? '输入手机号，返回键完成' : '输入验证码，返回键完成');
-    input.focus();
+    // Editable inputs open the IME through WebView's original input connection.
+    // The bridge only marks ownership; it never forces or restarts a keyboard.
     if (window.HongguoTVInput && window.HongguoTVInput.startAccountEditing) window.HongguoTVInput.startAccountEditing();
   }
   function finishAccountEditing(moveFocus) {
     var input = accountEditingInput;
     if (!input) return;
-    accountEditingInput = null; input.readOnly = true; input.blur();
+    accountEditingInput = null; input.blur();
     input.setAttribute('aria-label', input.id === 'account-phone' ? '手机号，确认键输入' : '短信验证码，确认键输入');
     if (window.HongguoTVInput) window.HongguoTVInput.finishEditing();
     if (moveFocus) {
@@ -1104,14 +1105,14 @@
     var current = document.activeElement;
     if (current && current.classList.contains('player-text-input') && ['Escape', 'ArrowUp', 'ArrowDown'].indexOf(key) < 0) return;
     if (current && current.classList.contains('account-input')) {
-      // A floating TV IME may send hardware arrows through WebView. While
-      // editing, all four belong to the keyboard/caret, never the page router.
-      if (androidShell && accountEditingInput === current && /^Arrow/.test(key)) return;
+      // Keep IME directions, confirmation, digits and deletion native. Enter
+      // can be a keyboard activation/selection, not a request to end editing.
+      if (androidShell && !current.readOnly && key !== 'Escape') return;
       if (!current.readOnly && (key === 'Backspace' || key === 'Delete' || key === 'ArrowLeft' || key === 'ArrowRight')) return;
       if (key === 'Enter') {
         event.preventDefault(); event.stopPropagation();
         if (event.repeat) return;
-        if (androidShell) { if (accountEditingInput === current) finishAccountEditing(true); else startAccountEditing(current); }
+        if (androidShell) startAccountEditing(current);
         else goFocus(current.id === 'account-code' ? firstVisible('#account-login') : firstVisible('#account-code') || firstVisible('#account-send-code') || firstVisible('#account-login'));
         return;
       }
@@ -1742,8 +1743,8 @@
     document.getElementById('account-login').classList.toggle('is-hidden', data.phase !== 'code');
     document.getElementById('account-change-phone').classList.toggle('is-hidden', data.phase !== 'code');
     var phoneInput = document.getElementById('account-phone');
-    phoneInput.readOnly = androidShell && accountEditingInput !== phoneInput || accountBusy || data.phase === 'code' && /^1[3-9]\d{9}$/.test(phoneInput.value);
-    document.getElementById('account-code').readOnly = androidShell && accountEditingInput !== document.getElementById('account-code');
+    phoneInput.readOnly = accountBusy || data.phase === 'code' && /^1[3-9]\d{9}$/.test(phoneInput.value);
+    document.getElementById('account-code').readOnly = false;
     phoneInput.placeholder = data.phase === 'code' && !phoneInput.value && data.phone ? '请重新输入 ' + data.phone + ' 的完整手机号' : '请输入手机号';
     document.querySelectorAll('.account-input').forEach(function (node) { node.disabled = accountBusy; });
     document.querySelectorAll('.account-action:not(.app-update-action)').forEach(function (node) { node.disabled = accountBusy; });
@@ -3532,7 +3533,7 @@
   document.getElementById('support-close').addEventListener('click', closeSupportQR);
   document.querySelectorAll('.account-input').forEach(function (input) {
     if (androidShell) {
-      input.readOnly = true;
+      input.addEventListener('focus', function () { startAccountEditing(input); });
       input.addEventListener('click', function () { startAccountEditing(input); });
       input.addEventListener('blur', function () { if (accountEditingInput === input) finishAccountEditing(false); });
     }
