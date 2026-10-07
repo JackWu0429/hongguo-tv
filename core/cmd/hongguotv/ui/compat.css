@@ -36,21 +36,35 @@
 .legacy-flex-gap .hero-top-copy > * + *, .legacy-flex-gap .hero-top-right > * + * { margin-top: 6px; }
 .legacy-flex-gap .catalog-card + .catalog-card { margin-left: 10px; }
 .legacy-flex-gap .round-action + .round-action { margin-top: 18px; }
-.legacy-flex-gap .bottom-controls > * + * { margin-top: 9px; }
-.legacy-flex-gap .playback-buttons > * + * { margin-left: 12px; }
+.legacy-flex-gap .round-action > * + * { margin-top: 3px; }
+.legacy-flex-gap .bottom-controls > * + * { margin-top: 12px; }
+.legacy-flex-gap .playback-timeline > * + *, .legacy-flex-gap .playback-buttons > * + * { margin-left: 13px; }
 .legacy-flex-gap .playback-buttons [data-action="fullscreen"] { margin-left: auto; }
+.legacy-flex-gap .is-discussion-open .playback-buttons > * { margin: 0 8px 8px 0; }
 .legacy-flex-gap .player-status > * + * { margin-top: 15px; }
+.legacy-flex-gap .search-heading-row > .search-box { margin-left: 28px; }
 .legacy-flex-gap .search-box > * + * { margin-left: 10px; }
 .legacy-flex-gap .filter-row > strong { margin-right: 17px; }
 .legacy-flex-gap .filter-options > * + * { margin-left: 14px; }
+.legacy-flex-gap .list-status > * + * { margin-left: 18px; }
+.legacy-flex-gap .list-status[aria-busy="true"]:before { margin-right: 18px; }
+.legacy-flex-gap .search-result-head > * + * { margin-left: 12px; }
 .legacy-flex-gap .rank-panel-row > * + * { margin-left: 12px; }
 .legacy-flex-gap .publication-row > img { margin-right: 20px; }
 .legacy-flex-gap .publication-action { margin-left: 20px; }
 .legacy-flex-gap .rank-tabs > * + *, .legacy-flex-gap .new-tabs > * + * { margin-left: 28px; }
 .legacy-flex-gap .rank-heading-row > * + *, .legacy-flex-gap .new-heading-row > * + * { margin-left: 34px; }
+.legacy-flex-gap .new-heading-row .new-filters { margin-left: auto; }
+.legacy-flex-gap .rank-list-heading > * + * { margin-left: 13px; }
+.legacy-flex-gap .rank-list-heading .rank-period { margin-left: auto; }
 .legacy-flex-gap .rank-main { margin-left: 32px; }
 .legacy-flex-gap .rank-subtab + .rank-subtab { margin-top: 6px; }
+.legacy-flex-gap .rank-row + .rank-row { margin-top: 2px; }
+.legacy-flex-gap .rank-row-copy > * + * { margin-top: 7px; }
 .legacy-flex-gap .rank-row-side > * + * { margin-top: 13px; }
+.legacy-flex-gap .library-heading-row > * + * { margin-left: 22px; }
+.legacy-flex-gap .library-toolbar > * + * { margin-left: 12px; }
+.legacy-flex-gap .library-empty > * + * { margin-top: 14px; }
 .legacy-flex-gap .new-filter + .new-filter { margin-left: 10px; }
 .legacy-flex-gap .calendar-day + .calendar-day { margin-left: 10px; }
 .legacy-flex-gap .publication-row + .publication-row { margin-top: 14px; }
@@ -66,6 +80,7 @@
 .legacy-flex-gap .confirm-button + .confirm-button { margin-left: 14px; }
 .legacy-flex-gap .discussion-close { margin-left: 14px; }
 .legacy-flex-gap .discussion-avatar { margin-right: 12px; }
+.legacy-flex-gap .discussion-like > * + * { margin-top: 4px; }
 .legacy-flex-gap .discussion-actions > * { margin: 0 6px 6px 0; }
 .legacy-flex-gap .discussion-compose-actions > * + * { margin-left: 12px; }
 @media (max-width: 1400px) {
@@ -79,4 +94,7 @@
   .legacy-grid .rank-row-side { flex-basis: 82px; }
   .legacy-flex-gap .rank-main { margin-left: 18px; }
   .legacy-flex-gap .bottom-controls > * + * { margin-top: 6px; }
+}
+@media (max-width: 1080px) {
+  .legacy-flex-gap .search-heading-row > .search-box { margin-left: 0; }
 }
