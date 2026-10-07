@@ -29,6 +29,7 @@ func fixtureAccount(t *testing.T, h http.HandlerFunc) *accountManager {
 	m.newClient = func(s accountSession) *passportClient {
 		c := newPassportClient(s)
 		c.base = remote.URL
+		c.deviceBase = remote.URL
 		c.http = remote.Client()
 		return c
 	}
@@ -36,6 +37,8 @@ func fixtureAccount(t *testing.T, h http.HandlerFunc) *accountManager {
 }
 func accountFixtureResponse(w http.ResponseWriter, path string, mfa bool) {
 	switch path {
+	case "/service/2/device_register/":
+		ioJSON(w, `{"device_id_str":"7390000000000000001","install_id_str":"7390000000000000002"}`)
 	case "/passport/mobile/send_code/v1/":
 		ioJSON(w, `{"message":"success","data":{"mobile_ticket":"fixture","retry_time":60}}`)
 	case "/passport/mobile/sms_login/":
@@ -59,6 +62,10 @@ func ioJSON(w http.ResponseWriter, s string) {
 
 func TestAccountLoginPersistenceIsolationAndNoCredentialExposure(t *testing.T) {
 	m := fixtureAccount(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/service/2/device_register/" {
+			accountFixtureResponse(w, r.URL.Path, false)
+			return
+		}
 		for _, h := range []string{"X-Gorgon", "X-Helios", "X-Medusa", "X-Khronos"} {
 			if r.Header.Get(h) == "" {
 				t.Errorf("missing %s", h)
@@ -182,7 +189,14 @@ func TestAccountCanceledLoginCannotRestoreSession(t *testing.T) {
 
 func TestAccountRejectsMalformedSuccessAndRateLimitsCode(t *testing.T) {
 	var calls atomic.Int32
-	m := fixtureAccount(t, func(w http.ResponseWriter, r *http.Request) { calls.Add(1); ioJSON(w, `{"message":"error","data":{}}`) })
+	m := fixtureAccount(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/service/2/device_register/" {
+			accountFixtureResponse(w, r.URL.Path, false)
+			return
+		}
+		calls.Add(1)
+		ioJSON(w, `{"message":"error","data":{}}`)
+	})
 	if err := m.sendCode(context.Background(), "13800000000"); err == nil {
 		t.Fatal("error response accepted")
 	}

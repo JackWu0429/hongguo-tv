@@ -1557,7 +1557,7 @@
     var remaining = Math.max(0, Math.ceil((accountCountdownUntil - Date.now()) / 1000));
     var send = document.getElementById('account-send-code');
     send.disabled = accountBusy || remaining > 0;
-    send.textContent = remaining > 0 ? remaining + ' 秒后重发' : data.phase === 'code' ? '重新发送' : '获取验证码';
+    send.textContent = remaining > 0 ? remaining + (data.phase === 'code' && data.sms_state === 'sent' ? ' 秒后重发' : ' 秒后可重试') : data.phase === 'code' ? '重新发送' : '获取验证码';
     document.getElementById('account-sync').disabled = !logged || accountBusy || data.sync && data.sync.state === 'syncing';
     if (logged) {
       document.getElementById('account-name').textContent = data.profile.name;

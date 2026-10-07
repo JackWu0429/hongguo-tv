@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -31,16 +32,19 @@ type accountStatus struct {
 	Phase      string          `json:"phase"`
 	Phone      string          `json:"phone,omitempty"`
 	RetryAfter int             `json:"retry_after"`
+	SMSState   string          `json:"sms_state,omitempty"`
 	SMSNumber  string          `json:"sms_number,omitempty"`
 	SMSContent string          `json:"sms_content,omitempty"`
 	Error      string          `json:"error,omitempty"`
 	Sync       syncStatus      `json:"sync"`
 }
 type loginAttempt struct {
-	client      *passportClient
-	phone, code string
-	mfa         *accountMFA
-	expires     time.Time
+	client        *passportClient
+	phone, code   string
+	mfa           *accountMFA
+	expires       time.Time
+	requestCtx    context.Context
+	cancelRequest context.CancelFunc
 }
 type accountManager struct {
 	mu               sync.Mutex
@@ -53,6 +57,7 @@ type accountManager struct {
 	phase, lastError string
 	busy             bool
 	codeAfter        time.Time
+	smsState         string
 	generation       uint64
 	syncing          bool
 	syncError        string
@@ -110,6 +115,15 @@ func newAccountManager(dir string, guest *libraryStore, details *hongguoClient) 
 		m.phase = "logged_in"
 		m.lastSync = storeCloudLastSync(m.store)
 	}
+	if m.disk.Session.Device == nil {
+		m.disk.Session.Device, err = newPassportDevice()
+		if err != nil {
+			return nil, err
+		}
+		if err = m.saveDisk(m.disk); err != nil {
+			return nil, err
+		}
+	}
 	return m, nil
 }
 func (m *accountManager) saveDisk(d accountDisk) error {
@@ -159,7 +173,7 @@ func (m *accountManager) status() accountStatus {
 	return m.statusLocked()
 }
 func (m *accountManager) statusLocked() accountStatus {
-	s := accountStatus{LoggedIn: m.disk.Profile != nil, Phase: m.phase, Error: m.lastError, Sync: syncStatus{State: "local"}}
+	s := accountStatus{LoggedIn: m.disk.Profile != nil, Phase: m.phase, Error: m.lastError, SMSState: m.smsState, Sync: syncStatus{State: "local"}}
 	if m.disk.Profile != nil {
 		p := *m.disk.Profile
 		s.Profile = &p
@@ -172,8 +186,8 @@ func (m *accountManager) statusLocked() accountStatus {
 			s.SMSContent = m.login.mfa.Content
 		}
 	}
-	if n := int(time.Until(m.codeAfter).Seconds()) + 1; n > 0 {
-		s.RetryAfter = n
+	if left := time.Until(m.codeAfter); left > 0 {
+		s.RetryAfter = int(math.Ceil(left.Seconds()))
 	}
 	return s
 }
@@ -199,11 +213,12 @@ func (m *accountManager) beginLogin(ctx context.Context, phone string, send bool
 		}
 		m.generation++
 		m.login = &loginAttempt{client: m.newClient(m.disk.Session), phone: phone, expires: time.Now().Add(10 * time.Minute)}
-		m.codeAfter = time.Now().Add(time.Minute)
+		m.smsState = "preparing"
 	}
 	if m.login == nil || m.login.phone != phone || time.Now().After(m.login.expires) {
 		return nil, 0, errors.New("请重新获取验证码")
 	}
+	m.login.requestCtx, m.login.cancelRequest = context.WithCancel(ctx)
 	m.busy = true
 	m.lastError = ""
 	return m.login, m.generation, nil
@@ -215,6 +230,9 @@ func (m *accountManager) endLogin(generation uint64, phase string, err error) {
 		return
 	}
 	m.busy = false
+	if m.login != nil && m.login.cancelRequest != nil {
+		m.login.cancelRequest()
+	}
 	if err != nil {
 		m.lastError = err.Error()
 	}
@@ -225,16 +243,83 @@ func (m *accountManager) sendCode(ctx context.Context, phone string) error {
 	if err != nil {
 		return err
 	}
-	p, err := a.client.sendCode(ctx, phone)
+	// An unregistered/random identity is not valid for Passport. Save the
+	// anonymous registered identity before any SMS request, also on rejection.
+	defer a.cancelRequest()
+	ctx = a.requestCtx
+	if err = a.client.registerDevice(ctx); err != nil {
+		m.mu.Lock()
+		if g == m.generation {
+			m.smsState = "rejected"
+			m.codeAfter = time.Time{}
+		}
+		m.mu.Unlock()
+		m.endLogin(g, "phone", err)
+		return err
+	}
+	m.mu.Lock()
+	if g != m.generation || ctx.Err() != nil {
+		m.mu.Unlock()
+		err = errors.New("登录已取消")
+		m.endLogin(g, "phone", err)
+		return err
+	}
+	disk := m.disk
+	disk.Session = cloneAccountSession(a.client.session)
+	err = m.saveDisk(disk)
 	if err == nil {
-		if retry := asInt(passportData(p)["retry_time"]); retry > 60 && retry <= 3600 {
-			m.mu.Lock()
-			if g == m.generation {
-				m.codeAfter = time.Now().Add(time.Duration(retry) * time.Second)
-			}
-			m.mu.Unlock()
+		m.disk = disk
+		// Retain a guard if the request times out after delivery is possible.
+		m.codeAfter = time.Now().Add(time.Minute)
+		m.smsState = "uncertain"
+	} else {
+		m.smsState = "rejected"
+		m.codeAfter = time.Time{}
+	}
+	m.mu.Unlock()
+	if err != nil {
+		m.endLogin(g, "phone", err)
+		return err
+	}
+	p, err := a.client.sendCode(ctx, phone)
+	sent := err == nil && passportSuccess(p)
+	retry := asInt(passportData(p)["retry_time"])
+	if retry < 1 || retry > 3600 {
+		retry = 0
+	}
+	state := "uncertain"
+	if sent {
+		state = "sent"
+		if retry == 0 {
+			retry = 60
 		}
 	}
+	var he *passportHTTPError
+	if errors.As(err, &he) {
+		if he.RetryAfter > 0 {
+			retry = he.RetryAfter
+		}
+		if he.Status == 429 {
+			state = "limited"
+			if retry == 0 {
+				retry = 60
+			}
+		} else if he.Status >= 400 && he.Status < 500 && he.Status != 408 {
+			state = "rejected"
+		}
+	} else if err == nil && passportErrorCode(p) != "" && passportErrorCode(p) != "0" {
+		state = "rejected"
+	}
+	m.mu.Lock()
+	if g == m.generation {
+		m.smsState = state
+		if retry > 0 {
+			m.codeAfter = time.Now().Add(time.Duration(retry) * time.Second)
+		} else if state == "rejected" {
+			m.codeAfter = time.Time{}
+		}
+	}
+	m.mu.Unlock()
 	if err == nil && !passportSuccess(p) {
 		err = passportFailure(p)
 	}
@@ -250,6 +335,8 @@ func (m *accountManager) loginSMS(ctx context.Context, phone, code string) error
 	if err != nil {
 		return err
 	}
+	defer a.cancelRequest()
+	ctx = a.requestCtx
 	a.code = code
 	p, err := a.client.smsLogin(ctx, phone, code, "")
 	if err == nil {
@@ -402,13 +489,16 @@ func urlValues(k, v string) url.Values { return url.Values{k: {v}} }
 func (m *accountManager) logout() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	disk := accountDisk{Version: 1, Session: accountSession{DeviceID: m.disk.Session.DeviceID, InstallID: m.disk.Session.InstallID, Cookies: map[string]string{}}}
+	disk := accountDisk{Version: 1, Session: accountSession{DeviceID: m.disk.Session.DeviceID, InstallID: m.disk.Session.InstallID, Device: m.disk.Session.Device, Registered: m.disk.Session.Registered, Cookies: map[string]string{}}}
 	if err := m.saveDisk(disk); err != nil {
 		return err
 	}
 	m.generation++
 	if m.cancelSync != nil {
 		m.cancelSync()
+	}
+	if m.login != nil && m.login.cancelRequest != nil {
+		m.login.cancelRequest()
 	}
 	m.disk = disk
 	m.store = m.guest
@@ -428,6 +518,9 @@ func (m *accountManager) cancelLogin() {
 		return
 	}
 	m.generation++
+	if m.login != nil && m.login.cancelRequest != nil {
+		m.login.cancelRequest()
+	}
 	m.login = nil
 	m.busy = false
 	m.phase = "phone"

@@ -19,30 +19,50 @@ import (
 const passportAPI = "https://api5-normal-lq.fqnovel.com"
 
 type accountSession struct {
-	DeviceID  string            `json:"device_id"`
-	InstallID string            `json:"install_id"`
-	Cookies   map[string]string `json:"cookies"`
-	Token     string            `json:"token,omitempty"`
+	DeviceID   string            `json:"device_id"`
+	InstallID  string            `json:"install_id"`
+	Cookies    map[string]string `json:"cookies"`
+	Token      string            `json:"token,omitempty"`
+	Device     *passportDevice   `json:"device,omitempty"`
+	Registered bool              `json:"registered,omitempty"`
 }
 
 type passportClient struct {
-	uid     string
-	http    *http.Client
-	base    string
-	session accountSession
+	uid        string
+	http       *http.Client
+	base       string
+	deviceBase string
+	session    accountSession
 }
 
-func newPassportClient(session accountSession) *passportClient {
+func cloneAccountSession(session accountSession) accountSession {
 	copy := session
 	copy.Cookies = map[string]string{}
 	for k, v := range session.Cookies {
 		copy.Cookies[k] = v
 	}
-	return &passportClient{http: &http.Client{Timeout: 25 * time.Second, CheckRedirect: func(r *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}, base: passportAPI, session: copy}
+	if session.Device != nil {
+		d := *session.Device
+		copy.Device = &d
+	}
+	return copy
+}
+
+func newPassportClient(session accountSession) *passportClient {
+	copy := cloneAccountSession(session)
+	if copy.Registered {
+		copy.Cookies["install_id"] = copy.InstallID
+	}
+	return &passportClient{http: &http.Client{Timeout: 25 * time.Second, CheckRedirect: func(r *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}, base: passportAPI, deviceBase: passportDeviceAPI, session: copy}
 }
 
 func passportQuery(s accountSession) url.Values {
-	return url.Values{"ac": {"wifi"}, "aid": {"8662"}, "app_name": {"novelread"}, "channel": {"update_64"}, "device_brand": {"Redmi"}, "device_id": {s.DeviceID}, "device_platform": {"android"}, "device_type": {"25053RT47C"}, "dpi": {"520"}, "iid": {s.InstallID}, "language": {"zh"}, "manifest_version_code": {"73532"}, "os": {"android"}, "os_api": {"36"}, "os_version": {"16"}, "resolution": {"1280*2772"}, "ssmix": {"a"}, "update_version_code": {"73532"}, "version_code": {"73532"}, "version_name": {"7.3.5.32"}}
+	q := url.Values{"ac": {"wifi"}, "aid": {"8662"}, "app_name": {"novelread"}, "channel": {"update_64"}, "device_brand": {"Redmi"}, "device_id": {s.DeviceID}, "device_platform": {"android"}, "device_type": {"25053RT47C"}, "dpi": {"520"}, "iid": {s.InstallID}, "language": {"zh"}, "manifest_version_code": {"73532"}, "os": {"android"}, "os_api": {"36"}, "os_version": {"16"}, "resolution": {"1280*2772"}, "ssmix": {"a"}, "update_version_code": {"73532"}, "version_code": {"73532"}, "version_name": {"7.3.5.32"}}
+	if s.Device != nil {
+		q.Set("cdid", s.Device.CDID)
+		q.Set("openudid", s.Device.OpenUDID)
+	}
+	return q
 }
 
 func (c *passportClient) request(ctx context.Context, path, method string, params url.Values, body []byte, contentType string) (map[string]any, error) {
@@ -67,6 +87,14 @@ func (c *passportClient) request(ctx context.Context, path, method string, param
 	r.Header.Set("X-SS-DP", "8662")
 	r.Header.Set("X-Tt-Store-Region", "cn")
 	r.Header.Set("X-Tt-Store-Region-Src", "did")
+	if strings.HasPrefix(path, "/passport/") {
+		r.Header.Set("Passport-Sdk-Version", "5051452")
+		r.Header.Set("X-Vc-Bdturing-Sdk-Version", "4.0.3.cn")
+		r.Header.Set("Lc", "101")
+	}
+	if region := c.session.Cookies["store-region"]; region != "" {
+		r.Header.Set("X-Tt-Store-Region", region)
+	}
 	if strings.HasPrefix(path, "/novel/commentapi/reply/list/") {
 		r.Header.Set("comment-source", "504")
 		r.Header.Set("server-channel", "18")
@@ -89,7 +117,7 @@ func (c *passportClient) request(ctx context.Context, path, method string, param
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("红果账号服务返回 HTTP %d", resp.StatusCode)
+		return nil, newPassportHTTPError(resp)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20+1))
 	if err != nil || len(b) > 4<<20 {

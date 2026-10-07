@@ -23,6 +23,19 @@ func TestAccountBrowserFixture(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		switch r.URL.Path {
+		case "/passport/mobile/send_code/v1/":
+			_ = r.ParseForm()
+			switch r.PostForm.Get("mobile") {
+			case passportXOR("+8613800000002"):
+				w.WriteHeader(http.StatusForbidden)
+			case passportXOR("+8613800000003"):
+				ioJSON(w, `{"message":"error","data":{}}`)
+			case passportXOR("+8613800000004"):
+				w.Header().Set("Retry-After", "120")
+				w.WriteHeader(http.StatusTooManyRequests)
+			default:
+				accountFixtureResponse(w, r.URL.Path, false)
+			}
 		case "/passport/mobile/sms_login/":
 			_ = r.ParseForm()
 			if r.PostForm.Get("code") != passportXOR("123456") {
