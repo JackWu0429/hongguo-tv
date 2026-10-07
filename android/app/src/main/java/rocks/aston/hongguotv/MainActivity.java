@@ -388,13 +388,13 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         activityForeground = true;
-        if (appUpdater != null) appUpdater.resume();
         if (startupAnimation != null && startupPanel.getVisibility() == View.VISIBLE && startupRetry.getVisibility() != View.VISIBLE) startupAnimation.start();
         applyFullscreen();
         if (webView != null) {
             webView.onResume();
             webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.resumeFromBackground()", null);
         }
+        if (appUpdater != null) appUpdater.resume();
     }
 
     @Override

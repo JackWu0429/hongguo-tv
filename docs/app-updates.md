@@ -14,7 +14,7 @@ Android 6/API 23 起支持。首次安装 0.2.7 需要手动覆盖升级，此�
 
 ## 发布
 
-私有仓库 Actions Secret `HONGGUO_RELEASES_TOKEN` 需为专用 Fine-grained PAT：仅公开发行仓库、Contents Read and write。不能使用私有仓库自带 GITHUB_TOKEN 写另一个仓库，也不将本机 gh 的广泛权限登录凭证复制到 Actions 或 APK。Token 过期后需在 Secrets 更新。
+私有仓库 Actions Secret `HONGGUO_RELEASES_TOKEN` 需为专用 Fine-grained PAT：仅公开发行仓库、Contents Read and write。配置并确认凭证后，将 Actions Variable `HONGGUO_PUBLIC_RELEASES_ENABLED` 设为 `true` 启用自动发布。默认关闭，未配置时正式编译和私有 Release 正常完成；可用本机已登录的 gh 调用公开上传脚本完成本次发行。不能使用私有仓库自带 GITHUB_TOKEN 写另一个仓库，也不将本机 gh 的广泛权限登录凭证复制到 Actions 或 APK。Token 过期后需在 Secrets 更新。
 
 Release workflow 从 build.gradle 读取版本，生成 APK/SHA256SUMS/update.json，先在公开仓库创建草稿、上传并验证文件，再发布 Release，最后更新稳定 JSON。公开发布任务串行，同版本不替换不同 APK，旧版本不能覆盖较新的 update.json。上传脚本只允许明确的三项发行文件，不上传工程源码或打包整个目录。
 

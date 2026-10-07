@@ -367,9 +367,13 @@ final class AppUpdater {
 
     void resume() {
         if (destroyed) return;
-        if (waitingPermission && Build.VERSION.SDK_INT >= 26 && activity.getPackageManager().canRequestPackageInstalls()) {
+        if (waitingPermission) {
             waitingPermission = false;
-            if (latest != null && "ready".equals(state)) launchInstaller(latest);
+            if (Build.VERSION.SDK_INT >= 26 && activity.getPackageManager().canRequestPackageInstalls()
+                    && latest != null && "ready".equals(state)) {
+                final Manifest target = latest;
+                host.allowPrompt(allowed -> { if (allowed && !destroyed && host.foreground() && target == latest) launchInstaller(target); });
+            }
         }
         publish();
     }
