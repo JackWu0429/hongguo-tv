@@ -46,6 +46,7 @@
   var status = document.getElementById('core-status');
   var notice = document.getElementById('action-notice');
   var shell = document.querySelector('.app-shell');
+  var androidShell = /HongguoTV-Android/.test(navigator.userAgent);
   var mainSurface = document.getElementById('main-surface');
   var pagePlaceholder = document.getElementById('page-placeholder');
   var detailModal = document.getElementById('detail-modal');
@@ -77,6 +78,13 @@
   var seriesLoaded = false;
   var seriesGeneration = 0;
   var seriesRequest = null;
+  var seriesFocusCurrent = false;
+  var seasonCatalogCache = {};
+  var seasonCatalogKeys = [];
+  var seasonCatalogRequests = [];
+  var seasonControlID = '';
+  var seasonControlState = '';
+  var seasonControlGeneration = 0;
   var seasonSwitchGeneration = 0;
   var seasonSwitchRequest = null;
   var seasonSwitchID = '';
@@ -1111,6 +1119,17 @@
       if (zoneOf(document.activeElement) === 'feed') goFocus(document.getElementById('player-retry'));
     }
   }
+  function setControlIcon(action, label, icon) {
+    var button = document.querySelector('[data-action="' + action + '"]');
+    var text = button.querySelector('.control-label');
+    if (text.textContent !== label) text.textContent = label;
+    button.setAttribute('aria-label', label);
+    var use = button.querySelector('use');
+    if (use.getAttribute('href') !== '#' + icon) {
+      use.setAttribute('href', '#' + icon);
+      use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#' + icon);
+    }
+  }
   function updatePlaybackControls() {
     var video = document.getElementById('hero-video');
     var duration = Number.isFinite(video.duration) ? video.duration : 0;
@@ -1122,13 +1141,13 @@
     progress.setAttribute('aria-valuenow', String(Math.floor(position)));
     progress.setAttribute('aria-valuetext', clockText(position) + ' / ' + clockText(duration));
     progress.querySelector('span').style.width = (duration ? position / duration * 100 : 0) + '%';
-    var pause = document.querySelector('[data-action="pause"]');
-    pause.textContent = video.paused || video.ended ? '播放' : '暂停';
-    pause.setAttribute('aria-label', pause.textContent);
+    var paused = video.paused || video.ended;
+    setControlIcon('pause', paused ? '播放' : '暂停', paused ? 'icon-play' : 'icon-pause');
     document.querySelector('[data-action="speed"]').textContent = video.playbackRate + 'x';
     document.querySelector('[data-action="volume"]').textContent = video.muted || !video.volume ? '静音' : '音量 ' + Math.round(video.volume * 100) + '%';
     document.querySelector('[data-action="quality"]').textContent = playbackQuality ? (playbackPreferences.quality ? '' : '自动 · ') + playbackQuality : '清晰度';
-    document.querySelector('[data-action="fullscreen"]').textContent = shell.classList.contains('is-cinema') ? '退出全屏' : '全屏';
+    var cinema = shell.classList.contains('is-cinema');
+    setControlIcon('fullscreen', cinema ? '退出全屏' : '全屏', cinema ? 'icon-fullscreen-exit' : 'icon-fullscreen');
   }
   function savePlaybackPreferences() {
     try { localStorage.setItem('hongguo-tv-playback', JSON.stringify(playbackPreferences)); } catch (error) { showNotice('播放设置未保存'); }
@@ -1142,6 +1161,11 @@
       danmakuEnabled = saved.danmaku === true; playbackPreferences.danmaku = danmakuEnabled;
     } catch (error) { /* Invalid preferences fall back to normal playback. */ }
     var video = document.getElementById('hero-video');
+    document.querySelector('[data-action="volume"]').classList.toggle('is-hidden', androidShell);
+    if (androidShell) {
+      playbackPreferences.volume = 100;
+      savePlaybackPreferences();
+    }
     video.playbackRate = playbackPreferences.speed;
     video.defaultPlaybackRate = playbackPreferences.speed;
     video.volume = playbackPreferences.volume / 100;
@@ -1527,6 +1551,7 @@
     accountCountdownUntil = Date.now() + (data.retry_after || 0) * 1000;
     if (owner !== previousOwner || owner !== (libraryData.owner_id || '')) {
       ++accountEpoch;
+      resetSeasonCatalog();
       reservationCounts = { online: null, upcoming: null }; updateReservationCounts({});
       resetSeriesPanel();
       if (detailModalOpen && detailTab === 'series') { loadSeriesSeasons(); goFocus(document.getElementById('detail-tab-series')); }
@@ -1722,6 +1747,7 @@
     if (placeholderSummary) placeholderSummary.textContent = item.intro || '';
     updateSavedButtons();
     document.querySelector('[data-action="episodes"]').textContent = '选集 · ' + (item.episode_count || '--') + ' 集';
+    updateSeasonControl(item);
   }
 
   function updateFeedCounter() {
@@ -2039,6 +2065,7 @@
     updateFeedCounter();
     if (!feedItems.length) {
       featuredItem = null;
+      updateSeasonControl(null);
       showRecommendationPlaceholder(feedPager.hasMore() ? '正在读取推荐' : '暂时没有推荐内容');
       return;
     }
@@ -2578,6 +2605,7 @@
     document.getElementById('hero-video').load();
     resetDanmaku(); closeDiscussion(false);
     featuredItem = null; feedItems = []; feedIndex = -1;
+    updateSeasonControl(null);
     showRecommendationPlaceholder('正在读取推荐');
     var channel = activeChannel();
     var tab = ({ 'channel-follow': '45', 'channel-comic': '36', 'channel-real': '39', 'channel-recommend': '16' })[channel && channel.dataset.focus] || '16';
@@ -2614,9 +2642,95 @@
     if (seriesReservationRequest) seriesReservationRequest.abort();
     seriesRequest = null; seriesReservationRequest = null; seriesReservationID = '';
     seriesItems = []; seriesLoaded = false;
+    seriesFocusCurrent = false;
     document.getElementById('detail-series-list').innerHTML = '';
     document.getElementById('detail-series-count').textContent = '';
     seriesMessage('');
+  }
+
+  function rememberSeasonCatalog(id, entry) {
+    var index = seasonCatalogKeys.indexOf(id);
+    if (index >= 0) seasonCatalogKeys.splice(index, 1);
+    seasonCatalogCache[id] = entry; seasonCatalogKeys.push(id);
+    while (seasonCatalogKeys.length > 24) delete seasonCatalogCache[seasonCatalogKeys.shift()];
+  }
+
+  function resetSeasonCatalog() {
+    seasonCatalogRequests.forEach(function (request) { request.abort(); });
+    seasonCatalogRequests = []; seasonCatalogCache = {}; seasonCatalogKeys = [];
+    updateSeasonControl(null);
+  }
+
+  // Cache only the official season metadata, never media URLs or playback parsing.
+  // The selector and its shortcut share the request and account-scoped result.
+  function getSeasonCatalog(id) {
+    var entry = seasonCatalogCache[id];
+    if (entry && entry.epoch === accountEpoch && (entry.pending || entry.expires > Date.now())) return entry.promise;
+    var epoch = accountEpoch; var request = new AbortController();
+    seasonCatalogRequests.push(request);
+    entry = { epoch: epoch, pending: true, expires: 0 };
+    rememberSeasonCatalog(id, entry);
+    entry.promise = fetchData('/api/v1/series/seasons?series_id=' + encodeURIComponent(id), { signal: request.signal }).then(function (result) {
+      if (epoch !== accountEpoch) throw new Error('账号已切换');
+      if (!Array.isArray(result.items)) throw new Error('系列剧响应无效');
+      var seen = {};
+      entry.items = result.items.filter(function (item) {
+        if (!item || !/^[1-9][0-9]*$/.test(item.series_id || '') || seen[item.series_id]) return false;
+        seen[item.series_id] = true; return true;
+      });
+      entry.pending = false; entry.expires = Date.now() + 120000;
+      entry.items.forEach(function (item) { rememberSeasonCatalog(item.series_id, entry); });
+      rememberSeasonCatalog(id, entry);
+      return entry.items;
+    }).catch(function (error) {
+      if (seasonCatalogCache[id] === entry) delete seasonCatalogCache[id];
+      throw error;
+    }).then(function (items) {
+      seasonCatalogRequests = seasonCatalogRequests.filter(function (value) { return value !== request; });
+      return items;
+    }, function (error) {
+      seasonCatalogRequests = seasonCatalogRequests.filter(function (value) { return value !== request; });
+      throw error;
+    });
+    return entry.promise;
+  }
+
+  function updateSeasonControl(item) {
+    var button = document.querySelector('[data-action="seasons"]');
+    var id = item && item.series_id || '';
+    var known = id && seasonCatalogCache[id];
+    var hinted = item && (item.is_multi_season || posterSeasonLabel(item) || known && known.items && known.items.length > 1);
+    if (id && seasonControlID === id && seasonControlState) return;
+    var generation = ++seasonControlGeneration;
+    seasonControlID = id; seasonControlState = id ? 'loading' : '';
+    button.classList.toggle('is-hidden', !hinted);
+    if (!hinted && document.activeElement === button) goFocus(document.querySelector('[data-action="episodes"]'));
+    button.textContent = '选季…'; button.setAttribute('aria-busy', id ? 'true' : 'false');
+    if (!id) {
+      return;
+    }
+    // A base title can be season one without a suffix or a multi-season flag.
+    // Ask the official selector for every new drama; ordinary ones stay hidden.
+    getSeasonCatalog(id).then(function (items) {
+      if (generation !== seasonControlGeneration || !featuredItem || featuredItem.series_id !== id) return;
+      seasonControlState = 'loaded';
+      var count = items.filter(function (season) { return season.playable && !season.upcoming; }).length;
+      button.textContent = '选季 · ' + count + ' 季'; button.setAttribute('aria-busy', 'false');
+      var hasSeasons = items.length > 1 || items.some(function (season) { return !!(season.season_index > 0 || season.label || posterSeasonLabel(season)); });
+      button.classList.toggle('is-hidden', !hasSeasons);
+      if (!hasSeasons && document.activeElement === button) goFocus(document.querySelector('[data-action="episodes"]'));
+    }).catch(function () {
+      if (generation !== seasonControlGeneration) return;
+      seasonControlState = 'error'; button.textContent = '选季'; button.setAttribute('aria-busy', 'false');
+    });
+  }
+
+  function focusCurrentSeason() {
+    var row = currentSeriesRow();
+    if (row) row.scrollIntoView({ block: 'nearest' });
+    if (seriesFocusCurrent && detailTab === 'series' && document.activeElement.id === 'detail-tab-series') {
+      seriesFocusCurrent = false; if (row) goFocus(row);
+    }
   }
 
   function currentSeriesRow() {
@@ -2654,7 +2768,7 @@
     goFocus(document.getElementById('detail-tab-' + tab));
     if (tab === 'series') {
       if (!seriesLoaded) loadSeriesSeasons();
-      else { updateSeriesRows(); var row = currentSeriesRow(); if (row) row.scrollIntoView({ block: 'nearest' }); }
+      else { updateSeriesRows(); focusCurrentSeason(); }
     }
   }
 
@@ -2664,10 +2778,9 @@
     var generation = ++seriesGeneration; var epoch = accountEpoch;
     var request = new AbortController(); seriesRequest = request;
     seriesMessage('正在读取系列剧…');
-    fetchData('/api/v1/series/seasons?series_id=' + encodeURIComponent(seriesRootID), { signal: request.signal }).then(function (result) {
-      if (!detailModalOpen || generation !== seriesGeneration || epoch !== accountEpoch) return;
-      if (!Array.isArray(result.items)) throw new Error('系列剧响应无效');
-      seriesItems = result.items; seriesLoaded = true;
+    getSeasonCatalog(seriesRootID).then(function (items) {
+      if (!detailModalOpen || request.signal.aborted || generation !== seriesGeneration || epoch !== accountEpoch) return;
+      seriesItems = items; seriesLoaded = true;
       var list = document.getElementById('detail-series-list'); list.innerHTML = '';
       seriesItems.forEach(function (item) {
         var row = document.createElement('button'); row.className = 'series-row'; row.dataset.seriesId = item.series_id; row.dataset.focus = 'series-' + item.series_id;
@@ -2684,7 +2797,10 @@
       });
       document.getElementById('detail-series-count').textContent = seriesItems.length ? String(seriesItems.length) : '';
       updateSeriesRows(); seriesMessage(seriesItems.length ? '' : '这部短剧暂无同系列的其他季。');
-      if (detailTab === 'series') { var row = currentSeriesRow(); if (row) row.scrollIntoView({ block: 'nearest' }); }
+      if (featuredItem && seriesItems.some(function (item) { return item.series_id === featuredItem.series_id; })) {
+        seasonControlState = ''; updateSeasonControl(featuredItem);
+      }
+      if (detailTab === 'series') focusCurrentSeason();
       if (document.activeElement.id === 'detail-series-retry') goFocus(document.getElementById('detail-tab-series'));
     }).catch(function (error) {
       if (generation === seriesGeneration && epoch === accountEpoch && detailModalOpen && error.name !== 'AbortError') seriesMessage('系列剧加载失败：' + error.message, true);
@@ -2793,7 +2909,7 @@
     updateSeriesRows();
   }
 
-  function openDetail(item) {
+  function openDetail(item, initialTab) {
     if (!item || !item.series_id) return;
     closePlayerOptions(false); clearTimeout(controlsTimer); revealControls();
     detailReturnFocus = document.activeElement;
@@ -2801,7 +2917,7 @@
     detailSeriesID = item.series_id;
     seriesRootID = item.series_id;
     resetSeriesPanel();
-    selectDetailTab('episodes');
+    seriesFocusCurrent = initialTab === 'series';
     currentDetail = null;
     var generation = ++detailGeneration;
     detailModal.classList.remove('is-hidden');
@@ -2812,7 +2928,8 @@
     nodes.intro.textContent = '请稍候…';
     nodes.play.disabled = true;
     nodes.episodes.innerHTML = '';
-    goFocus(document.querySelector('.detail-close'));
+    selectDetailTab(initialTab === 'series' ? 'series' : 'episodes');
+    if (detailTab === 'episodes') goFocus(document.querySelector('.detail-close'));
     getDetail(item).then(function (detail) {
         if (!detailModalOpen || generation !== detailGeneration) return;
         currentDetail = Object.assign({}, item, detail);
@@ -2966,6 +3083,9 @@
         if (featuredItem) openDetail(featuredItem);
         else showNotice('当前还没有可打开的短剧。');
       } else if (item.dataset.action === 'play' || item.dataset.action === 'pause') toggleVideo();
+      else if (item.dataset.action === 'seasons') {
+        if (featuredItem) openDetail(featuredItem, 'series');
+      }
       else if (item.dataset.action === 'episodes') {
         if (featuredItem) openDetail(featuredItem);
         else showNotice('当前还没有可打开的短剧。');

@@ -110,6 +110,8 @@ button:focus { outline: none; }
 .playback-timeline, .playback-buttons { display: flex; align-items: center; gap: 13px; min-width: 0; }
 .playback-buttons [data-action="fullscreen"] { margin-left: auto; }
 .control-button { min-height: 44px; padding: 9px 10px; color: #ececf2; background: rgba(20,20,25,.68); border-radius: 7px; font-size: 16px; white-space: nowrap; }
+.control-button.has-icon { display: inline-flex; align-items: center; justify-content: center; }
+.control-button.has-icon svg { flex: 0 0 19px; width: 19px; height: 19px; margin-right: 7px; }
 .control-button.is-focused, .control-button:focus-visible { box-shadow: 0 0 0 3px var(--focus); background: rgba(255,255,255,.2); }
 .time-label { flex: 0 0 auto; font-size: 15px; }
 .progress-track { flex: 1; height: 4px; background: rgba(255,255,255,.35); border-radius: 4px; }
