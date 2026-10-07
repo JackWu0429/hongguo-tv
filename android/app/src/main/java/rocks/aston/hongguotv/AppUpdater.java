@@ -260,9 +260,18 @@ final class AppUpdater {
                 verifyArchive(target, apk); completed(target, epoch); return;
             }
             apk.delete();
-            for (String source : UpdatePolicy.sources(target.url, selectedProxy)) {
+            String[] sources = UpdatePolicy.sources(target.url, selectedProxy);
+            for (int sourceIndex = 0; sourceIndex < sources.length; sourceIndex++) {
+                String source = sources[sourceIndex];
                 ensureValid(epoch);
                 partial.delete();
+                final boolean fallback = sourceIndex > 0;
+                activity.runOnUiThread(() -> {
+                    if (!valid(epoch)) return;
+                    downloaded = 0; message = fallback ? "代理下载失败，正在尝试 GitHub 直连…" : "正在连接下载服务…"; publish();
+                    if (progress != null) progress.setIndeterminate(true);
+                    if (progressText != null) progressText.setText(message);
+                });
                 try {
                     HttpURLConnection request = open(source, epoch);
                     try (InputStream stream = request.getInputStream()) {
@@ -288,6 +297,7 @@ final class AppUpdater {
             throw new IOException(error);
         } catch (Exception failure) {
             partial.delete();
+            apk.delete();
             final String text = friendly(failure);
             activity.runOnUiThread(() -> {
                 if (!valid(epoch)) return;

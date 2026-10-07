@@ -41,5 +41,18 @@ public class UpdateFilesTest {
         } catch (IOException expected) { assertFalse(file.exists()); }
         finally { file.delete(); }
     }
+    @Test public void retryAfterAStreamFailureWritesACompleteNewFile() throws Exception {
+        File file = File.createTempFile("update", ".part");
+        try {
+            java.io.InputStream failed = new java.io.InputStream() {
+                int reads;
+                public int read() throws IOException { if (++reads > 3) throw new IOException("network disconnected"); return 'x'; }
+            };
+            try { UpdateFiles.copyChecked(failed, file, content.length, digest(content), normal); fail("broken stream accepted"); }
+            catch (IOException expected) { assertFalse(file.exists()); }
+            UpdateFiles.copyChecked(new ByteArrayInputStream(content), file, content.length, digest(content), normal);
+            assertArrayEquals(content, Files.readAllBytes(file.toPath()));
+        } finally { file.delete(); }
+    }
     private String digest(byte[] bytes) throws Exception { return UpdatePolicy.hex(MessageDigest.getInstance("SHA-256").digest(bytes)); }
 }
