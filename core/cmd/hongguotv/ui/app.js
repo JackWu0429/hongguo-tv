@@ -623,7 +623,7 @@
     if (pageMode() === 'new') return firstVisible('.new-tab.is-active') || firstNewTab();
     if (pageMode() === 'reservations') return firstVisible('.reservation-tab.is-active');
     if (pageMode() !== 'recommend') return document.querySelector('.page-placeholder-action');
-    return document.querySelector('.hero-feed-focus') || document.querySelector('.channel-tab.is-active') || document.querySelector('.catalog-card') || firstVisible('.primary-action');
+    return firstVisible('.hero-feed-focus') || activeChannel() || firstCatalog();
   }
 
   function activeSidebar() {
@@ -1046,8 +1046,8 @@
       else goFocus(direction === 'up' ? document.getElementById('hero-feed-focus') : lastPlaybackControl || firstVisible('.playback-buttons .control-button'));
       event.preventDefault(); event.stopPropagation(); return;
     }
-    if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && shell.classList.contains('is-controls-hidden') && pageMode() === 'recommend' && zoneOf(current) === 'feed' && (direction === 'up' || direction === 'down')) {
-      playFeedItem(feedIndex + (direction === 'up' ? -1 : 1));
+    if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && pageMode() === 'recommend' && zoneOf(current) === 'feed' && (direction === 'up' || direction === 'down')) {
+      if (!event.repeat) switchRecommendation(direction === 'up' ? -1 : 1);
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -1696,18 +1696,16 @@
     var topEpisode = document.getElementById('hero-top-episode');
     var placeholderTitle = document.getElementById('hero-placeholder-title');
     var placeholderSummary = document.getElementById('hero-placeholder-summary');
-    var action = document.querySelector('[data-action="featured"]');
     if (backdrop) {
       setCover(backdrop, item);
     }
     if (title) title.textContent = item.title || '红果短剧';
     if (episode) episode.textContent = '第' + (item.start_episode || 1) + '集' + (item.episode_count ? ' · 全' + item.episode_count + '集' : '');
-    if (summary) summary.textContent = item.intro || '打开详情查看完整集数。';
+    if (summary) summary.textContent = item.intro || '';
     if (topTitle) topTitle.textContent = item.title || '红果短剧';
     if (topEpisode) topEpisode.textContent = '第' + (item.start_episode || 1) + '集';
     if (placeholderTitle) placeholderTitle.textContent = item.title || '红果短剧';
-    if (placeholderSummary) placeholderSummary.textContent = item.intro || '打开详情查看完整集数和播放状态。';
-    if (action) { action.textContent = '查看详情'; action.disabled = false; }
+    if (placeholderSummary) placeholderSummary.textContent = item.intro || '';
     updateSavedButtons();
     document.querySelector('[data-action="episodes"]').textContent = '选集 · ' + (item.episode_count || '--') + ' 集';
   }
@@ -1715,6 +1713,76 @@
   function updateFeedCounter() {
     var counter = document.getElementById('hero-top-count');
     if (counter) counter.textContent = feedItems.length ? (feedIndex + 1) + ' / ' + feedItems.length : '0 / 0';
+  }
+
+  function showRecommendationPlaceholder(title, summary) {
+    var hero = document.getElementById('hero');
+    clearTimeout(controlsTimer);
+    shell.classList.remove('is-controls-hidden');
+    hero.classList.add('is-catalog-loading');
+    document.getElementById('hero-placeholder-title').textContent = title;
+    var copy = document.getElementById('hero-placeholder-summary');
+    copy.textContent = summary || '';
+    copy.classList.toggle('is-hidden', !summary);
+    document.getElementById('hero-placeholder').classList.remove('is-hidden');
+    setPlayerStatus('');
+  }
+
+  function switchRecommendation(step) {
+    if (pageMode() !== 'recommend' || detailModalOpen || playerOptionsOpen || confirmOpen || discussionOpen || applicationInBackground || document.hidden || feedIndex < 0) return;
+    playFeedItem(feedIndex + step);
+  }
+
+  function installRecommendationGestures() {
+    var surface = document.querySelector('.hero-media');
+    var touch = null;
+    var suppressClickUntil = 0;
+    var wheelAt = 0, wheelDelta = 0, wheelConsumed = false;
+    function allowed(target) {
+      return pageMode() === 'recommend' && feedIndex >= 0 && !detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && !applicationInBackground && !document.hidden && !target.closest('button, input, textarea, a');
+    }
+    surface.addEventListener('touchstart', function (event) {
+      touch = null;
+      if (event.touches.length !== 1 || !allowed(event.target)) return;
+      var point = event.touches[0];
+      touch = { x: point.clientX, y: point.clientY, at: Date.now(), generation: feedGeneration };
+    }, { passive: true });
+    surface.addEventListener('touchmove', function (event) {
+      if (!touch || event.touches.length !== 1) { touch = null; return; }
+      var point = event.touches[0];
+      if (Math.abs(point.clientY - touch.y) > 8 && Math.abs(point.clientY - touch.y) > Math.abs(point.clientX - touch.x)) event.preventDefault();
+    }, { passive: false });
+    surface.addEventListener('touchend', function (event) {
+      var start = touch;
+      touch = null;
+      if (!start || start.generation !== feedGeneration || !allowed(event.target) || !event.changedTouches.length) return;
+      var point = event.changedTouches[0];
+      var dy = point.clientY - start.y, dx = point.clientX - start.x;
+      if (Date.now() - start.at > 1500 || Math.abs(dy) < 60 || Math.abs(dy) < Math.abs(dx) * 1.2) return;
+      event.preventDefault();
+      suppressClickUntil = Date.now() + 400;
+      switchRecommendation(dy < 0 ? 1 : -1);
+      goFocus(document.getElementById('hero-feed-focus'));
+    }, { passive: false });
+    surface.addEventListener('touchcancel', function () { touch = null; });
+    surface.addEventListener('click', function (event) {
+      if (Date.now() < suppressClickUntil) { event.preventDefault(); event.stopImmediatePropagation(); }
+    }, true);
+    surface.addEventListener('wheel', function (event) {
+      if (!allowed(event.target) || event.ctrlKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      event.preventDefault();
+      var now = Date.now();
+      if (now - wheelAt > 200) { wheelDelta = 0; wheelConsumed = false; }
+      wheelAt = now;
+      if (wheelConsumed) return; // One switch per gesture; ignore trackpad inertia.
+      var delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? surface.clientHeight : 1);
+      if (wheelDelta * delta < 0) wheelDelta = 0;
+      wheelDelta += delta;
+      if (Math.abs(wheelDelta) < 60) return;
+      wheelConsumed = true;
+      switchRecommendation(wheelDelta > 0 ? 1 : -1);
+      goFocus(document.getElementById('hero-feed-focus'));
+    }, { passive: false });
   }
 
   function firstVid(item) {
@@ -1823,12 +1891,13 @@
     closePlayerOptions(false);
     closeDiscussion(false); resetDanmaku();
     if (!feedItems.length) return;
-    if (index < 0) index = feedItems.length - 1;
+    if (index < 0) { showNotice('已经是第一条推荐'); return; }
     if (index >= feedItems.length && pageMode() === 'recommend') {
       var pendingIndex = feedIndex;
+      var pendingGeneration = feedPager.generation;
       if (feedPager.error) { showNotice('推荐加载失败，请再按向下重试'); }
       if (feedPager.hasMore() || feedPager.error) {
-        feedPager.load(!!feedPager.error).then(function () { if (pageMode() === 'recommend' && feedIndex === pendingIndex && index < feedItems.length) playFeedItem(index); });
+        feedPager.load(!!feedPager.error).then(function () { if (pageMode() === 'recommend' && feedPager.generation === pendingGeneration && feedIndex === pendingIndex && index < feedItems.length) playFeedItem(index); });
       } else showNotice('已浏览全部推荐');
       return;
     }
@@ -1850,6 +1919,7 @@
     var placeholder = document.getElementById('hero-placeholder');
     var generation = ++feedGeneration;
     hero.classList.add('is-feed');
+    hero.classList.remove('is-catalog-loading');
     video.classList.remove('has-source');
     video.removeAttribute('src');
     video.load();
@@ -1903,10 +1973,7 @@
     updateFeedCounter();
     if (!feedItems.length) {
       featuredItem = null;
-      document.querySelector('[data-action="featured"]').disabled = true;
-      document.getElementById('hero-placeholder-title').textContent = '暂时没有推荐内容';
-      document.getElementById('hero-placeholder-summary').textContent = '请稍后刷新红果短剧推荐。';
-      document.getElementById('hero-placeholder').classList.remove('is-hidden');
+      showRecommendationPlaceholder(feedPager.hasMore() ? '正在读取推荐' : '暂时没有推荐内容');
       return;
     }
     playFeedItem(0);
@@ -2037,6 +2104,26 @@
       row.options.forEach(function (option) { if (value === option.id) labels.push(option.label); });
     });
     return labels.join(' · ') || '全部短剧';
+  }
+
+  function selectSearchFilter(button) {
+    var type = button.dataset.filterType;
+    var value = button.dataset.filterValue || '';
+    if ((searchFilters[type] || '') === value && !searchPager.error) return;
+    searchFilters[type] = value;
+    var refresh = type === 'genre';
+    if (refresh) {
+      // Theme/role/era options depend on genre. Reset these along with the
+      // previous list cursor before requesting the new selector panel.
+      ['category_dim_theme', 'category_dim_role', 'category_dim_epoch'].forEach(function (key) { delete searchFilters[key]; });
+    }
+    document.querySelectorAll('.search-filter').forEach(function (node) {
+      var selected = (searchFilters[node.dataset.filterType] || '') === (node.dataset.filterValue || '');
+      node.classList.toggle('is-active', selected);
+      node.setAttribute('aria-pressed', String(selected));
+    });
+    document.getElementById('filter-state').textContent = filterSummary();
+    loadBrowse(false, refresh);
   }
 
   function renderFilterRows(rows) {
@@ -2361,22 +2448,23 @@
     saveProgress(true); activePlayback = null; ++feedGeneration;
     document.getElementById('hero-video').pause();
     document.getElementById('hero-video').removeAttribute('src');
+    document.getElementById('hero-video').classList.remove('has-source');
+    document.getElementById('hero-video').load();
     resetDanmaku(); closeDiscussion(false);
+    featuredItem = null; feedItems = []; feedIndex = -1;
+    showRecommendationPlaceholder('正在读取推荐');
     var channel = activeChannel();
     var tab = ({ 'channel-follow': '45', 'channel-comic': '36', 'channel-real': '39', 'channel-recommend': '16' })[channel && channel.dataset.focus] || '16';
     if (tab === '45' && (!accountData || !accountData.logged_in)) {
       feedPager.cancel(); renderFeed([]);
-      document.getElementById('hero-placeholder-title').textContent = '登录后查看关注内容';
-      document.getElementById('hero-placeholder-summary').textContent = '在我的账号中登录红果账号。'; return Promise.resolve([]);
+      showRecommendationPlaceholder('登录后查看关注内容', '在我的账号中登录红果账号。'); return Promise.resolve([]);
     }
     setCatalogHeading(title || '推荐');
     return feedPager.reset({ channel: tab }).then(function firstContent() {
       if (pageMode() !== 'recommend' || feedPager.params.channel !== tab) return;
       if (!feedPager.items.length && feedPager.hasMore() && !feedPager.error) return feedPager.load().then(firstContent);
       if (pageMode() === 'recommend' && feedPager.error) {
-        document.getElementById('hero-placeholder-title').textContent = '推荐加载失败';
-        document.getElementById('hero-placeholder-summary').textContent = feedPager.error + '，重新选择频道可重试。';
-        document.getElementById('hero-placeholder').classList.remove('is-hidden');
+        showRecommendationPlaceholder('推荐加载失败', feedPager.error + '，重新选择频道可重试。');
       }
     });
   }
@@ -2840,6 +2928,7 @@
     confirmOperation().then(function (ok) { button.disabled = false; if (ok && confirmOpen && generation === confirmationGeneration) closeConfirmation(); });
   });
   document.getElementById('hero-feed-focus').addEventListener('click', toggleVideo);
+  installRecommendationGestures();
   document.getElementById('player-options-close').addEventListener('click', function () { closePlayerOptions(); });
   document.getElementById('control-progress').addEventListener('click', function (event) {
     if (!event.detail) return;

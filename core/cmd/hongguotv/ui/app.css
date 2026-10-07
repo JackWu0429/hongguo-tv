@@ -77,6 +77,13 @@ button:focus { outline: none; }
 .placeholder-kicker { color: var(--accent); font-size: 15px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .hero-placeholder h1 { margin: 12px 0 10px; font-size: clamp(28px, 3vw, 48px); }
 .hero-placeholder p { margin: 0 0 22px; color: #c3c3cb; line-height: 1.7; }
+.hero.is-catalog-loading .hero-top-copy, .hero.is-catalog-loading .hero-top-right,
+.hero.is-catalog-loading .hero-title, .hero.is-catalog-loading .hero-episode,
+.hero.is-catalog-loading .hero-summary, .hero.is-catalog-loading .catalog-ribbon,
+.hero.is-catalog-loading .right-actions, .hero.is-catalog-loading .bottom-controls,
+.hero.is-catalog-loading .hero-feed-focus, .hero.is-catalog-loading .player-status { display: none; }
+.hero.is-catalog-loading .hero-backdrop, .hero.is-catalog-loading .hero-video { visibility: hidden; }
+.app-shell[data-mode="recommend"] .hero-media { touch-action: pan-x; }
 .primary-action { min-height: 48px; padding: 0 24px; color: #1a1013; background: #fff; border-radius: 9px; font-weight: 700; }
 .primary-action.is-focused, .primary-action:focus-visible { box-shadow: 0 0 0 4px var(--accent); transform: scale(1.05); }
 .hero-gradient { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(11,12,16,.74), transparent 50%), linear-gradient(0deg, rgba(11,12,16,.95), transparent 44%); }

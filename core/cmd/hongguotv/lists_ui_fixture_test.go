@@ -13,6 +13,7 @@ import (
 )
 
 func TestListsBrowserFixture(t *testing.T) {
+	browseFixture := os.Getenv("HONGGUO_BROWSE_UI_FIXTURE") == "1"
 	seriesFixture := os.Getenv("HONGGUO_SERIES_UI_FIXTURE") == "1"
 	playerFixture := os.Getenv("HONGGUO_PLAYER_UI_FIXTURE") == "1" || seriesFixture
 	if os.Getenv("HONGGUO_LISTS_UI_FIXTURE") != "1" && !playerFixture {
@@ -262,6 +263,9 @@ func TestListsBrowserFixture(t *testing.T) {
 		if q.Get("q") == "慢" {
 			time.Sleep(700 * time.Millisecond)
 		}
+		if browseFixture && r.URL.Path == "/api/v1/category" && q.Get("sort") == "online_time" {
+			time.Sleep(500 * time.Millisecond) // Let a later selection win.
+		}
 		if r.URL.Path == "/api/v1/status" {
 			writeJSON(w, 200, map[string]any{"ok": true})
 			return
@@ -363,8 +367,18 @@ func TestListsBrowserFixture(t *testing.T) {
 		}
 		out := ListResult{CategoryResult: CategoryResult{Items: []Drama{}, HasMore: offset+20 < 70, NextOffset: offset + 20, SessionID: "fixture-session"}, Ranks: ranks, Calendar: &CalendarSchema{Dates: []string{"20261006", "20261007", "20261008"}, DefaultDate: "20261007", CurrentDate: "20261007"}}
 		out.Filters = []CategoryFilterRow{{Type: "genre", Label: "形式", Options: []CategoryFilterOption{{ID: "short_play", Label: "真人剧"}, {ID: "comic_series", Label: "漫剧"}, {ID: "ai_series", Label: "AI剧"}}}, {Type: "sort", Label: "排序", Options: []CategoryFilterOption{{ID: "hot_score", Label: "最热门"}, {ID: "online_time", Label: "最新"}}}}
+		if browseFixture {
+			out.Filters[1].Options = append(out.Filters[1].Options, CategoryFilterOption{ID: "hot_collect", Label: "最高收藏"})
+			out.Filters = append(out.Filters, CategoryFilterRow{Type: "category_dim_theme", Label: "主题", Options: []CategoryFilterOption{{ID: "cate_165", Label: "悬疑"}}})
+			if q.Get("selectors") != "1" {
+				out.Filters = nil
+			}
+		}
 		for i := offset; i < offset+20 && i < 70; i++ {
 			d := drama(i)
+			if browseFixture && r.URL.Path == "/api/v1/category" {
+				d.Title = q.Get("genre") + "/" + q.Get("sort") + "/" + q.Get("category_dim_theme") + ":" + d.Title
+			}
 			if q.Get("q") != "" {
 				d.Title = q.Get("q") + d.Title
 				out.Source = "app"

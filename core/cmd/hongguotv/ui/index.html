@@ -160,7 +160,7 @@
         </div>
       </section>
 
-      <section class="hero" id="hero" aria-label="推荐视频">
+      <section class="hero is-catalog-loading" id="hero" aria-label="推荐视频">
         <div class="hero-media">
           <img id="hero-backdrop" class="hero-backdrop" alt="">
           <video id="hero-video" class="hero-video" playsinline preload="metadata"></video>
@@ -169,8 +169,7 @@
           <div class="hero-placeholder" id="hero-placeholder">
             <div class="placeholder-kicker">红果短剧 TV</div>
             <h1 id="hero-placeholder-title">正在读取推荐</h1>
-            <p id="hero-placeholder-summary">正在连接红果内容服务…</p>
-            <button class="primary-action" data-action="featured" data-focus="hero-featured">查看详情</button>
+            <p id="hero-placeholder-summary" class="is-hidden"></p>
           </div>
           <div class="hero-gradient"></div>
           <div class="hero-top-copy" id="hero-top-copy"><strong id="hero-top-title">红果短剧</strong><span id="hero-top-episode">第1集</span></div>
@@ -179,9 +178,9 @@
             <div class="catalog-heading" id="catalog-heading">热播短剧</div>
             <div class="catalog-track" id="catalog-track" data-focus-zone="catalog" aria-label="短剧列表"></div>
           </div>
-          <div class="hero-title">推荐内容</div>
-          <div class="hero-episode">接口接入中</div>
-          <div class="hero-summary">当前版本先验证 Mac 布局、TV 遥控器焦点和本地 Go 服务通信。</div>
+          <div class="hero-title"></div>
+          <div class="hero-episode"></div>
+          <div class="hero-summary"></div>
         </div>
 
         <div class="right-actions" data-focus-zone="actions" aria-label="视频操作">
@@ -235,7 +234,7 @@
 
       <section class="discussion-panel is-hidden" id="discussion-panel" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="discussion-title"><div class="discussion-head"><h2 id="discussion-title">本集评论</h2><button id="discussion-close" class="discussion-close" data-focus="discussion-close">关闭</button></div><div id="discussion-scroll" class="discussion-scroll"><div id="discussion-list"></div><div id="discussion-pagination" class="list-status" role="status"></div></div><div class="discussion-composer"><p id="discussion-target" class="is-hidden"></p><label for="discussion-input" class="is-hidden">评论内容</label><textarea id="discussion-input" class="player-text-input" data-focus="discussion-input" rows="2" maxlength="1000" placeholder="说点什么…"></textarea><div class="discussion-compose-actions"><button id="discussion-cancel-reply" class="discussion-action is-hidden" data-focus="discussion-cancel-reply">取消回复</button><button id="discussion-send" class="discussion-action" data-focus="discussion-send">发送</button></div><p id="discussion-message" class="player-form-message" role="status" aria-live="polite"></p></div></section>
       <section class="confirm-modal is-hidden" id="confirm-modal" aria-hidden="true"><div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><h2 id="confirm-title">清空记录？</h2><p id="confirm-copy"></p><div class="confirm-actions"><button id="confirm-cancel" class="confirm-button" data-focus="confirm-cancel">取消</button><button id="confirm-accept" class="confirm-button confirm-danger" data-focus="confirm-accept">清空</button></div></div></section>
-      <div class="notice" id="action-notice" role="status" aria-live="polite">正在连接 Go 核心…</div>
+      <div class="notice is-hidden" id="action-notice" role="status" aria-live="polite"></div>
     </section>
   </main>
   <script src="/pagination.js"></script>
