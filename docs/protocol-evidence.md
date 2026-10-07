@@ -219,3 +219,8 @@ Android 使用应用私有 files 目录下的 `hongguo-tv/library.json`，与可
 进度、倍速、音量、全屏和控件隐藏由当前视频组件实现，不增加上游请求。实际清晰度来自现有 `play/info` 响应的 `quality`；当前自动选择清晰度，尚未扩展手动选择和切换清晰度的解析协议。后台状态同时接收 WebView 的 visibility 和 Android 生命周期桥接，解析返回时检查前台状态，避免后台自动开始播放。
 
 本轮采用隔离的推荐卡片 fixture、真实详情与集 ID、Range 测试 MP4；验证 10 秒跳转与首尾边界、两行控制区的遥控器路径、倍速/音量保存及重载恢复、面板焦点约束、控件自动隐藏、浏览器全屏及返回顺序、失败重试、解析中后台暂停、下一集后继续按钮与高亮更新，以及播放返回历史卡片后继续移动。1280 和 1920 宽的浏览器页面检查了控件边界和简介间距。Android 返回/媒体键和生命周期代码由 Actions 编译验证，未宣称完成真机操作和长时间播放验收。
+
+
+## Mac v1.1.6 系列剧选择器（2026-10-07）
+
+新增 `SeriesSeasons` 调用 GET `/reading/bookapi/plan/v`，`from=single_col_same_ip_series`、scene=10、limit=0。原版模型包含 seriesId、firstVideoId、title、cover、label、sub、upcoming、reserved。匿名真实响应可取得《万妖图录传》完整14季（包括当前第13季及待上线第14季）。预约ID来自 subscribe_item.item_id，不能把预告ID用于播放。该接口与自动下一季的 `from=series_short_play_info` 各自保留；完整参数、原版哈希、映射、TV焦点和验证范围见 [系列剧说明](series-seasons.md)。

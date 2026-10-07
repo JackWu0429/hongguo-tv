@@ -216,6 +216,8 @@
             <span id="detail-title">短剧详情</span>
             <button class="detail-close modal-action" id="detail-close" data-focus="detail-close" aria-label="关闭">×</button>
           </div>
+          <div class="detail-tabs" role="tablist" aria-label="选集与系列剧"><button class="detail-tab is-active" id="detail-tab-episodes" data-focus="detail-tab-episodes" role="tab" aria-selected="true" aria-controls="detail-episode-panel">选集</button><button class="detail-tab" id="detail-tab-series" data-focus="detail-tab-series" role="tab" aria-selected="false" aria-controls="detail-series-panel">系列剧<span id="detail-series-count"></span></button></div>
+          <div id="detail-episode-panel" role="tabpanel" aria-labelledby="detail-tab-episodes">
           <div class="detail-main">
             <img class="detail-cover" id="detail-cover" alt="">
             <div class="detail-copy">
@@ -226,6 +228,8 @@
             </div>
           </div>
           <div class="detail-episodes" id="detail-episodes" data-focus-zone="episodes" aria-label="集数列表"></div>
+          </div>
+          <div id="detail-series-panel" class="detail-series-panel is-hidden" role="tabpanel" aria-labelledby="detail-tab-series"><div id="detail-series-list" class="detail-series-list"></div><div class="detail-series-message" id="detail-series-message" role="status" aria-live="polite"></div><button class="series-retry is-hidden" id="detail-series-retry" data-focus="detail-series-retry">重试</button></div>
         </div>
       </section>
 

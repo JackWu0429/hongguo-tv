@@ -39,7 +39,9 @@
     confirmation: '.confirm-button',
     playerOptions: '.player-option, #player-compose-input',
     modalActions: '.modal-action',
-    episodes: '.detail-episode'
+    episodes: '.detail-episode',
+    detailTabs: '.detail-tab',
+    seriesRows: '.series-row'
   };
   var status = document.getElementById('core-status');
   var notice = document.getElementById('action-notice');
@@ -69,6 +71,17 @@
   var detailReturnFocus = null;
   var detailSeriesID = '';
   var currentDetail = null;
+  var detailTab = 'episodes';
+  var seriesRootID = '';
+  var seriesItems = [];
+  var seriesLoaded = false;
+  var seriesGeneration = 0;
+  var seriesRequest = null;
+  var seasonSwitchGeneration = 0;
+  var seasonSwitchRequest = null;
+  var seasonSwitchID = '';
+  var seriesReservationRequest = null;
+  var seriesReservationID = '';
   var lastContentFocus = null;
   var lastPageFocus = {};
   var featuredItem = null;
@@ -579,6 +592,8 @@
     if (element.classList.contains('confirm-button')) return 'confirmation';
     if (element.classList.contains('player-option') || element.id === 'player-compose-input') return 'playerOptions';
     if (element.closest('#discussion-panel')) return 'discussion';
+    if (element.classList.contains('detail-tab')) return 'detailTabs';
+    if (element.classList.contains('series-row') || element.classList.contains('series-retry')) return 'seriesRows';
     if (element.classList.contains('detail-episode')) return 'episodes';
     if (element.classList.contains('modal-action')) return 'modalActions';
     if (element.classList.contains('page-placeholder-action')) return 'placeholder';
@@ -713,11 +728,23 @@
 
   function moveModalFrom(current, direction) {
     var zone = zoneOf(current);
+    if (zone === 'detailTabs') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone('detailTabs', current, direction);
+      if (direction === 'up') return document.getElementById('detail-close');
+      if (direction === 'down') return detailTab === 'series' ? currentSeriesRow() || firstVisible('.series-row') || firstVisible('.series-retry') : firstVisible('.detail-play');
+      return null;
+    }
+    if (zone === 'seriesRows') {
+      if (direction === 'up') return moveWithinZone('seriesRows', current, direction) || document.getElementById('detail-tab-series');
+      if (direction === 'down') return moveWithinZone('seriesRows', current, direction);
+      if (direction === 'left') return document.getElementById('detail-tab-series');
+      return null;
+    }
     if (zone === 'modalActions') {
-      if (current.id === 'detail-close') return direction === 'down' ? document.getElementById('detail-play') : null;
+      if (current.id === 'detail-close') return direction === 'down' ? document.querySelector('.detail-tab.is-active') : null;
       if (direction === 'left') return current.id === 'detail-save' ? document.getElementById('detail-play') : null;
       if (direction === 'right') return current.id === 'detail-play' ? document.getElementById('detail-save') : null;
-      if (direction === 'up') return document.getElementById('detail-close');
+      if (direction === 'up') return document.getElementById('detail-tab-episodes');
       if (direction === 'down') return document.querySelector('.detail-episode.is-playing') || document.querySelector('.detail-episode');
       return null;
     }
@@ -1272,6 +1299,7 @@
   function pauseForBackground() {
     applicationInBackground = true;
     cancelQualitySwitch();
+    cancelSeasonSwitch();
     ++continuationGeneration;
     if (activePlayback && activePlayback.continuationPending) setPlayerStatus('');
     saveProgress(true);
@@ -1486,6 +1514,8 @@
     accountCountdownUntil = Date.now() + (data.retry_after || 0) * 1000;
     if (owner !== previousOwner || owner !== (libraryData.owner_id || '')) {
       ++accountEpoch;
+      resetSeriesPanel();
+      if (detailModalOpen && detailTab === 'series') { loadSeriesSeasons(); goFocus(document.getElementById('detail-tab-series')); }
       if (confirmOpen) closeConfirmation();
       closePlayerOptions(false);
       allPagers.forEach(function (pager) { pager.cancel(); pager.loaded = false; pager.items = []; pager.buffer = []; if (pager.container) pager.container.innerHTML = ''; });
@@ -1694,9 +1724,9 @@
     return '';
   }
 
-  function getDetail(item) {
+  function getDetail(item, signal) {
     if (detailCache[item.series_id]) return Promise.resolve(detailCache[item.series_id]);
-    return fetch('/api/v1/series/detail?series_id=' + encodeURIComponent(item.series_id))
+    return fetch('/api/v1/series/detail?series_id=' + encodeURIComponent(item.series_id), signal ? { signal: signal } : undefined)
       .then(function (response) { if (!response.ok) throw new Error('详情 HTTP ' + response.status); return response.json(); })
       .then(function (payload) {
         if (!payload.ok || !payload.data) throw new Error(payload.error || '详情响应无效');
@@ -1725,7 +1755,7 @@
   }
 
   function continueAfterEpisode(playback) {
-    if (!canContinuePlayback(playback) || playback.continuationPending) return;
+    if (!canContinuePlayback(playback) || playback.continuationPending || seasonSwitchRequest) return;
     // Android 6 WebViews can support Promise without Promise.finally.
     function finishContinuation() { playback.continuationPending = false; playback.continuationToken = 0; }
     playback.continuationPending = true;
@@ -1779,6 +1809,7 @@
     detailSeriesID = next.series_id;
     currentDetail = next;
     renderDetail(next);
+    updateSeriesRows();
     if (index >= 0) goFocus(detailElements().play);
     getDetail(next).then(function (detail) {
       if (!detailModalOpen || generation !== detailGeneration || !currentDetail || currentDetail.series_id !== next.series_id) return;
@@ -1813,6 +1844,7 @@
     if (pageMode() === 'recommend' && feedIndex >= feedItems.length - 3 && !feedPager.error) feedPager.load();
     updateFeedCounter();
     setFeatured(item);
+    updateSeriesRows();
     var hero = document.getElementById('hero');
     var video = document.getElementById('hero-video');
     var placeholder = document.getElementById('hero-placeholder');
@@ -2349,6 +2381,157 @@
     });
   }
 
+  function seriesMessage(text, retry) {
+    document.getElementById('detail-series-message').textContent = text || '';
+    document.getElementById('detail-series-retry').classList.toggle('is-hidden', !retry);
+  }
+
+  function cancelSeasonSwitch() {
+    ++seasonSwitchGeneration;
+    if (seasonSwitchRequest) seasonSwitchRequest.abort();
+    seasonSwitchRequest = null; seasonSwitchID = '';
+    updateSeriesRows();
+  }
+
+  function resetSeriesPanel() {
+    cancelSeasonSwitch();
+    ++seriesGeneration;
+    if (seriesRequest) seriesRequest.abort();
+    if (seriesReservationRequest) seriesReservationRequest.abort();
+    seriesRequest = null; seriesReservationRequest = null; seriesReservationID = '';
+    seriesItems = []; seriesLoaded = false;
+    document.getElementById('detail-series-list').innerHTML = '';
+    document.getElementById('detail-series-count').textContent = '';
+    seriesMessage('');
+  }
+
+  function currentSeriesRow() {
+    var id = activePlayback && activePlayback.item.series_id || detailSeriesID;
+    return Array.from(document.querySelectorAll('.series-row')).filter(function (row) { return row.dataset.seriesId === id; })[0] || null;
+  }
+
+  function updateSeriesRows() {
+    document.querySelectorAll('.series-row').forEach(function (row, index) {
+      var item = seriesItems[index]; if (!item) return;
+      var playing = !!(activePlayback && activePlayback.item.series_id === item.series_id);
+      row.classList.toggle('is-current', playing || !activePlayback && detailSeriesID === item.series_id);
+      row.setAttribute('aria-current', playing || !activePlayback && detailSeriesID === item.series_id ? 'true' : 'false');
+      var entry = libraryEntry(item.series_id);
+      var status = '暂不可播放';
+      if (item.upcoming) status = item.reservation_id ? item.reserved ? '取消预约' : '预约' : '待上线';
+      else if (item.playable) status = playing ? '播放中' : entry && entry.last_played_at ? '继续播放' : '播放';
+      if (seasonSwitchID === item.series_id) status = '正在切换…';
+      if (seriesReservationID === item.reservation_id && seriesReservationRequest) status = '正在提交…';
+      row.querySelector('.series-status').textContent = status;
+      row.setAttribute('aria-busy', seasonSwitchID === item.series_id || seriesReservationID === item.reservation_id && !!seriesReservationRequest ? 'true' : 'false');
+    });
+  }
+
+  function selectDetailTab(tab) {
+    if (!detailModalOpen) return;
+    if (tab !== detailTab) { cancelSeasonSwitch(); seriesMessage(''); }
+    detailTab = tab;
+    document.querySelectorAll('.detail-tab').forEach(function (node) {
+      var selected = node.id === 'detail-tab-' + tab;
+      node.classList.toggle('is-active', selected); node.setAttribute('aria-selected', selected ? 'true' : 'false');
+    });
+    document.getElementById('detail-episode-panel').classList.toggle('is-hidden', tab !== 'episodes');
+    document.getElementById('detail-series-panel').classList.toggle('is-hidden', tab !== 'series');
+    goFocus(document.getElementById('detail-tab-' + tab));
+    if (tab === 'series') {
+      if (!seriesLoaded) loadSeriesSeasons();
+      else { updateSeriesRows(); var row = currentSeriesRow(); if (row) row.scrollIntoView({ block: 'nearest' }); }
+    }
+  }
+
+  function loadSeriesSeasons() {
+    if (seriesRequest || !detailModalOpen || !seriesRootID) return;
+    if (document.activeElement.id === 'detail-series-retry') goFocus(document.getElementById('detail-tab-series'));
+    var generation = ++seriesGeneration; var epoch = accountEpoch;
+    var request = new AbortController(); seriesRequest = request;
+    seriesMessage('正在读取系列剧…');
+    fetchData('/api/v1/series/seasons?series_id=' + encodeURIComponent(seriesRootID), { signal: request.signal }).then(function (result) {
+      if (!detailModalOpen || generation !== seriesGeneration || epoch !== accountEpoch) return;
+      if (!Array.isArray(result.items)) throw new Error('系列剧响应无效');
+      seriesItems = result.items; seriesLoaded = true;
+      var list = document.getElementById('detail-series-list'); list.innerHTML = '';
+      seriesItems.forEach(function (item) {
+        var row = document.createElement('button'); row.className = 'series-row'; row.dataset.seriesId = item.series_id; row.dataset.focus = 'series-' + item.series_id;
+        var image = document.createElement('img'); image.className = 'series-cover'; image.alt = ''; setCover(image, item);
+        var copy = document.createElement('span'); copy.className = 'series-copy';
+        var title = document.createElement('span'); title.className = 'series-title'; title.textContent = item.title;
+        var meta = document.createElement('span'); meta.className = 'series-meta'; meta.textContent = [item.label, item.subtitle || (item.episode_count ? '全' + item.episode_count + '集' : '')].filter(Boolean).join(' · ');
+        copy.appendChild(title); copy.appendChild(meta);
+        var status = document.createElement('span'); status.className = 'series-status';
+        row.appendChild(image); row.appendChild(copy); row.appendChild(status);
+        row.addEventListener('focus', function () { row.scrollIntoView({ block: 'nearest' }); });
+        row.addEventListener('click', function () { if (item.upcoming) reserveSeriesSeason(item); else switchSeriesSeason(item); });
+        list.appendChild(row);
+      });
+      document.getElementById('detail-series-count').textContent = seriesItems.length ? String(seriesItems.length) : '';
+      updateSeriesRows(); seriesMessage(seriesItems.length ? '' : '这部短剧暂无同系列的其他季。');
+      if (detailTab === 'series') { var row = currentSeriesRow(); if (row) row.scrollIntoView({ block: 'nearest' }); }
+      if (document.activeElement.id === 'detail-series-retry') goFocus(document.getElementById('detail-tab-series'));
+    }).catch(function (error) {
+      if (generation === seriesGeneration && epoch === accountEpoch && detailModalOpen && error.name !== 'AbortError') seriesMessage('系列剧加载失败：' + error.message, true);
+    }).then(function () { if (seriesRequest === request) seriesRequest = null; });
+  }
+
+  function reserveSeriesSeason(item) {
+    if (!item.reservation_id) { seriesMessage('这季尚未开放预约。'); return; }
+    if (!accountData || !accountData.logged_in) { seriesMessage('请先关闭面板，在左侧“我的”登录账号后再预约。'); return; }
+    if (seriesReservationRequest) return;
+    var generation = seriesGeneration; var epoch = accountEpoch; var reserved = !item.reserved;
+    var request = new AbortController(); seriesReservationRequest = request; seriesReservationID = item.reservation_id;
+    updateSeriesRows(); seriesMessage('');
+    fetchData('/api/v1/reservation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: item.reservation_id, reserved: reserved }), signal: request.signal }).then(function () {
+      if (epoch !== accountEpoch || generation !== seriesGeneration || !detailModalOpen) return;
+      item.reserved = reserved; reservationPager.loaded = false; calendarPager.loaded = false;
+      document.querySelectorAll('.publication-row').forEach(function (row) {
+        if (row.__item && row.__item.reservation_id === item.reservation_id) {
+          row.__item.reserved = reserved;
+          var button = row.querySelector('.publication-action'); if (button) button.textContent = reserved ? '取消预约' : '预约';
+        }
+      });
+      seriesMessage(reserved ? '预约成功，上线后可在“预约”查看。' : '已取消预约。');
+    }).catch(function (error) {
+      if (epoch === accountEpoch && generation === seriesGeneration && detailModalOpen && error.name !== 'AbortError') seriesMessage('预约未确认成功：' + error.message);
+    }).then(function () {
+      if (seriesReservationRequest !== request) return;
+      seriesReservationRequest = null; seriesReservationID = ''; updateSeriesRows();
+    });
+  }
+
+  function switchSeriesSeason(item) {
+    if (!item.playable || item.upcoming) { seriesMessage('这季暂时不可播放。'); return; }
+    if (activePlayback && activePlayback.item.series_id === item.series_id) { seriesMessage('当前正在播放这一季。'); return; }
+    if (seasonSwitchRequest) return;
+    ++continuationGeneration;
+    var generation = ++seasonSwitchGeneration; var panel = detailGeneration; var feed = feedGeneration; var epoch = accountEpoch;
+    var request = new AbortController(); seasonSwitchRequest = request; seasonSwitchID = item.series_id;
+    updateSeriesRows(); seriesMessage('');
+    getDetail(item, request.signal).then(function (detail) {
+      if (!detailModalOpen || detailTab !== 'series' || generation !== seasonSwitchGeneration || panel !== detailGeneration || feed !== feedGeneration || epoch !== accountEpoch || applicationInBackground || document.hidden) return;
+      if (!detail.vid_list || !detail.vid_list.length) throw new Error('这季尚无可播放集数');
+      var next = Object.assign({}, item, detail);
+      ++detailGeneration; currentDetail = next; detailSeriesID = next.series_id; renderDetail(next);
+      if (isPlaybackPage()) {
+        // Keep the recommendation slot and original card/page return target.
+        feedItems[feedIndex] = next; playFeedItem(feedIndex);
+      } else {
+        startPlayer(next, detailReturnFocus);
+        // startPlayer focuses the video; restore the open selector's row.
+        goFocus(currentSeriesRow());
+      }
+      updateSeriesRows(); seriesMessage('已切换到' + (item.label || item.title) + '。');
+    }).catch(function (error) {
+      if (generation === seasonSwitchGeneration && detailModalOpen && error.name !== 'AbortError') seriesMessage('切换失败：' + error.message + '，保留原播放状态。');
+    }).then(function () {
+      if (seasonSwitchRequest !== request) return;
+      seasonSwitchRequest = null; seasonSwitchID = ''; updateSeriesRows();
+    });
+  }
+
   function detailElements() {
     return {
       title: document.getElementById('detail-title'),
@@ -2392,6 +2575,7 @@
     var episode = resumeEpisode(entry, currentDetail);
     detailElements().play.textContent = entry && entry.last_played_at ? entry.completed && episode === 1 ? '重新播放' : '继续第' + episode + '集' : '播放第一集';
     updateEpisodeHighlight(entry && entry.episode ? entry.episode - 1 : -1);
+    updateSeriesRows();
   }
 
   function openDetail(item) {
@@ -2400,6 +2584,9 @@
     detailReturnFocus = document.activeElement;
     detailModalOpen = true;
     detailSeriesID = item.series_id;
+    seriesRootID = item.series_id;
+    resetSeriesPanel();
+    selectDetailTab('episodes');
     currentDetail = null;
     var generation = ++detailGeneration;
     detailModal.classList.remove('is-hidden');
@@ -2415,7 +2602,7 @@
         if (!detailModalOpen || generation !== detailGeneration) return;
         currentDetail = Object.assign({}, item, detail);
         renderDetail(currentDetail);
-        goFocus(document.querySelector('.detail-play'));
+        if (detailTab === 'episodes' && document.activeElement.id === 'detail-close') goFocus(document.querySelector('.detail-play'));
       })
       .catch(function (error) {
         if (!detailModalOpen || generation !== detailGeneration) return;
@@ -2427,6 +2614,9 @@
   }
 
   function closeDetail() {
+    resetSeriesPanel();
+    ++detailGeneration;
+    seriesRootID = '';
     detailModalOpen = false;
     detailSeriesID = '';
     currentDetail = null;
@@ -2461,6 +2651,7 @@
   }
 
   function activatePage(item, restoring) {
+    if (detailModalOpen) closeDetail();
     saveProgress(true);
     allPagers.forEach(function (pager) { pager.cancel(); });
     activePlayback = null;
@@ -2611,6 +2802,9 @@
     });
   }
   document.getElementById('detail-close').addEventListener('click', closeDetail);
+  document.getElementById('detail-tab-episodes').addEventListener('click', function () { selectDetailTab('episodes'); });
+  document.getElementById('detail-tab-series').addEventListener('click', function () { selectDetailTab('series'); });
+  document.getElementById('detail-series-retry').addEventListener('click', loadSeriesSeasons);
   document.getElementById('account-send-code').addEventListener('click', accountSendCode);
   document.getElementById('account-login').addEventListener('click', accountLogin);
   document.getElementById('account-verify').addEventListener('click', verifyAccountSMS);

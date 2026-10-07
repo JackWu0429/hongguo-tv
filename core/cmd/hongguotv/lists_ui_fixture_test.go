@@ -13,7 +13,8 @@ import (
 )
 
 func TestListsBrowserFixture(t *testing.T) {
-	playerFixture := os.Getenv("HONGGUO_PLAYER_UI_FIXTURE") == "1"
+	seriesFixture := os.Getenv("HONGGUO_SERIES_UI_FIXTURE") == "1"
+	playerFixture := os.Getenv("HONGGUO_PLAYER_UI_FIXTURE") == "1" || seriesFixture
 	if os.Getenv("HONGGUO_LISTS_UI_FIXTURE") != "1" && !playerFixture {
 		t.Skip("isolated UI fixture")
 	}
@@ -22,6 +23,10 @@ func TestListsBrowserFixture(t *testing.T) {
 	var failNew bool
 	var failQuality bool
 	var guest bool
+	var failSeries, emptySeries, slowDetail, failDetail, failReservation bool
+	var reservations []map[string]any
+	var progress []map[string]any
+	reserved := false
 	writes := []PlayerAction{}
 	deleted := map[string]bool{}
 	ranks := []RankOption{
@@ -55,9 +60,129 @@ func TestListsBrowserFixture(t *testing.T) {
 		writeJSON(w, 200, map[string]any{"ok": true, "data": map[string]any{"logged_in": true, "profile": map[string]any{"uid": "fixture", "name": "测试账号"}, "sync": map[string]any{"state": "idle"}}})
 	})
 	mux.HandleFunc("/api/v1/library", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"ok": true, "data": map[string]any{"owner_id": "fixture", "entries": entries}})
+		mu.Lock()
+		defer mu.Unlock()
+		if seriesFixture && r.Method == http.MethodPost {
+			var action map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&action); err != nil {
+				writeError(w, 400, err.Error())
+				return
+			}
+			if asString(action["action"]) == "progress" {
+				progress = append(progress, action)
+				if d, ok := asMap(action["drama"]); ok {
+					id := asString(d["series_id"])
+					for i, e := range entries {
+						if asString(e["drama"].(Drama).SeriesID) == id {
+							entries[i]["episode"] = action["episode"]
+							entries[i]["position"] = action["position"]
+							entries[i]["duration"] = action["duration"]
+							entries[i]["last_played_at"] = time.Now().UnixMilli()
+							entries[i]["completed"] = action["completed"]
+						}
+					}
+				}
+			}
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "data": map[string]any{"owner_id": func() string {
+			if guest {
+				return ""
+			}
+			return "fixture"
+		}(), "entries": entries}})
 	})
-	mux.HandleFunc("/api/v1/reservation", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]any{"ok": true}) })
+	mux.HandleFunc("/api/v1/reservation", func(w http.ResponseWriter, r *http.Request) {
+		if seriesFixture {
+			var action map[string]any
+			json.NewDecoder(r.Body).Decode(&action)
+			mu.Lock()
+			reservations = append(reservations, action)
+			fail := failReservation
+			failReservation = false
+			mu.Unlock()
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(200 * time.Millisecond):
+			}
+			if fail {
+				writeError(w, 502, "测试预约失败")
+				return
+			}
+			mu.Lock()
+			reserved = asBool(action["reserved"])
+			mu.Unlock()
+		}
+		writeJSON(w, 200, map[string]any{"ok": true})
+	})
+	if seriesFixture {
+		mux.HandleFunc("/fixture/series/state", func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			q := r.URL.Query()
+			if q.Has("fail_series") {
+				failSeries = q.Get("fail_series") == "1"
+			}
+			if q.Has("empty_series") {
+				emptySeries = q.Get("empty_series") == "1"
+			}
+			if q.Has("slow_detail") {
+				slowDetail = q.Get("slow_detail") == "1"
+			}
+			if q.Has("fail_detail") {
+				failDetail = q.Get("fail_detail") == "1"
+			}
+			if q.Has("fail_reservation") {
+				failReservation = q.Get("fail_reservation") == "1"
+			}
+			if q.Has("guest") {
+				guest = q.Get("guest") == "1"
+			}
+			writeJSON(w, 200, map[string]any{"calls": calls, "reservations": reservations, "progress": progress, "reserved": reserved})
+		})
+		mux.HandleFunc("/api/v1/series/seasons", func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			calls = append(calls, r.URL.String())
+			fail, empty, res := failSeries, emptySeries, reserved
+			failSeries = false
+			mu.Unlock()
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(250 * time.Millisecond):
+			}
+			if fail {
+				writeError(w, 502, "测试系列剧读取失败")
+				return
+			}
+			items := []SeriesSeason{}
+			if !empty {
+				for season := 1; season <= 16; season++ {
+					d := drama(season)
+					if season == 13 {
+						d = drama(0)
+					}
+					d.Title = fmt.Sprintf("测试系列第%d季", season)
+					d.SeasonIndex = season
+					d.MultiSeason = true
+					item := SeriesSeason{Drama: d, Label: fmt.Sprintf("第%d季", season), Subtitle: "4375万热度", Playable: season <= 13}
+					if season == 14 || season == 16 {
+						item.Upcoming = true
+						item.Vid = ""
+						item.VidList = nil
+						item.EpisodeCount = 0
+						item.Subtitle = "预计11月上线"
+					}
+					if season == 14 {
+						item.ReservationID = "7691518344146455577"
+						item.Reserved = res
+					}
+					items = append(items, item)
+				}
+			}
+			writeJSON(w, 200, map[string]any{"ok": true, "data": SeriesSeasonsResult{Items: items}})
+		})
+	}
 	mux.HandleFunc("/fixture/requests", func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -196,9 +321,43 @@ func TestListsBrowserFixture(t *testing.T) {
 			writeError(w, 502, "测试不播放媒体")
 			return
 		}
+		if seriesFixture && r.URL.Path == "/api/v1/series/next-season" {
+			d := drama(0)
+			d.Title = "测试系列第13季"
+			d.SeasonIndex = 13
+			writeJSON(w, 200, map[string]any{"ok": true, "data": map[string]any{"current_season": 12, "next": d}})
+			return
+		}
 		if r.URL.Path == "/api/v1/series/detail" {
 			d := drama(0)
 			d.SeriesID = q.Get("series_id")
+			if seriesFixture {
+				mu.Lock()
+				slow, fail := slowDetail, failDetail
+				failDetail = false
+				mu.Unlock()
+				if slow {
+					select {
+					case <-r.Context().Done():
+						return
+					case <-time.After(900 * time.Millisecond):
+					}
+				}
+				if fail {
+					writeError(w, 502, "测试季详情失败")
+					return
+				}
+				for season := 1; season <= 13; season++ {
+					if drama(season).SeriesID == d.SeriesID || season == 13 && drama(0).SeriesID == d.SeriesID {
+						d.Title = fmt.Sprintf("测试系列第%d季", season)
+						d.SeasonIndex = season
+					}
+				}
+				d.MultiSeason = true
+				for i, vid := range d.VidList {
+					d.Episodes = append(d.Episodes, Episode{Index: i + 1, VideoID: vid})
+				}
+			}
 			writeJSON(w, 200, map[string]any{"ok": true, "data": d})
 			return
 		}
@@ -231,6 +390,9 @@ func TestListsBrowserFixture(t *testing.T) {
 	addr := "127.0.0.1:18797"
 	if playerFixture {
 		addr = "127.0.0.1:18897"
+	}
+	if seriesFixture {
+		addr = "127.0.0.1:18997"
 	}
 	t.Log("UI fixture http://" + addr + "/")
 	t.Fatal(http.ListenAndServe(addr, mux))
