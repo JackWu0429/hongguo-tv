@@ -2205,6 +2205,42 @@
       stable_seconds: playback.stableSince ? Math.max(0, Date.now() - playback.stableSince) / 1000 : 0,
       started: playback.started, active: playback.generation === feedGeneration && isPlaybackPage() && !applicationInBackground && !document.hidden && !qualityPrevious });
   }
+  function waitForPlaybackPaint(generation, signal) {
+    // The first animation callback runs before paint. The second lets the
+    // black cover reach the compositor before touching Android's video layer.
+    // This is a paint boundary, not a fixed loading-duration timer.
+    return new Promise(function (resolve) {
+      var frame = 0, finished = false;
+      function finish(value) {
+        if (finished) return;
+        finished = true;
+        if (frame) cancelAnimationFrame(frame);
+        if (signal) signal.removeEventListener('abort', abort);
+        resolve(value);
+      }
+      function abort() { finish(false); }
+      function current() { return generation === feedGeneration && !applicationInBackground && !document.hidden && !(signal && signal.aborted); }
+      if (!current()) { finish(false); return; }
+      if (signal) signal.addEventListener('abort', abort);
+      frame = requestAnimationFrame(function () {
+        if (!current()) { finish(false); return; }
+        frame = requestAnimationFrame(function () { finish(current()); });
+      });
+    });
+  }
+  function finishPlaybackPreparation(playback) {
+    var hero = document.getElementById('hero');
+    if (!hero.classList.contains('is-preparing-video')) { setPlayerStatus(''); return; }
+    // Reveal the video underneath the opaque cover before removing that
+    // cover. A canplay event alone must never expose an empty video surface.
+    hero.classList.add('is-starting-video');
+    waitForPlaybackPaint(playback.generation).then(function (painted) {
+      var video = document.getElementById('hero-video');
+      if (!painted || activePlayback !== playback || !playback.started || !playback.stableSince || video.paused || video.ended || video.readyState < 2) return;
+      hero.classList.remove('is-preparing-video', 'is-starting-video', 'is-episode-transition');
+      setPlayerStatus('');
+    });
+  }
   function playFeedItem(index, forcedEpisode, forcedPosition, continuation) {
     closePlayerOptions(false);
     closeDiscussion(false); resetDanmaku();
@@ -2223,6 +2259,7 @@
     var item = feedItems[index];
     if (!item || !item.series_id) return;
     var switchStartedAt = Date.now();
+    var sameSeries = !!(activePlayback && activePlayback.started && activePlayback.item.series_id === item.series_id);
     var fastContinuation = !!(continuation && continuation.completed && canContinuePlayback(continuation) &&
       continuation.owner === accountEpoch && continuation.item.series_id === item.series_id &&
       forcedEpisode === continuation.episode + 1 && forcedPosition === 0 && libraryLoaded);
@@ -2245,23 +2282,28 @@
     var generation = ++feedGeneration;
     clearTimeout(controlsTimer);
     hero.classList.add('is-feed', 'is-preparing-video');
-    hero.classList.remove('is-catalog-loading');
+    hero.classList.remove('is-catalog-loading', 'is-starting-video');
+    hero.classList.toggle('is-episode-transition', sameSeries);
     placeholder.classList.add('is-hidden');
     updateFeedCounter();
     var incomingEpisode = forcedEpisode || (libraryLoaded ? resumeEpisode(libraryEntry(item.series_id), item) : 0);
     setFeatured(Object.assign({}, item, { start_episode: incomingEpisode }), !incomingEpisode);
     updateSeriesRows();
     setPlayerStatus(episodeLoadingText(incomingEpisode));
-    // Hide the old WebView video surface before resetting its native source.
-    // Opacity alone can leave a grey hardware-video rectangle during load().
+    // Keep the cover painted during native source reset. CSS visibility alone
+    // did not prevent a grey hardware-video flash on the user's Android 6 TV.
     video.classList.remove('has-source');
-    video.pause();
-    video.removeAttribute('src');
-    video.load();
-    updatePlaybackControls();
+    var coveredReset = waitForPlaybackPaint(generation, request.signal).then(function (painted) {
+      if (!painted) return false;
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      updatePlaybackControls();
+      return true;
+    });
     var waitForLibrary = fastContinuation ? Promise.resolve() : Promise.resolve(libraryReady).then(function () { return libraryQueue.catch(function () {}); });
-    waitForLibrary.then(function () {
-      if (generation !== feedGeneration || request.signal.aborted) return null;
+    Promise.all([waitForLibrary, coveredReset]).then(function (ready) {
+      if (!ready[1] || generation !== feedGeneration || request.signal.aborted) return null;
       var entry = libraryEntry(item.series_id);
       var episode = forcedEpisode || resumeEpisode(entry, item);
       var position = forcedPosition !== undefined ? forcedPosition : entry && episode === entry.episode && !entry.completed ? entry.position || 0 : 0;
@@ -3522,11 +3564,11 @@
   });
   media.addEventListener('playing', function () {
     document.getElementById('danmaku-layer').classList.remove('is-paused'); tickDanmaku();
-    if (!activePlayback || activePlayback.generation !== feedGeneration) return;
+    if (!activePlayback || activePlayback.generation !== feedGeneration || !media.classList.contains('has-source')) return;
     if (applicationInBackground || document.hidden) { media.pause(); return; }
-    document.getElementById('hero').classList.remove('is-preparing-video');
     activePlayback.started = true;
     activePlayback.stableSince = Date.now();
+    finishPlaybackPreparation(activePlayback);
     if (activePlayback.timing && !activePlayback.timing.reported) {
       var timing = activePlayback.timing;
       timing.reported = true;
@@ -3536,7 +3578,7 @@
         video_start_ms: Math.max(0, Date.now() - timing.ready_at), total_ms: Math.max(0, Date.now() - timing.started_at) });
       if (playbackTiming.length > 20) playbackTiming.shift();
     }
-    setPlayerStatus(''); updatePlaybackControls(); scheduleControlsHide();
+    updatePlaybackControls(); scheduleControlsHide();
     saveProgress(true);
   });
   media.addEventListener('timeupdate', function () {
@@ -3557,12 +3599,6 @@
   media.addEventListener('emptied', updatePlaybackControls);
   media.addEventListener('waiting', function () { if (activePlayback) { activePlayback.stableSince = 0; setPlayerStatus(activePlayback.started ? '正在缓冲…' : episodeLoadingText(activePlayback.episode)); } });
   media.addEventListener('seeking', function () { if (activePlayback) activePlayback.stableSince = 0; });
-  media.addEventListener('canplay', function () {
-    if (media.paused && activePlayback && activePlayback.generation === feedGeneration && media.readyState >= 2) {
-      document.getElementById('hero').classList.remove('is-preparing-video');
-      setPlayerStatus('');
-    }
-  });
   media.addEventListener('seeked', function () { if (activePlayback && activePlayback.started && !media.paused && !media.ended) activePlayback.stableSince = Date.now(); resetDanmaku(); tickDanmaku(); updatePlaybackControls(); saveProgress(true); if (media.paused) setPlayerStatus(''); });
   media.addEventListener('error', function () { if (activePlayback && media.getAttribute('src')) setPlayerStatus('这集未能正常播放', true); });
   media.addEventListener('ended', function () {
