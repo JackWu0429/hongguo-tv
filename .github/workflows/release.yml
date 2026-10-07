@@ -12,12 +12,16 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    concurrency:
+      group: hongguo-signed-release
+      cancel-in-progress: false
     env:
-      HONGGUO_CORE_VERSION: 0.2.6-${{ github.sha }}
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Read APK version
+        run: python3 scripts/release_metadata.py --github-env "$GITHUB_ENV"
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -48,10 +52,12 @@ jobs:
           node --check core/cmd/hongguotv/ui/app.js
           node --check core/cmd/hongguotv/ui/compat.js
           node --check core/cmd/hongguotv/ui/episode-prefetch.js
+          node --check core/cmd/hongguotv/ui/updates.js
+          python3 -m unittest discover -s tests -p "test_*.py"
           node --test tests/*.test.cjs
       - name: Check release tag
         if: startsWith(github.ref, 'refs/tags/')
-        run: test "$GITHUB_REF_NAME" = "v0.2.6"
+        run: test "$GITHUB_REF_NAME" = "v$APP_VERSION"
       - name: Build Android native binaries
         run: bash scripts/build_android_binaries.sh
         env:
@@ -78,10 +84,10 @@ jobs:
           import os
           from pathlib import Path
           metadata = (Path(os.environ['RUNNER_TEMP']) / 'apk-badging.txt').read_text()
-          assert "versionCode='8'" in metadata and "versionName='0.2.6'" in metadata
+          assert f"versionCode='{os.environ['APP_VERSION_CODE']}'" in metadata and f"versionName='{os.environ['APP_VERSION']}'" in metadata
           assert "application-label:'红果短剧'" in metadata
-          assert "sdkVersion:'23'" in metadata and 'application-debuggable' not in metadata
-          print("Verified application label: 红果短剧; version 0.2.6 / code 8; minimum Android 6")
+          assert f"sdkVersion:'{os.environ['APP_MIN_SDK']}'" in metadata and 'application-debuggable' not in metadata
+          print(f"Verified application label: 红果短剧; version {os.environ['APP_VERSION']} / code {os.environ['APP_VERSION_CODE']}; minimum Android 6")
           PY
       - name: Remove temporary signing key
         if: always()
@@ -89,9 +95,10 @@ jobs:
       - name: Prepare versioned release files
         run: |
           mkdir -p "$RUNNER_TEMP/hongguo-release"
-          cp android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/hongguo-release/hongguo-tv-0.2.6.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/hongguo-release/hongguo-tv-$APP_VERSION.apk"
+          python3 scripts/generate_update.py --apk "$RUNNER_TEMP/hongguo-release/hongguo-tv-$APP_VERSION.apk" --version "$APP_VERSION" --code "$APP_VERSION_CODE" --min-sdk "$APP_MIN_SDK" --notes "docs/releases/v$APP_VERSION.md" --out "$RUNNER_TEMP/hongguo-release/update.json"
           cd "$RUNNER_TEMP/hongguo-release"
-          sha256sum hongguo-tv-0.2.6.apk > SHA256SUMS.txt
+          sha256sum "hongguo-tv-$APP_VERSION.apk" > SHA256SUMS.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -101,6 +108,13 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          name: 红果短剧 v0.2.6
-          body_path: docs/releases/v0.2.6.md
+          name: 红果短剧 v${{ env.APP_VERSION }}
+          body_path: docs/releases/v${{ env.APP_VERSION }}.md
           files: ${{ runner.temp }}/hongguo-release/*
+      - name: Publish public download release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.HONGGUO_RELEASES_TOKEN }}
+        run: |
+          test -n "$GH_TOKEN" || { echo "Configure HONGGUO_RELEASES_TOKEN with Contents write access to the public download repository" >&2; exit 1; }
+          python3 scripts/publish_public_release.py --directory "$RUNNER_TEMP/hongguo-release" --notes "docs/releases/v$APP_VERSION.md"

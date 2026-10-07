@@ -49,9 +49,10 @@ public class MainActivity extends Activity {
     private Thread startupThread;
     private boolean destroyed;
     private boolean pageLoadFailed;
-    private boolean pageReady;
+    private volatile boolean pageReady;
     private int routedVerticalKeys;
     private AnimatedVectorDrawable startupAnimation;
+    private AppUpdater appUpdater;
     private final Runnable restoreFullscreen = () -> {
         if (activityForeground && hasWindowFocus() && !isFinishing() && !isDestroyed() && !isKeyboardVisible()) {
             applyFullscreen();
@@ -84,6 +85,16 @@ public class MainActivity extends Activity {
         settings.setAllowContentAccess(false);
         webView.addJavascriptInterface(new PlaybackPreferences(this), "HongguoTVPreferences");
         webView.addJavascriptInterface(new InputBridge(), "HongguoTVInput");
+        appUpdater = new AppUpdater(this, new AppUpdater.Host() {
+            public boolean trusted() { return pageReady; }
+            public boolean foreground() { return activityForeground; }
+            public void restoreFocus() { if (!destroyed && webView != null) { webView.requestFocus(); scheduleFullscreen(); } }
+            public void allowPrompt(AppUpdater.PromptCheck check) {
+                if (!pageReady || webView == null) { check.result(false); return; }
+                webView.evaluateJavascript("!!(window.HongguoTV && window.HongguoTV.canShowAppUpdate())", result -> check.result("true".equals(result)));
+            }
+        });
+        webView.addJavascriptInterface(appUpdater.new Bridge(), "HongguoTVUpdates");
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
@@ -106,6 +117,7 @@ public class MainActivity extends Activity {
                     startupAnimation.stop();
                     pageReady = true;
                     webView.requestFocus();
+                    appUpdater.start();
                 }
                 view.evaluateJavascript("window.HongguoTV && window.HongguoTV." +
                         (activityForeground ? "resumeFromBackground()" : "pauseForBackground()"), null);
@@ -333,6 +345,7 @@ public class MainActivity extends Activity {
 
     private void requestPageBack() {
         if (backPending || isFinishing()) return;
+        if (appUpdater != null && appUpdater.back()) return;
         if (exitDialog != null && exitDialog.isShowing()) {
             exitDialog.cancel();
             return;
@@ -375,6 +388,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         activityForeground = true;
+        if (appUpdater != null) appUpdater.resume();
         if (startupAnimation != null && startupPanel.getVisibility() == View.VISIBLE && startupRetry.getVisibility() != View.VISIBLE) startupAnimation.start();
         applyFullscreen();
         if (webView != null) {
@@ -386,6 +400,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         destroyed = true;
+        pageReady = false;
+        if (appUpdater != null) appUpdater.destroy();
         if (startupAnimation != null) startupAnimation.stop();
         if (startupThread != null) startupThread.interrupt();
         View decor = getWindow().getDecorView();

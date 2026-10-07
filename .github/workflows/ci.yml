@@ -11,11 +11,11 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      HONGGUO_CORE_VERSION: 0.2.6-${{ github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Read APK version
+        run: python3 scripts/release_metadata.py --github-env "$GITHUB_ENV"
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -46,6 +46,8 @@ jobs:
           node --check core/cmd/hongguotv/ui/app.js
           node --check core/cmd/hongguotv/ui/compat.js
           node --check core/cmd/hongguotv/ui/episode-prefetch.js
+          node --check core/cmd/hongguotv/ui/updates.js
+          python3 -m unittest discover -s tests -p "test_*.py"
           node --test tests/*.test.cjs
       - name: Build Android native binaries
         run: bash scripts/build_android_binaries.sh

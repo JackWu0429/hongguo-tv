@@ -402,6 +402,9 @@ button:focus { outline: none; }
 .account-heading p, .account-card p { color: #a9a9b5; line-height: 1.6; }
 .account-layout { display: flex; gap: 1.5rem; max-width: 70rem; margin-top: 2rem; }
 .account-card { flex: 1; min-width: 0; padding: 2rem; border: 1px solid #30303a; border-radius: 1rem; background: #181820; }
+.app-update-card { max-width: 70rem; margin-top: 1.5rem; }
+.app-update-actions { display: flex; flex-wrap: wrap; }
+.app-update-actions button { margin: 0 .8rem .6rem 0; }
 .account-card h2 { font-size: 1.45rem; margin: 0 0 1.3rem; }
 .account-card label { display: block; margin: 1rem 0 .6rem; color: #bbbcc8; }
 .account-input { width: 100%; padding: .9rem 1rem; box-sizing: border-box; border: 2px solid #41414c; border-radius: .6rem; background: #101016; color: #fff; font-size: 1.3rem; }

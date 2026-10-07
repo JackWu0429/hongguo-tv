@@ -36,6 +36,7 @@
     libraryRemovals: '.library-remove',
     accountInputs: '.account-input',
     accountActions: '.account-action',
+    appUpdates: '.app-update-action',
     confirmation: '.confirm-button',
     playerOptions: '.player-option, #player-compose-input',
     modalActions: '.modal-action',
@@ -626,6 +627,7 @@
     if (element.classList.contains('library-card')) return 'libraryItems';
     if (element.classList.contains('library-remove')) return 'libraryRemovals';
     if (element.classList.contains('account-input')) return 'accountInputs';
+    if (element.classList.contains('app-update-action')) return 'appUpdates';
     if (element.classList.contains('account-action')) return 'accountActions';
     if (element.classList.contains('confirm-button')) return 'confirmation';
     if (element.classList.contains('player-option') || element.id === 'player-compose-input') return 'playerOptions';
@@ -945,9 +947,14 @@
       if (direction === 'up') return firstVisible('.library-card') || activeSidebar();
       return null;
     }
+    if (zone === 'appUpdates') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'up') return firstVisible('#account-sync') || firstVisible('#account-profile .account-action') || firstVisible('#account-login-form .account-action');
+      return null;
+    }
     if (zone === 'accountInputs' || zone === 'accountActions') {
       var leftSelector = '#account-login-form .account-input, #account-login-form .account-action, #account-mfa .account-action, #account-profile .account-action';
-      if (current.id === 'account-sync') return direction === 'left' ? (focusables(leftSelector).indexOf(accountLeftFocus) >= 0 ? accountLeftFocus : firstVisible(leftSelector)) : null;
+      if (current.id === 'account-sync') return direction === 'down' ? firstVisible('.app-update-action') : direction === 'left' ? (focusables(leftSelector).indexOf(accountLeftFocus) >= 0 ? accountLeftFocus : firstVisible(leftSelector)) : null;
       if (zone === 'accountInputs' && direction === 'down') {
         if (current.id === 'account-phone' && firstVisible('#account-code')) return document.getElementById('account-code');
         return firstVisible('#account-login') || firstVisible('#account-send-code') || firstVisible('#account-change-phone');
@@ -958,7 +965,7 @@
       var target = moveGrid(leftSelector, current, direction);
       if (target) return target;
       if (direction === 'right' && firstVisible('#account-sync')) { accountLeftFocus = current; return document.getElementById('account-sync'); }
-      return direction === 'left' || direction === 'up' ? activeSidebar() : null;
+      return direction === 'down' ? firstVisible('.app-update-action') : direction === 'left' || direction === 'up' ? activeSidebar() : null;
     }
     if (zone === 'libraryItems') {
       if (direction === 'left' || direction === 'right') return moveGrid('.library-card', current, direction) || (direction === 'left' ? activeSidebar() : null);
@@ -1417,7 +1424,11 @@
     shell.classList.remove('is-controls-hidden'); exitCinema();
     setPlayerStatus('');
   }
-  window.HongguoTV = { remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground };
+  function canShowAppUpdate() {
+    var current = document.activeElement;
+    return !applicationInBackground && !document.hidden && !isPlaybackPage() && !detailModalOpen && !discussionOpen && !confirmOpen && !playerOptionsOpen && !accountBusy && !(current && /INPUT|TEXTAREA/.test(current.tagName));
+  }
+  window.HongguoTV = { remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, canShowAppUpdate: canShowAppUpdate };
 
   function isLibraryPage() { return ['history', 'favorites', 'likes'].indexOf(pageMode()) >= 0; }
   function libraryEntry(id) { return libraryData.entries.filter(function (entry) { return entry.drama.series_id === id; })[0] || null; }
@@ -1679,7 +1690,7 @@
     phoneInput.readOnly = accountBusy || data.phase === 'code' && /^1[3-9]\d{9}$/.test(phoneInput.value);
     phoneInput.placeholder = data.phase === 'code' && !phoneInput.value && data.phone ? '请重新输入 ' + data.phone + ' 的完整手机号' : '请输入手机号';
     document.querySelectorAll('.account-input').forEach(function (node) { node.disabled = accountBusy; });
-    document.querySelectorAll('.account-action').forEach(function (node) { node.disabled = accountBusy; });
+    document.querySelectorAll('.account-action:not(.app-update-action)').forEach(function (node) { node.disabled = accountBusy; });
     document.getElementById('account-cancel').disabled = false;
     document.getElementById('account-change-phone').disabled = false;
     var remaining = Math.max(0, Math.ceil((accountCountdownUntil - Date.now()) / 1000));
@@ -3428,6 +3439,28 @@
   });
   document.addEventListener('visibilitychange', function () { if (document.hidden) pauseForBackground(); else resumeFromBackground(); });
 
+  var appUpdates = window.HongguoAppUpdates.create({
+    bridge: window.HongguoTVUpdates,
+    canPrompt: canShowAppUpdate,
+    render: function (data) {
+      var current = document.getElementById('app-current-version');
+      if (data.current_version) current.textContent = data.current_version;
+      else if (data.state === 'browser') current.textContent = '网页预览';
+      document.getElementById('app-update-state').textContent = data.message || '启动后每天自动检查一次，播放时不打扰。';
+      var check = document.getElementById('app-check-update');
+      // Keep the active TV focus node alive while native checking/download runs.
+      check.disabled = !data.supported;
+      check.setAttribute('aria-disabled', data.state === 'checking' || data.state === 'downloading' ? 'true' : 'false');
+      check.textContent = data.state === 'checking' ? '检查中…' : data.state === 'available' || data.state === 'ready' ? '查看更新 ' + data.latest_version : '检查更新';
+      document.getElementById('app-update-source').disabled = !data.supported;
+      document.getElementById('app-update-source').setAttribute('aria-disabled', data.state === 'checking' || data.state === 'downloading' ? 'true' : 'false');
+      document.getElementById('app-update-source-label').textContent = data.proxy ? '下载代理：' + data.proxy + '（失败时尝试直连）' : data.supported ? '下载通道：GitHub 直连' : '更新功能仅在 Android 正式版中使用。';
+    }
+  });
+  document.getElementById('app-check-update').addEventListener('click', appUpdates.check);
+  document.getElementById('app-update-source').addEventListener('click', appUpdates.configure);
+  appUpdates.refresh();
+  setInterval(appUpdates.refresh, 1000);
   goFocus(document.querySelector('.side-item.is-active'));
   restorePlaybackPreferences();
   loadStatus();
