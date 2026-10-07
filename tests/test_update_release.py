@@ -15,6 +15,16 @@ publish = module('publish_public_release')
 metadata = module('release_metadata')
 
 class ReleaseUpdateTests(unittest.TestCase):
+    def test_draft_release_is_found_before_its_tag_exists(self):
+        from types import SimpleNamespace
+        old_gh, old_api = publish.gh, publish.api
+        publish.gh = lambda *a, **k: SimpleNamespace(returncode=1, stdout='', stderr='HTTP 404')
+        publish.api = lambda *a, **k: [{'tag_name': 'v0.2.7', 'draft': True, 'id': 12}]
+        try:
+            self.assertEqual(publish.release_by_tag('v0.2.7')['id'], 12)
+            self.assertIsNone(publish.release_by_tag('v0.2.8'))
+        finally: publish.gh, publish.api = old_gh, old_api
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)

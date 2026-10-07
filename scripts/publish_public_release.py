@@ -22,6 +22,16 @@ def gh(*args, payload=None, required=True):
 def api(path, **kwargs):
     return json.loads(gh('api', path, **kwargs).stdout)
 
+def release_by_tag(tag):
+    result = gh('api', f'repos/{REPOSITORY}/releases/tags/{tag}', required=False)
+    if result.returncode == 0:
+        return json.loads(result.stdout)
+    if '404' not in result.stderr:
+        raise RuntimeError(result.stderr.strip() or 'Cannot read release')
+    # A draft's tag may not exist until publication. Resolve it from drafts,
+    # then use its release ID rather than requiring the future Git tag.
+    return next((r for r in api(f'repos/{REPOSITORY}/releases?per_page=100') if r['tag_name'] == tag), None)
+
 def publish(directory, notes):
     repo = api(f'repos/{REPOSITORY}')
     if repo['private'] or repo['default_branch'] != 'main':
@@ -38,19 +48,20 @@ def publish(directory, notes):
         raise ValueError('SHA256SUMS differs from APK')
     if manifest['download_url'] != f'https://github.com/{REPOSITORY}/releases/download/{tag}/{apk.name}':
         raise ValueError('Manifest points outside the public release')
-    existing = gh('api', f'repos/{REPOSITORY}/releases/tags/{tag}', required=False)
-    if existing.returncode:
+    release = release_by_tag(tag)
+    if release is None:
         gh('release', 'create', tag, '--repo', REPOSITORY, '--draft', '--title', f'红果短剧 {tag}', '--notes-file', str(notes))
     else:
-        release = json.loads(existing.stdout)
         if not release['draft']:
             asset = next((a for a in release['assets'] if a['name'] == apk.name), None)
             if asset is None or asset.get('digest') != 'sha256:' + digest:
                 raise ValueError('An existing published release differs; preserving its assets')
-    current = api(f'repos/{REPOSITORY}/releases/tags/{tag}')
+    current = release_by_tag(tag)
+    if current is None:
+        raise RuntimeError('Created release is not readable with the publication token')
     if current['draft']:
         gh('release', 'upload', tag, str(apk), str(sums), str(manifest_path), '--repo', REPOSITORY, '--clobber')
-        uploaded = api(f'repos/{REPOSITORY}/releases/tags/{tag}')
+        uploaded = api(f'repos/{REPOSITORY}/releases/{current["id"]}')
         asset = next(a for a in uploaded['assets'] if a['name'] == apk.name)
         if asset.get('digest') != 'sha256:' + digest:
             raise ValueError('Uploaded GitHub asset digest differs')
