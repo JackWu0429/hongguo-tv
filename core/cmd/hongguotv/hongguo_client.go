@@ -103,9 +103,10 @@ type RankRequest struct {
 }
 
 type PlayInfo struct {
-	Path    string `json:"path"`
-	Quality string `json:"quality,omitempty"`
-	Vid     string `json:"vid"`
+	Path      string   `json:"path"`
+	Quality   string   `json:"quality,omitempty"`
+	Qualities []string `json:"qualities,omitempty"`
+	Vid       string   `json:"vid"`
 }
 
 type hongguoClient struct {
@@ -113,7 +114,7 @@ type hongguoClient struct {
 	apiBase          string
 	webBase          string
 	userAgent        string
-	internalPlayback func(context.Context, string, string) (PlayInfo, error)
+	internalPlayback func(context.Context, string, string, string, bool) (PlayInfo, error)
 }
 
 func newHongguoClient() *hongguoClient {
@@ -433,13 +434,17 @@ func (c *hongguoClient) Search(ctx context.Context, query string) (SearchResult,
 }
 
 func (c *hongguoClient) PlayInfo(ctx context.Context, seriesID, vid string) (PlayInfo, error) {
+	return c.PlayInfoQuality(ctx, seriesID, vid, "", true)
+}
+
+func (c *hongguoClient) PlayInfoQuality(ctx context.Context, seriesID, vid, quality string, fallback bool) (PlayInfo, error) {
 	if !validID(seriesID) || !validID(vid) {
 		return PlayInfo{}, errors.New("播放参数无效")
 	}
 	if c.internalPlayback == nil {
 		return PlayInfo{}, errors.New("内置播放服务未初始化")
 	}
-	result, err := c.internalPlayback(ctx, seriesID, vid)
+	result, err := c.internalPlayback(ctx, seriesID, vid, quality, fallback)
 	if err != nil {
 		return PlayInfo{}, fmt.Errorf("内置播放解析失败: %w", err)
 	}
@@ -452,15 +457,16 @@ func (c *hongguoClient) PlayInfo(ctx context.Context, seriesID, vid string) (Pla
 	return result, nil
 }
 
-func embeddedMiniReelPlayInfo(ctx context.Context, seriesID, vid string) (PlayInfo, error) {
-	value, err := resolveMiniReelMedia(ctx, seriesID, vid)
+func embeddedMiniReelPlayInfo(ctx context.Context, seriesID, vid, quality string, fallback bool) (PlayInfo, error) {
+	value, err := resolveMiniReelMediaQuality(ctx, seriesID, vid, quality, fallback)
 	if err != nil {
 		return PlayInfo{}, err
 	}
 	return PlayInfo{
-		Path:    asString(value["path"]),
-		Quality: asString(value["quality"]),
-		Vid:     firstNonEmpty(value["vid"], vid),
+		Path:      asString(value["path"]),
+		Quality:   asString(value["quality"]),
+		Qualities: value["qualities"].([]string),
+		Vid:       firstNonEmpty(value["vid"], vid),
 	}, nil
 }
 

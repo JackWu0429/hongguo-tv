@@ -55,11 +55,12 @@ type miniReelOption struct {
 }
 
 type miniReelMediaJob struct {
-	Ready    chan struct{}
-	Path     string
-	Quality  string
-	Err      error
-	Accessed time.Time
+	Ready     chan struct{}
+	Path      string
+	Quality   string
+	Qualities []string
+	Err       error
+	Accessed  time.Time
 }
 
 var miniReelState = struct {
@@ -117,7 +118,7 @@ func handleMiniReelMedia(w http.ResponseWriter, r *http.Request) {
 		job.Accessed = time.Now()
 	}
 	miniReelState.Unlock()
-	if job == nil || job.Path == "" {
+	if job == nil || !isMiniReelReady(job.Ready) || job.Path == "" {
 		writeJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "media is not prepared"})
 		return
 	}
@@ -140,14 +141,30 @@ func handleMiniReelMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 func resolveMiniReelMedia(ctx context.Context, seriesID, vid string) (map[string]any, error) {
-	token := miniReelToken(seriesID, vid)
+	return resolveMiniReelMediaQuality(ctx, seriesID, vid, "", true)
+}
+
+func resolveMiniReelMediaQuality(ctx context.Context, seriesID, vid, quality string, fallback bool) (map[string]any, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	quality, err := normalizePlaybackQuality(quality)
+	if err != nil {
+		return nil, err
+	}
+	token := miniReelQualityToken(seriesID, vid, quality, fallback)
 	miniReelState.Lock()
 	miniReelCleanupLocked()
 	job := miniReelState.jobs[token]
+	// Failed preparations must be retryable, rather than cached for the TTL.
+	if job != nil && isMiniReelReady(job.Ready) && job.Err != nil {
+		delete(miniReelState.jobs, token)
+		job = nil
+	}
 	if job == nil {
 		job = &miniReelMediaJob{Ready: make(chan struct{}), Accessed: time.Now()}
 		miniReelState.jobs[token] = job
-		go prepareMiniReelMedia(job, token, seriesID, vid)
+		go prepareMiniReelMedia(job, token, seriesID, vid, quality, fallback)
 	} else {
 		job.Accessed = time.Now()
 	}
@@ -169,13 +186,14 @@ func resolveMiniReelMedia(ctx context.Context, seriesID, vid string) (map[string
 		return nil, job.Err
 	}
 	return map[string]any{
-		"path":    "/minireel-proxy/media/" + token + ".mp4",
-		"quality": job.Quality,
-		"vid":     vid,
+		"path":      "/minireel-proxy/media/" + token + ".mp4",
+		"quality":   job.Quality,
+		"qualities": job.Qualities,
+		"vid":       vid,
 	}, nil
 }
 
-func prepareMiniReelMedia(job *miniReelMediaJob, token, seriesID, vid string) {
+func prepareMiniReelMedia(job *miniReelMediaJob, token, seriesID, vid, quality string, fallback bool) {
 	defer close(job.Ready)
 	directory := ""
 	defer func() {
@@ -192,8 +210,13 @@ func prepareMiniReelMedia(job *miniReelMediaJob, token, seriesID, vid string) {
 		job.Err = errors.New("MiniReel returned no compatible video source")
 		return
 	}
-	option := chooseMiniReelOption(options)
+	option, err := selectMiniReelQuality(options, quality, fallback)
+	if err != nil {
+		job.Err = err
+		return
+	}
 	job.Quality = option.Quality
+	job.Qualities = miniReelQualities(options)
 	if err := ensureMiniReelRoot(); err != nil {
 		job.Err = err
 		return
@@ -285,7 +308,7 @@ func miniReelCleanupLocked() {
 	entries := []cacheEntry{}
 	var total int64
 	for token, job := range miniReelState.jobs {
-		if job.Path == "" || job.Ready == nil || !isMiniReelReady(job.Ready) {
+		if job.Ready == nil || !isMiniReelReady(job.Ready) || job.Path == "" {
 			continue
 		}
 		size := miniReelDirectorySize(filepath.Dir(job.Path))
@@ -329,6 +352,58 @@ func isMiniReelReady(ch <-chan struct{}) bool {
 func miniReelToken(seriesID, vid string) string {
 	digest := sha256.Sum256([]byte(seriesID + ":" + vid))
 	return hex.EncodeToString(digest[:])[:24]
+}
+
+func normalizePlaybackQuality(quality string) (string, error) {
+	quality = strings.ToUpper(strings.TrimSpace(quality))
+	if quality == "" || quality == "AUTO" {
+		return "", nil
+	}
+	if !regexp.MustCompile(`^[1-9][0-9]{2,3}P$`).MatchString(quality) {
+		return "", errors.New("清晰度参数无效")
+	}
+	return quality, nil
+}
+
+func miniReelQualityToken(seriesID, vid, quality string, fallback bool) string {
+	if quality == "" {
+		return miniReelToken(seriesID, vid)
+	}
+	return miniReelToken(seriesID, vid+":"+quality+":"+strconv.FormatBool(fallback))
+}
+
+func miniReelQualities(options []miniReelOption) []string {
+	seen := map[int]bool{}
+	heights := []int{}
+	for _, option := range options {
+		if option.Height > 0 && option.Quality != "" && !seen[option.Height] {
+			seen[option.Height] = true
+			heights = append(heights, option.Height)
+		}
+	}
+	sort.Ints(heights)
+	qualities := []string{}
+	for _, height := range heights {
+		qualities = append(qualities, strconv.Itoa(height)+"P")
+	}
+	return qualities
+}
+
+func selectMiniReelQuality(options []miniReelOption, quality string, fallback bool) (miniReelOption, error) {
+	if len(options) == 0 {
+		return miniReelOption{}, errors.New("本集没有可播放的视频")
+	}
+	if quality != "" {
+		for _, option := range options {
+			if option.Quality == quality {
+				return option, nil
+			}
+		}
+		if !fallback {
+			return miniReelOption{}, fmt.Errorf("本集不提供 %s，可重新选择清晰度", quality)
+		}
+	}
+	return chooseMiniReelOption(options), nil
 }
 
 func miniReelNativeOptions(ctx context.Context, vid string) ([]miniReelOption, error) {

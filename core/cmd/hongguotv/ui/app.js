@@ -18,7 +18,7 @@
     searchResults: '.search-result-card',
     listRetry: '.list-retry',
     rankPanels: '.rank-panel',
-    discussion: '.discussion-item, .discussion-close',
+    discussion: '.discussion-item, .discussion-reply, .discussion-action, .discussion-close, #discussion-input',
     reservationItems: '.reservation-row',
     publicationActions: '.publication-action',
     rankTabs: '.rank-tab',
@@ -37,7 +37,7 @@
     accountInputs: '.account-input',
     accountActions: '.account-action',
     confirmation: '.confirm-button',
-    playerOptions: '.player-option',
+    playerOptions: '.player-option, #player-compose-input',
     modalActions: '.modal-action',
     episodes: '.detail-episode'
   };
@@ -50,6 +50,13 @@
   var detailModalOpen = false;
   var discussionOpen = false;
   var discussionReturn = null;
+  var discussionSession = null;
+  var discussionEpoch = 0;
+  var discussionReplyTarget = null;
+  var discussionBusy = false;
+  var discussionRequest = null;
+  var discussionDrafts = {};
+  var replyPagers = [];
   var danmakuEnabled = false;
   var danmakuGeneration = 0;
   var danmakuRequest = null;
@@ -130,9 +137,18 @@
   var nativeFullscreen = false;
   var fullscreenExitKeepsHidden = false;
   var playbackQuality = '';
+  var playbackQualities = [];
+  var qualityRequest = null;
+  var qualityEpoch = 0;
+  var qualityPrevious = null;
+  var composeSession = null;
+  var composeRequest = null;
+  var composeBusy = false;
+  var composeEpoch = 0;
+  var danmakuDrafts = {};
   var playbackRequest = null;
   var applicationInBackground = false;
-  var playbackPreferences = { speed: 1, volume: 100 };
+  var playbackPreferences = { speed: 1, volume: 100, quality: '', danmaku: false };
   var playbackSpeeds = [.5, .75, 1, 1.25, 1.5, 2];
   var keyNames = {
     19: 'ArrowUp', 20: 'ArrowDown', 21: 'ArrowLeft', 22: 'ArrowRight',
@@ -223,6 +239,7 @@
     key: function (item) { return item.comment_id; },
     cursor: function (data) { return data.next_cursor ? { cursor: data.next_cursor } : {}; },
     request: function (params, signal) { return fetchData('/api/v1/comments?' + new URLSearchParams(params), signal ? { signal: signal } : {}); },
+    metadata: function (data) { if (discussionSession) document.getElementById('discussion-title').textContent = '第' + discussionSession.episode + '集评论 · ' + (data.total || 0); },
     clear: function () { renderMessage(document.getElementById('discussion-list'), 'list-empty', '正在读取评论…'); },
     render: renderDiscussion,
     status: function (p) { listStatus(p, 'discussion-pagination'); }, after: queueTailCheck
@@ -231,7 +248,11 @@
   var allPagers = [searchPager, rankPager, newPager, calendarPager, reservationPager, libraryPager, feedPager, discussionPager];
 
   function visiblePager() {
-    if (discussionOpen) return discussionPager;
+    if (discussionOpen) {
+      var row = document.activeElement && document.activeElement.closest('.discussion-item');
+      if (row && row.__replyPager && !row.querySelector('.discussion-replies').classList.contains('is-hidden') && row.__replyPager.hasMore()) return row.__replyPager;
+      return discussionPager;
+    }
     if (detailModalOpen || confirmOpen || playerOptionsOpen) return null;
     if (pageMode() === 'search') return searchPager;
     if (pageMode() === 'rank') return rankPager;
@@ -269,34 +290,191 @@
     return null;
   }
 
+  function playbackSnapshot() {
+    return activePlayback && activePlayback.vid ? { series_id: activePlayback.item.series_id, vid: activePlayback.vid, episode: activePlayback.episode } : null;
+  }
+  function draftKey(session) { return session ? session.series_id + ':' + session.vid : ''; }
+  function storeDraft(drafts, key, value) {
+    if (value.trim()) drafts[key] = value; else delete drafts[key];
+    var keys = Object.keys(drafts); while (keys.length > 20) delete drafts[keys.shift()];
+  }
+  function writePlayerAction(body, signal) {
+    return fetchData('/api/v1/player/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: signal });
+  }
+  function needPlayerLogin(message) {
+    if (accountData && accountData.logged_in) return false;
+    message.textContent = '请先到“我的 / 登录”登录红果账号'; return true;
+  }
+  function discussionAction(text, focus, operation) {
+    var button = document.createElement('button'); button.className = 'discussion-action'; button.textContent = text; button.dataset.focus = focus;
+    button.addEventListener('click', function (event) { event.stopPropagation(); operation(button); }); return button;
+  }
+  function commentAge(created) {
+    var elapsed = Math.max(0, Date.now() / 1000 - created);
+    return !created ? '' : elapsed < 60 ? '刚刚' : elapsed < 3600 ? Math.floor(elapsed / 60) + '分钟前' : elapsed < 86400 ? Math.floor(elapsed / 3600) + '小时前' : Math.floor(elapsed / 86400) + '天前';
+  }
   function renderDiscussion(items, append) {
     var list = document.getElementById('discussion-list');
     if (!append) list.innerHTML = '';
     if (items.length) list.querySelectorAll('.list-empty').forEach(function (node) { node.remove(); });
     if (!items.length && !list.children.length) renderMessage(list, 'list-empty', '本集暂无评论');
     items.forEach(function (item) {
-      var row = document.createElement('div'); row.className = 'discussion-item'; row.tabIndex = 0; row.dataset.focus = 'comment-' + item.comment_id;
+      var row = document.createElement('div'); row.className = 'discussion-item'; row.tabIndex = 0; row.dataset.focus = 'comment-' + item.comment_id; row.__item = item;
+      var main = document.createElement('div'); main.className = 'discussion-main';
+      var avatar = document.createElement('img'); avatar.className = 'discussion-avatar'; avatar.alt = ''; avatar.referrerPolicy = 'no-referrer';
+      if (/^https?:\/\//.test(item.avatar || '')) avatar.src = item.avatar;
+      avatar.addEventListener('error', function () { avatar.removeAttribute('src'); });
+      var content = document.createElement('div'); content.className = 'discussion-copy';
       var author = document.createElement('strong'); author.textContent = item.author || '红果用户';
       var copy = document.createElement('p'); copy.textContent = item.text;
-      var meta = document.createElement('small'); meta.textContent = (item.created ? new Date(item.created * 1000).toLocaleDateString() + ' · ' : '') + item.likes + ' 赞' + (item.replies ? ' · ' + item.replies + ' 回复' : '');
-      row.appendChild(author); row.appendChild(copy); row.appendChild(meta);
-      row.addEventListener('focus', function () { row.scrollIntoView({ block: 'nearest' }); }); list.appendChild(row);
+      var meta = document.createElement('small'); meta.textContent = commentAge(item.created);
+      var actions = document.createElement('div'); actions.className = 'discussion-actions';
+      actions.appendChild(discussionAction('回复', 'reply-' + item.comment_id, function () { selectDiscussionReply(item); }));
+      if (item.replies) actions.appendChild(discussionAction('展开 ' + item.replies + ' 条回复', 'expand-' + item.comment_id, function (button) { toggleReplies(row, button); }));
+      if (item.own) actions.appendChild(discussionAction('删除', 'delete-' + item.comment_id, function (button) { confirmDeleteComment(row, button); }));
+      var like = discussionAction('', 'comment-like-' + item.comment_id, function (button) { likeComment(row, button); }); like.classList.add('discussion-like');
+      like.innerHTML = '<svg><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><small></small>';
+      like.setAttribute('aria-pressed', String(!!item.liked)); like.setAttribute('aria-label', '评论点赞'); like.querySelector('small').textContent = item.likes || 0;
+      content.appendChild(author); content.appendChild(copy); content.appendChild(meta); content.appendChild(actions); main.appendChild(avatar); main.appendChild(content); main.appendChild(like); row.appendChild(main);
+      var replies = document.createElement('div'); replies.className = 'discussion-replies is-hidden'; row.appendChild(replies);
+      row.addEventListener('focus', function () { main.scrollIntoView({ block: 'nearest' }); }); list.appendChild(row);
     });
   }
+  function likeComment(row, button) {
+    if (button.getAttribute('aria-busy') === 'true' || needPlayerLogin(document.getElementById('discussion-message'))) return;
+    var epoch = discussionEpoch; var item = row.__item; var value = !item.liked;
+    button.setAttribute('aria-busy', 'true');
+    writePlayerAction(Object.assign({ series_id: discussionSession.series_id, vid: discussionSession.vid }, { action: 'comment-like', comment_id: item.comment_id, value: value })).then(function () {
+      if (epoch !== discussionEpoch) return;
+      item.liked = value; item.likes = Math.max(0, (item.likes || 0) + (value ? 1 : -1));
+      button.setAttribute('aria-pressed', String(value)); button.querySelector('small').textContent = item.likes;
+    }).catch(function (error) { if (epoch === discussionEpoch) document.getElementById('discussion-message').textContent = error.message; })
+      .then(function () { button.removeAttribute('aria-busy'); });
+  }
+  function confirmDeleteComment(row, button) {
+    if (needPlayerLogin(document.getElementById('discussion-message'))) return;
+    confirmOpen = true; confirmReturnFocus = button; ++confirmationGeneration;
+    document.getElementById('confirm-title').textContent = '删除这条评论？';
+    document.getElementById('confirm-copy').textContent = '会从红果账号的评论中删除，删除后无法恢复。';
+    document.getElementById('confirm-accept').textContent = '删除';
+    document.getElementById('confirm-modal').classList.remove('is-hidden');
+    document.getElementById('confirm-modal').setAttribute('aria-hidden', 'false');
+    var session = { series_id: discussionSession.series_id, vid: discussionSession.vid }; var epoch = discussionEpoch;
+    confirmOperation = function () {
+      if (epoch !== discussionEpoch) return Promise.resolve(true);
+      return writePlayerAction(Object.assign(session, { action: 'comment-delete', comment_id: row.__item.comment_id })).then(function () {
+        if (epoch !== discussionEpoch) return true;
+        var next = row.nextElementSibling || row.previousElementSibling;
+        if (row.__replyPager) row.__replyPager.cancel();
+        row.remove(); confirmReturnFocus = next && next.classList.contains('discussion-item') ? next : document.getElementById('discussion-input');
+        return true;
+      }).catch(function (error) { if (epoch === discussionEpoch) document.getElementById('confirm-copy').textContent = error.message; return false; });
+    };
+    goFocus(document.getElementById('confirm-cancel'));
+  }
+  function selectDiscussionReply(item) {
+    discussionReplyTarget = item || null;
+    var target = document.getElementById('discussion-target'); target.classList.toggle('is-hidden', !item); target.textContent = item ? '回复 ' + (item.author || '红果用户') : '';
+    document.getElementById('discussion-cancel-reply').classList.toggle('is-hidden', !item);
+    if (item) goFocus(document.getElementById('discussion-input'));
+  }
+  function toggleReplies(row, button) {
+    var panel = row.querySelector('.discussion-replies'); var item = row.__item;
+    var opening = panel.classList.contains('is-hidden'); panel.classList.toggle('is-hidden', !opening); button.textContent = opening ? '收起回复' : '展开 ' + item.replies + ' 条回复';
+    if (!opening) { if (row.__replyPager) row.__replyPager.cancel(); return; }
+    if (!row.__replyPager) {
+      var list = document.createElement('div'); panel.appendChild(list);
+      var statusNode = document.createElement('div'); statusNode.className = 'list-status'; statusNode.id = 'replies-status-' + item.comment_id; panel.appendChild(statusNode);
+      var pager = HongguoPagination.create({ key: function (reply) { return reply.comment_id; }, cursor: function (data) { return data.next_cursor ? { cursor: data.next_cursor } : {}; },
+        request: function (params, signal) { return fetchData('/api/v1/replies?' + new URLSearchParams(params), signal ? { signal: signal } : {}); },
+        clear: function () { renderMessage(list, 'list-empty', '正在读取回复…'); },
+        render: function (replies, append) {
+          if (!append) list.innerHTML = '';
+          if (!replies.length && !list.children.length) renderMessage(list, 'list-empty', '暂无回复');
+          replies.forEach(function (reply) { var node = document.createElement('div'); node.className = 'discussion-reply'; node.tabIndex = 0; node.dataset.focus = 'reply-row-' + reply.comment_id; var name = document.createElement('strong'); name.textContent = reply.author || '红果用户'; var text = document.createElement('p'); text.textContent = reply.text; node.appendChild(name); node.appendChild(text); node.addEventListener('focus', function () { node.scrollIntoView({ block: 'nearest' }); }); list.appendChild(node); });
+        }, status: function (p) { listStatus(p, statusNode.id); }, after: queueTailCheck });
+      pager.container = list; pager.selector = '.discussion-reply'; pager.statusID = statusNode.id; row.__replyPager = pager; replyPagers.push(pager);
+      pager.reset(Object.assign({}, discussionSession, { comment_id: item.comment_id }));
+    } else if (!row.__replyPager.loaded) row.__replyPager.load(!!row.__replyPager.error);
+    queueTailCheck();
+  }
+  function sendDiscussion() {
+    var input = document.getElementById('discussion-input'); var message = document.getElementById('discussion-message');
+    if (discussionBusy || !discussionSession || needPlayerLogin(message)) return;
+    var text = input.value.trim(); if (!text || Array.from(text).length > 500) { message.textContent = '请输入 1～500 字的内容'; goFocus(input); return; }
+    var epoch = discussionEpoch; var target = discussionReplyTarget;
+    var body = Object.assign({}, discussionSession, { action: target ? 'reply' : 'comment', text: text }); delete body.episode;
+    if (target) body.comment_id = target.comment_id;
+    discussionBusy = true; input.readOnly = true; message.textContent = '正在发送…'; document.getElementById('discussion-send').setAttribute('aria-busy', 'true');
+    discussionRequest = typeof AbortController === 'function' ? new AbortController() : null;
+    writePlayerAction(body, discussionRequest && discussionRequest.signal).then(function () {
+      if (epoch !== discussionEpoch) return;
+      input.value = ''; delete discussionDrafts[draftKey(discussionSession)]; selectDiscussionReply(null);
+      message.textContent = '已发送，审核通过后显示';
+      goFocus(input);
+    }).catch(function (error) { if (epoch === discussionEpoch && error.name !== 'AbortError') message.textContent = error.message; })
+      .then(function () { if (epoch === discussionEpoch) { discussionBusy = false; discussionRequest = null; input.readOnly = false; document.getElementById('discussion-send').removeAttribute('aria-busy'); } });
+  }
   function openDiscussion(button) {
-    if (!activePlayback || !activePlayback.vid) { showNotice('开始播放后可查看本集评论'); return; }
-    clearTimeout(controlsTimer); discussionOpen = true; discussionReturn = button;
+    var session = playbackSnapshot();
+    if (!session) { showNotice('开始播放后可查看本集评论'); return; }
+    closePlayerOptions(false); clearTimeout(controlsTimer); discussionOpen = true; discussionReturn = button; discussionSession = session; ++discussionEpoch;
+    shell.classList.add('is-discussion-open');
     var panel = document.getElementById('discussion-panel'); panel.classList.remove('is-hidden'); panel.setAttribute('aria-hidden', 'false');
-    document.getElementById('discussion-title').textContent = '第' + activePlayback.episode + '集评论';
-    discussionPager.reset({ series_id: activePlayback.item.series_id, vid: activePlayback.vid });
+    document.getElementById('discussion-title').textContent = '第' + session.episode + '集评论';
+    document.getElementById('discussion-input').value = discussionDrafts[draftKey(session)] || ''; document.getElementById('discussion-message').textContent = ''; selectDiscussionReply(null);
+    discussionPager.reset({ series_id: session.series_id, vid: session.vid });
     goFocus(document.getElementById('discussion-close'));
   }
   function closeDiscussion(restore) {
     if (!discussionOpen) return;
-    discussionOpen = false; discussionPager.cancel();
+    if (discussionSession) storeDraft(discussionDrafts, draftKey(discussionSession), document.getElementById('discussion-input').value);
+    ++discussionEpoch; if (discussionRequest) discussionRequest.abort(); discussionRequest = null; discussionBusy = false; discussionSession = null;
+    document.getElementById('discussion-input').readOnly = false; document.getElementById('discussion-send').removeAttribute('aria-busy');
+    replyPagers.forEach(function (pager) { pager.cancel(); }); replyPagers = [];
+    discussionOpen = false; discussionPager.cancel(); shell.classList.remove('is-discussion-open');
     document.getElementById('discussion-panel').classList.add('is-hidden'); document.getElementById('discussion-panel').setAttribute('aria-hidden', 'true');
     if (restore !== false) { goFocus(discussionReturn || document.getElementById('hero-feed-focus')); scheduleControlsHide(); }
     discussionReturn = null;
+  }
+  function moveDiscussion(current, direction) {
+    var input = document.getElementById('discussion-input'); var close = document.getElementById('discussion-close');
+    var rows = focusables('.discussion-item,.discussion-reply');
+    if (current.id === 'discussion-close') return direction === 'down' ? rows[0] || firstVisible('#discussion-pagination .list-retry') || input : null;
+    if (current === input) return direction === 'up' ? rows[rows.length - 1] || close : direction === 'down' ? document.getElementById('discussion-send') : null;
+    if (current.closest('.discussion-compose-actions')) {
+      var composeActions = focusables('.discussion-compose-actions .discussion-action');
+      return direction === 'up' ? input : direction === 'left' || direction === 'right' ? composeActions[composeActions.indexOf(current) + (direction === 'right' ? 1 : -1)] || null : null;
+    }
+    if (current.classList.contains('list-retry')) return direction === 'down' ? input : rows[rows.length - 1] || close;
+    var root = current.closest('.discussion-item');
+    var row = current.closest('.discussion-reply') || root;
+    if (!row) return input;
+    if (direction === 'left' || direction === 'right') {
+      if (current === row) return direction === 'right' && root ? root.querySelector('.discussion-like') : close;
+      var actions = focusables('.discussion-like,.discussion-actions .discussion-action').filter(function (node) { return node.closest('.discussion-item') === root; });
+      actions.sort(function (a, b) { return a.classList.contains('discussion-like') ? -1 : b.classList.contains('discussion-like') ? 1 : 0; });
+      return actions[actions.indexOf(current) + (direction === 'right' ? 1 : -1)] || (direction === 'left' ? row : null);
+    }
+    if (direction === 'up' && current !== row) return row;
+    var index = rows.indexOf(row); var next = rows[index + (direction === 'down' ? 1 : -1)];
+    var pager = root && root.__replyPager && row.classList.contains('discussion-reply') ? root.__replyPager : discussionPager;
+    if (direction === 'down' && root && root.__replyPager && root.__replyPager.hasMore() && row.classList.contains('discussion-reply') && (!next || !root.contains(next))) {
+      loadDiscussionTail(root.__replyPager, row, current); return null;
+    }
+    if (next) return next;
+    if (direction === 'up') return close;
+    if (pager.error) return firstVisible('#' + pager.statusID + ' .list-retry') || input;
+    if (pager.hasMore()) { loadDiscussionTail(pager, row, current); return null; }
+    return input;
+  }
+  function loadDiscussionTail(pager, row, anchor) {
+    var epoch = discussionEpoch; var generation = pager.generation;
+    pager.load().then(function () {
+      if (epoch !== discussionEpoch || generation !== pager.generation || document.activeElement !== anchor) return;
+      if (pager.error) { goFocus(firstVisible('#' + pager.statusID + ' .list-retry')); return; }
+      var rows = focusables('.discussion-item,.discussion-reply'); goFocus(rows[rows.indexOf(row) + 1] || document.getElementById('discussion-input'));
+    });
   }
   function resetDanmaku() {
     ++danmakuGeneration; if (danmakuRequest) danmakuRequest.abort(); danmakuRequest = null;
@@ -305,7 +483,10 @@
   }
   function toggleDanmaku() {
     danmakuEnabled = !danmakuEnabled; resetDanmaku();
-    var button = document.querySelector('[data-action="danmaku"]'); button.setAttribute('aria-pressed', String(danmakuEnabled)); button.querySelector('small').textContent = danmakuEnabled ? '弹幕开' : '弹幕关'; tickDanmaku();
+    playbackPreferences.danmaku = danmakuEnabled; savePlaybackPreferences(); updateDanmakuButton(); tickDanmaku();
+  }
+  function updateDanmakuButton() {
+    var button = document.querySelector('[data-action="danmaku"]'); button.setAttribute('aria-pressed', String(danmakuEnabled)); button.querySelector('small').textContent = danmakuEnabled ? '弹幕开' : '弹幕关';
   }
   function tickDanmaku() {
     var video = document.getElementById('hero-video');
@@ -396,7 +577,8 @@
     if (element.classList.contains('account-input')) return 'accountInputs';
     if (element.classList.contains('account-action')) return 'accountActions';
     if (element.classList.contains('confirm-button')) return 'confirmation';
-    if (element.classList.contains('player-option')) return 'playerOptions';
+    if (element.classList.contains('player-option') || element.id === 'player-compose-input') return 'playerOptions';
+    if (element.closest('#discussion-panel')) return 'discussion';
     if (element.classList.contains('detail-episode')) return 'episodes';
     if (element.classList.contains('modal-action')) return 'modalActions';
     if (element.classList.contains('page-placeholder-action')) return 'placeholder';
@@ -554,16 +736,14 @@
   function moveFrom(current, direction) {
     if (confirmOpen) return direction === 'left' || direction === 'right' ? moveWithinZone('confirmation', current, direction) : null;
     if (playerOptionsOpen) {
-      if (current.id === 'player-options-close') return direction === 'down' ? document.querySelector('.player-option.is-selected') || firstVisible('#player-options-list .player-option') : null;
+      if (current.id === 'player-compose-input') return direction === 'down' ? document.getElementById('player-compose-send') : direction === 'up' ? document.getElementById('player-options-close') : null;
+      if (current.id === 'player-compose-send') return direction === 'up' ? document.getElementById('player-compose-input') : null;
+      if (current.id === 'player-options-close') return direction === 'down' ? firstVisible('#player-compose-input') || document.querySelector('.player-option.is-selected') || firstVisible('#player-options-list .player-option') : null;
       return moveGrid('#player-options-list .player-option', current, direction) || (direction === 'up' ? document.getElementById('player-options-close') : null);
     }
     if (detailModalOpen) return moveModalFrom(current, direction);
     if (discussionOpen) {
-      if (zoneOf(current) === 'listRetry') return direction === 'up' ? focusables('.discussion-item').slice(-1)[0] || document.getElementById('discussion-close') : null;
-      if (current.id === 'discussion-close') return direction === 'down' ? firstVisible('.discussion-item') || firstVisible('#discussion-pagination .list-retry') : null;
-      if (direction === 'up') return moveGrid('.discussion-item', current, 'up') || document.getElementById('discussion-close');
-      if (direction === 'down') return moveGrid('.discussion-item', current, 'down') || listBoundary(discussionPager, current, 'down');
-      return direction === 'left' ? document.getElementById('discussion-close') : null;
+      return moveDiscussion(current, direction);
     }
     var zone = zoneOf(current);
     if (zone === 'sidebar') {
@@ -783,6 +963,7 @@
   function handleKey(event) {
     var key = normalizedKey(event);
     var current = document.activeElement;
+    if (current && current.classList.contains('player-text-input') && ['Escape', 'ArrowUp', 'ArrowDown'].indexOf(key) < 0) return;
     if (current && current.classList.contains('account-input')) {
       if (key === 'Backspace' || key === 'Delete' || key === 'ArrowLeft' || key === 'ArrowRight') return;
       if (key === 'Enter') {
@@ -910,7 +1091,7 @@
     pause.setAttribute('aria-label', pause.textContent);
     document.querySelector('[data-action="speed"]').textContent = video.playbackRate + 'x';
     document.querySelector('[data-action="volume"]').textContent = video.muted || !video.volume ? '静音' : '音量 ' + Math.round(video.volume * 100) + '%';
-    document.querySelector('[data-action="quality"]').textContent = playbackQuality || '清晰度 · 自动';
+    document.querySelector('[data-action="quality"]').textContent = playbackQuality ? (playbackPreferences.quality ? '' : '自动 · ') + playbackQuality : '清晰度';
     document.querySelector('[data-action="fullscreen"]').textContent = shell.classList.contains('is-cinema') ? '退出全屏' : '全屏';
   }
   function savePlaybackPreferences() {
@@ -921,15 +1102,23 @@
       var saved = JSON.parse(localStorage.getItem('hongguo-tv-playback') || '{}');
       if (playbackSpeeds.indexOf(saved.speed) >= 0) playbackPreferences.speed = saved.speed;
       if (Number.isFinite(saved.volume) && saved.volume >= 0 && saved.volume <= 100) playbackPreferences.volume = saved.volume;
+      if (/^[1-9][0-9]{2,3}P$/.test(saved.quality || '')) playbackPreferences.quality = saved.quality;
+      danmakuEnabled = saved.danmaku === true; playbackPreferences.danmaku = danmakuEnabled;
     } catch (error) { /* Invalid preferences fall back to normal playback. */ }
     var video = document.getElementById('hero-video');
     video.playbackRate = playbackPreferences.speed;
     video.defaultPlaybackRate = playbackPreferences.speed;
     video.volume = playbackPreferences.volume / 100;
     video.muted = playbackPreferences.volume === 0;
+    updateDanmakuButton();
     updatePlaybackControls();
   }
   function closePlayerOptions(restoring) {
+    cancelQualitySwitch();
+    ++composeEpoch;
+    if (composeSession) storeDraft(danmakuDrafts, draftKey(composeSession), document.getElementById('player-compose-input').value);
+    if (composeRequest) composeRequest.abort(); composeRequest = null; composeBusy = false; composeSession = null;
+    document.getElementById('player-compose-input').readOnly = false; document.getElementById('player-compose-send').removeAttribute('aria-busy');
     playerOptionsOpen = false;
     document.getElementById('player-options').classList.add('is-hidden');
     var target = playerOptionsReturn;
@@ -937,22 +1126,89 @@
     if (restoring !== false) goFocus(target && document.contains(target) ? target : document.getElementById('hero-feed-focus'));
     scheduleControlsHide();
   }
+  function cancelQualitySwitch() {
+    ++qualityEpoch;
+    if (qualityRequest) qualityRequest.abort(); qualityRequest = null;
+    var old = qualityPrevious; qualityPrevious = null;
+    if (old && activePlayback === old.playback) {
+      setPlayerStatus('');
+      if (old.playing && !document.hidden && !applicationInBackground) document.getElementById('hero-video').play().catch(function () {});
+    }
+  }
+  function switchQuality(value) {
+    if (qualityPrevious || !activePlayback) return;
+    if (value === playbackQuality || value === playbackPreferences.quality) {
+      playbackPreferences.quality = value; savePlaybackPreferences(); updatePlaybackControls(); closePlayerOptions(); return;
+    }
+    var video = document.getElementById('hero-video'); var playback = activePlayback;
+    var epoch = ++qualityEpoch; var generation = feedGeneration;
+    qualityPrevious = { playback: playback, playing: !video.paused && !video.ended };
+    var previous = qualityPrevious; var position = video.currentTime;
+    video.pause(); document.getElementById('player-options-message').textContent = '正在准备 ' + (value || '自动清晰度') + '…';
+    qualityRequest = typeof AbortController === 'function' ? new AbortController() : null;
+    var q = new URLSearchParams({ series_id: playback.item.series_id, vid: playback.vid, quality: value });
+    fetchData('/api/v1/play/info?' + q, qualityRequest ? { signal: qualityRequest.signal } : {}).then(function (data) {
+      if (epoch !== qualityEpoch || generation !== feedGeneration || activePlayback !== playback || !playerOptionsOpen) return;
+      if (!data.path) throw new Error('服务没有返回视频地址');
+      qualityPrevious = null; qualityRequest = null;
+      playback.position = position; playback.started = false; playback.completed = false;
+      playbackQuality = data.quality || ''; playbackQualities = data.qualities || [];
+      playbackPreferences.quality = value; savePlaybackPreferences();
+      if (playbackRequest) playbackRequest.position = position;
+      video.src = data.path; video.load(); updatePlaybackControls(); closePlayerOptions();
+      setPlayerStatus('正在加载视频…');
+      if (previous.playing && !document.hidden && !applicationInBackground) video.play().catch(function () { setPlayerStatus(''); revealControls(); });
+    }).catch(function (error) {
+      if (epoch !== qualityEpoch || generation !== feedGeneration) return;
+      qualityPrevious = null; qualityRequest = null;
+      document.getElementById('player-options-message').textContent = error.message + '，原视频保留';
+      if (previous.playing && !document.hidden && !applicationInBackground) video.play().catch(function () {});
+    });
+  }
+  function sendDanmaku() {
+    var input = document.getElementById('player-compose-input'); var message = document.getElementById('player-options-message');
+    if (composeBusy || !composeSession || needPlayerLogin(message)) return;
+    var text = input.value.trim(); if (!text || Array.from(text).length > 100) { message.textContent = '请输入 1～100 字的弹幕'; goFocus(input); return; }
+    var epoch = composeEpoch; var session = Object.assign({}, composeSession); delete session.episode; session.action = 'danmaku'; session.text = text;
+    composeBusy = true; input.readOnly = true; document.getElementById('player-compose-send').setAttribute('aria-busy', 'true'); message.textContent = '正在发送…';
+    composeRequest = typeof AbortController === 'function' ? new AbortController() : null;
+    writePlayerAction(session, composeRequest && composeRequest.signal).then(function () {
+      if (epoch !== composeEpoch) return;
+      input.value = ''; delete danmakuDrafts[draftKey(composeSession)]; composeRequest = null;
+      closePlayerOptions(); showNotice('弹幕已发送，审核通过后显示');
+    }).catch(function (error) { if (epoch === composeEpoch && error.name !== 'AbortError') message.textContent = error.message; })
+      .then(function () { if (epoch === composeEpoch) { composeBusy = false; composeRequest = null; input.readOnly = false; document.getElementById('player-compose-send').removeAttribute('aria-busy'); } });
+  }
   function openPlayerOptions(kind, entry) {
     if (!isPlaybackPage()) return;
+    if (kind === 'quality' && (!activePlayback || !document.getElementById('hero-video').getAttribute('src'))) { showNotice('视频准备好后可选择清晰度'); return; }
+    if (kind === 'send-danmaku' && !playbackSnapshot()) { showNotice('开始播放后可发送弹幕'); return; }
+    if (playerOptionsOpen) closePlayerOptions(false);
     revealControls(); clearTimeout(controlsTimer);
     playerOptionsReturn = entry;
     playerOptionsOpen = true;
     var video = document.getElementById('hero-video');
-    var values = kind === 'speed' ? playbackSpeeds : [0, 25, 50, 75, 100];
-    var selected = kind === 'speed' ? video.playbackRate : video.muted ? 0 : Math.round(video.volume * 100);
-    document.getElementById('player-options-title').textContent = kind === 'speed' ? '播放倍速' : '音量';
+    var values = kind === 'speed' ? playbackSpeeds : kind === 'quality' ? [''].concat(playbackQualities) : [0, 25, 50, 75, 100];
+    var selected = kind === 'speed' ? video.playbackRate : kind === 'quality' ? playbackPreferences.quality : video.muted ? 0 : Math.round(video.volume * 100);
+    document.getElementById('player-options-title').textContent = ({ speed: '播放倍速', volume: '音量', quality: '清晰度', 'send-danmaku': '发弹幕' })[kind];
+    document.getElementById('player-options-message').textContent = kind === 'quality' ? '切换后从当前时间继续播放' : '';
+    document.getElementById('player-options').classList.toggle('is-composer', kind === 'send-danmaku');
+    document.getElementById('player-compose').classList.toggle('is-hidden', kind !== 'send-danmaku');
     var list = document.getElementById('player-options-list'); list.innerHTML = '';
+    list.classList.toggle('is-hidden', kind === 'send-danmaku');
+    if (kind === 'send-danmaku') {
+      composeSession = playbackSnapshot(); composeSession.offset_ms = Math.floor(video.currentTime * 1000); ++composeEpoch;
+      document.getElementById('player-compose-label').textContent = '第' + composeSession.episode + '集 · ' + clockText(video.currentTime);
+      document.getElementById('player-compose-input').value = danmakuDrafts[draftKey(composeSession)] || '';
+      document.getElementById('player-options').classList.remove('is-hidden'); goFocus(document.getElementById('player-compose-input')); return;
+    }
     values.forEach(function (value, index) {
       var option = document.createElement('button');
       option.className = 'player-option' + (value === selected ? ' is-selected' : '');
       option.dataset.focus = 'player-option-' + index;
-      option.textContent = kind === 'speed' ? value + 'x' : value === 0 ? '静音' : value + '%';
+      option.textContent = kind === 'speed' ? value + 'x' : kind === 'quality' ? value || '自动' : value === 0 ? '静音' : value + '%';
       option.addEventListener('click', function () {
+        if (kind === 'quality') { switchQuality(value); return; }
         try {
           if (kind === 'speed') { video.playbackRate = value; video.defaultPlaybackRate = value; playbackPreferences.speed = value; }
           else { video.volume = value / 100; video.muted = value === 0; playbackPreferences.volume = value; }
@@ -1015,6 +1271,7 @@
   }
   function pauseForBackground() {
     applicationInBackground = true;
+    cancelQualitySwitch();
     ++continuationGeneration;
     if (activePlayback && activePlayback.continuationPending) setPlayerStatus('');
     saveProgress(true);
@@ -1229,8 +1486,11 @@
     accountCountdownUntil = Date.now() + (data.retry_after || 0) * 1000;
     if (owner !== previousOwner || owner !== (libraryData.owner_id || '')) {
       ++accountEpoch;
+      if (confirmOpen) closeConfirmation();
+      closePlayerOptions(false);
       allPagers.forEach(function (pager) { pager.cancel(); pager.loaded = false; pager.items = []; pager.buffer = []; if (pager.container) pager.container.innerHTML = ''; });
       closeDiscussion(false); resetDanmaku();
+      discussionDrafts = {}; danmakuDrafts = {};
       calendarSchema = null;
       if (pageMode() === 'reservations') renderReservations(reservationMode);
       else if (pageMode() === 'new') { if (newMode === 'calendar') loadCalendar(); else loadNew(); }
@@ -1529,6 +1789,7 @@
   }
 
   function playFeedItem(index, forcedEpisode, forcedPosition) {
+    closePlayerOptions(false);
     closeDiscussion(false); resetDanmaku();
     if (!feedItems.length) return;
     if (index < 0) index = feedItems.length - 1;
@@ -1547,6 +1808,7 @@
     activePlayback = null;
     playbackRequest = { index: index, episode: forcedEpisode, position: forcedPosition };
     playbackQuality = '';
+    playbackQualities = [];
     feedIndex = index;
     if (pageMode() === 'recommend' && feedIndex >= feedItems.length - 3 && !feedPager.error) feedPager.load();
     updateFeedCounter();
@@ -1577,7 +1839,7 @@
         activePlayback = { item: playing, episode: episode, vid: vid, position: position, generation: generation, started: false, lastWrite: 0, completed: false };
         setFeatured(playing);
         setPlayerStatus('正在准备第 ' + episode + ' 集…');
-        return fetch('/api/v1/play/info?series_id=' + encodeURIComponent(item.series_id) + '&vid=' + encodeURIComponent(vid));
+        return fetch('/api/v1/play/info?series_id=' + encodeURIComponent(item.series_id) + '&vid=' + encodeURIComponent(vid) + '&quality=' + encodeURIComponent(playbackPreferences.quality) + '&fallback=1');
       });
     })
       .then(function (response) { if (!response) return null; if (!response.ok) throw new Error('播放 HTTP ' + response.status); return response.json(); })
@@ -1587,6 +1849,8 @@
         if (!payload.ok || !payload.data || !payload.data.path) throw new Error(payload.error || '播放服务没有返回地址');
         video.src = payload.data.path;
         playbackQuality = payload.data.quality || '';
+        playbackQualities = payload.data.qualities || [];
+        if (playbackPreferences.quality && playbackQuality !== playbackPreferences.quality) showNotice('本集没有 ' + playbackPreferences.quality + '，使用 ' + (playbackQuality || '自动清晰度'));
         updatePlaybackControls();
         video.classList.add('has-source');
         placeholder.classList.add('is-hidden');
@@ -2300,9 +2564,8 @@
         if (featuredItem) openDetail(featuredItem);
         else showNotice('当前还没有可打开的短剧。');
       }
-      else if (item.dataset.action === 'speed' || item.dataset.action === 'volume') openPlayerOptions(item.dataset.action, item);
+      else if (['speed', 'volume', 'quality', 'send-danmaku'].indexOf(item.dataset.action) >= 0) openPlayerOptions(item.dataset.action, item);
       else if (item.dataset.action === 'fullscreen') toggleCinema();
-      else if (item.dataset.action === 'quality') showNotice(playbackQuality ? '当前清晰度 ' + playbackQuality + ' · 自动选择' : '播放后显示实际清晰度');
       else if (item.dataset.action === 'retry') {
         if (playbackRequest) { goFocus(document.getElementById('hero-feed-focus')); playFeedItem(playbackRequest.index, playbackRequest.episode, playbackRequest.position); }
       }
@@ -2364,6 +2627,9 @@
     startPlayer(item, returnFocus);
   });
   document.getElementById('discussion-close').addEventListener('click', function () { closeDiscussion(); });
+  document.getElementById('discussion-send').addEventListener('click', sendDiscussion);
+  document.getElementById('discussion-cancel-reply').addEventListener('click', function () { selectDiscussionReply(null); goFocus(document.getElementById('discussion-input')); });
+  document.getElementById('player-compose-send').addEventListener('click', sendDanmaku);
   document.getElementById('detail-save').addEventListener('click', function () { toggleSaved(currentDetail, 'favorite', this); });
   document.getElementById('library-manage').addEventListener('click', function () {
     if (libraryError) { libraryReady = loadLibrary(); return; }

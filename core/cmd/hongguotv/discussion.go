@@ -18,6 +18,8 @@ type DiscussionItem struct {
 	Likes     int    `json:"likes,omitempty"`
 	Replies   int    `json:"replies,omitempty"`
 	OffsetMS  int64  `json:"offset_ms"`
+	Liked     bool   `json:"liked,omitempty"`
+	Own       bool   `json:"own,omitempty"`
 }
 type DiscussionResult struct {
 	Items      []DiscussionItem `json:"items"`
@@ -77,17 +79,11 @@ func (c *passportClient) Discussion(ctx context.Context, q url.Values, danmaku b
 	for _, value := range rows {
 		row, _ := asMap(value)
 		comment, _ := asMap(row["comment"])
-		common, _ := asMap(comment["common"])
-		content, _ := asMap(common["content"])
-		expand, _ := asMap(comment["expand"])
-		stat, _ := asMap(comment["stat"])
-		user, _ := asMap(common["user_info"])
-		base, _ := asMap(user["base_info"])
-		id, text := asString(comment["comment_id"]), asString(content["text"])
-		if id == "" || text == "" {
+		item := discussionItem(comment, false, c.uid)
+		if item.CommentID == "" || item.Text == "" {
 			continue
 		}
-		out.Items = append(out.Items, DiscussionItem{CommentID: id, Text: text, Author: asString(base["user_name"]), Avatar: firstNonEmpty(asString(base["expand_user_avatar"]), asString(base["user_avatar"])), Created: asInt64(common["create_timestamp"]), Likes: asInt(stat["digg_count"]), Replies: asInt(stat["reply_count"]), OffsetMS: asInt64(expand["offset_time"])})
+		out.Items = append(out.Items, item)
 	}
 	if out.NextCursor == "" || out.NextCursor == q.Get("cursor") {
 		out.HasMore = false
@@ -100,6 +96,25 @@ func (c *passportClient) Discussion(ctx context.Context, q url.Values, danmaku b
 	return out, nil
 }
 
+func discussionItem(comment map[string]any, reply bool, uid string) DiscussionItem {
+	common, _ := asMap(comment["common"])
+	if common == nil {
+		common, _ = asMap(comment["Common"])
+	}
+	content, _ := asMap(common["content"])
+	expand, _ := asMap(comment["expand"])
+	stat, _ := asMap(comment["stat"])
+	user, _ := asMap(common["user_info"])
+	base, _ := asMap(user["base_info"])
+	userID := firstNonEmpty(asString(base["user_id"]), asString(user["user_id"]))
+	action, _ := asMap(comment["user_action"])
+	id := asString(comment["comment_id"])
+	if reply {
+		id = asString(comment["reply_id"])
+	}
+	return DiscussionItem{CommentID: id, Text: asString(content["text"]), Author: asString(base["user_name"]), Avatar: firstNonEmpty(asString(base["expand_user_avatar"]), asString(base["user_avatar"])), Created: asInt64(common["create_timestamp"]), Likes: asInt(stat["digg_count"]), Replies: asInt(stat["reply_count"]), OffsetMS: asInt64(expand["offset_time"]), Liked: asBool(action["user_digg"]), Own: uid != "" && uid == userID}
+}
+
 func (s *server) discussion(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, 405, "method not allowed")
@@ -110,7 +125,12 @@ func (s *server) discussion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 401, e.Error())
 		return
 	}
-	out, e := c.Discussion(r.Context(), r.URL.Query(), r.URL.Path == "/api/v1/danmaku")
+	var out DiscussionResult
+	if r.URL.Path == "/api/v1/replies" {
+		out, e = c.Replies(r.Context(), r.URL.Query())
+	} else {
+		out, e = c.Discussion(r.Context(), r.URL.Query(), r.URL.Path == "/api/v1/danmaku")
+	}
 	if !s.accounts.sameGeneration(g) {
 		writeError(w, 409, errAccountChanged.Error())
 		return

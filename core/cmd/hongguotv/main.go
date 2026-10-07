@@ -78,6 +78,8 @@ func main() {
 	mux.HandleFunc("/api/v1/reservation", s.reservation)
 	mux.HandleFunc("/api/v1/comments", s.discussion)
 	mux.HandleFunc("/api/v1/danmaku", s.discussion)
+	mux.HandleFunc("/api/v1/replies", s.discussion)
+	mux.HandleFunc("/api/v1/player/action", s.playerAction)
 	mux.HandleFunc("/api/v1/Search", s.search)
 	mux.HandleFunc("/api/v1/play/info", s.playInfo)
 	mux.HandleFunc("/api/v1/PlayInfo", s.playInfo)
@@ -96,7 +98,7 @@ func main() {
 
 func (s *server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/v1/account") || strings.HasPrefix(r.URL.Path, "/api/v1/lists/") || r.URL.Path == "/api/v1/reservation" || r.URL.Path == "/api/v1/comments" || r.URL.Path == "/api/v1/danmaku" || r.URL.Path == "/api/v1/library" {
+		if strings.HasPrefix(r.URL.Path, "/api/v1/account") || strings.HasPrefix(r.URL.Path, "/api/v1/lists/") || strings.HasPrefix(r.URL.Path, "/api/v1/player/") || r.URL.Path == "/api/v1/replies" || r.URL.Path == "/api/v1/reservation" || r.URL.Path == "/api/v1/comments" || r.URL.Path == "/api/v1/danmaku" || r.URL.Path == "/api/v1/library" {
 			if !privateLocalRequest(r) {
 				writeError(w, http.StatusForbidden, "只允许应用本身访问账号和记录")
 				return
@@ -254,7 +256,12 @@ func (s *server) playInfo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	result, err := s.hongguo.PlayInfo(r.Context(), r.URL.Query().Get("series_id"), r.URL.Query().Get("vid"))
+	quality, err := normalizePlaybackQuality(r.URL.Query().Get("quality"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, err := s.hongguo.PlayInfoQuality(r.Context(), r.URL.Query().Get("series_id"), r.URL.Query().Get("vid"), quality, r.URL.Query().Get("fallback") == "1")
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return

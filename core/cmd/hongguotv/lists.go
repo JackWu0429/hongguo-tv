@@ -47,7 +47,11 @@ func (m *accountManager) listClient(requireLogin bool) (*passportClient, uint64,
 	if requireLogin && m.disk.Profile == nil {
 		return nil, 0, errListLogin
 	}
-	return m.newClient(m.disk.Session), m.generation, nil
+	c := m.newClient(m.disk.Session)
+	if m.disk.Profile != nil {
+		c.uid = m.disk.Profile.UID
+	}
+	return c, m.generation, nil
 }
 func (m *accountManager) sameGeneration(g uint64) bool {
 	m.mu.Lock()

@@ -26,6 +26,7 @@ type accountSession struct {
 }
 
 type passportClient struct {
+	uid     string
 	http    *http.Client
 	base    string
 	session accountSession
@@ -66,6 +67,10 @@ func (c *passportClient) request(ctx context.Context, path, method string, param
 	r.Header.Set("X-SS-DP", "8662")
 	r.Header.Set("X-Tt-Store-Region", "cn")
 	r.Header.Set("X-Tt-Store-Region-Src", "did")
+	if strings.HasPrefix(path, "/novel/commentapi/reply/list/") {
+		r.Header.Set("comment-source", "504")
+		r.Header.Set("server-channel", "18")
+	}
 	if contentType != "" {
 		r.Header.Set("Content-Type", contentType)
 	}

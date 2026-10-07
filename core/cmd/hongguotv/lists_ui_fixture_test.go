@@ -2,6 +2,7 @@ package main
 
 // Opt-in TV browser fixture: no SMS, cloud writes, media downloads or production account.
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -12,12 +13,17 @@ import (
 )
 
 func TestListsBrowserFixture(t *testing.T) {
-	if os.Getenv("HONGGUO_LISTS_UI_FIXTURE") != "1" {
+	playerFixture := os.Getenv("HONGGUO_PLAYER_UI_FIXTURE") == "1"
+	if os.Getenv("HONGGUO_LISTS_UI_FIXTURE") != "1" && !playerFixture {
 		t.Skip("isolated UI fixture")
 	}
 	var mu sync.Mutex
 	calls := []string{}
 	var failNew bool
+	var failQuality bool
+	var guest bool
+	writes := []PlayerAction{}
+	deleted := map[string]bool{}
 	ranks := []RankOption{
 		{ID: "all", Label: "全部", Children: []RankOption{{ID: "ranklist_hot_play_sc", Label: "热播榜", Panels: []CategoryFilterRow{{Type: "other", Label: "综合", Options: []CategoryFilterOption{{ID: "", Label: "总榜"}, {ID: "gender_male", Label: "男频"}, {ID: "gender_female", Label: "女频"}}}}}, {ID: "ranklist_subscribe", Label: "预约榜"}}},
 		{ID: "human", Label: "真人剧", Children: []RankOption{{ID: "human_hot_play", Label: "热播榜"}}},
@@ -40,6 +46,12 @@ func TestListsBrowserFixture(t *testing.T) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/account", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if guest {
+			writeJSON(w, 200, map[string]any{"ok": true, "data": map[string]any{"logged_in": false, "sync": map[string]any{"state": "idle"}}})
+			return
+		}
 		writeJSON(w, 200, map[string]any{"ok": true, "data": map[string]any{"logged_in": true, "profile": map[string]any{"uid": "fixture", "name": "测试账号"}, "sync": map[string]any{"state": "idle"}}})
 	})
 	mux.HandleFunc("/api/v1/library", func(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +66,60 @@ func TestListsBrowserFixture(t *testing.T) {
 		}
 		writeJSON(w, 200, calls)
 	})
+	if playerFixture {
+		mux.HandleFunc("/fixture/player/state", func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			if r.URL.Query().Get("fail_quality") == "1" {
+				failQuality = true
+			}
+			if r.URL.Query().Get("guest") != "" {
+				guest = r.URL.Query().Get("guest") == "1"
+			}
+			writeJSON(w, 200, map[string]any{"writes": writes, "calls": calls})
+		})
+		mux.HandleFunc("/api/v1/player/action", func(w http.ResponseWriter, r *http.Request) {
+			var a PlayerAction
+			dec := json.NewDecoder(r.Body)
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&a); err != nil {
+				writeError(w, 400, err.Error())
+				return
+			}
+			if err := a.validate(); err != nil {
+				writeError(w, 400, err.Error())
+				return
+			}
+			mu.Lock()
+			isGuest := guest
+			writes = append(writes, a)
+			mu.Unlock()
+			if isGuest {
+				writeError(w, 401, "请先登录红果账号")
+				return
+			}
+			if a.Text == "失败" {
+				writeError(w, 502, "测试发送失败，输入仍保留")
+				return
+			}
+			if a.Text == "延迟" {
+				select {
+				case <-r.Context().Done():
+					return
+				case <-time.After(700 * time.Millisecond):
+				}
+			}
+			if a.Action == "comment-delete" {
+				mu.Lock()
+				deleted[a.CommentID] = true
+				mu.Unlock()
+			}
+			writeJSON(w, 200, map[string]any{"ok": true, "data": DiscussionItem{CommentID: "7691344565400093503", Text: a.Text, Own: true}})
+		})
+		mux.HandleFunc("/fixture-media.mp4", func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFile(w, r, os.Getenv("HONGGUO_PLAYER_FIXTURE_MEDIA"))
+		})
+	}
 	mux.HandleFunc("/api/v1/", func(w http.ResponseWriter, r *http.Request) {
 		offset := parseQueryInt(r, "offset")
 		q := r.URL.Query()
@@ -79,9 +145,24 @@ func TestListsBrowserFixture(t *testing.T) {
 			offset, _ = strconv.Atoi(q.Get("cursor"))
 			items := []DiscussionItem{}
 			for i := offset; i < offset+20 && i < 70; i++ {
-				items = append(items, DiscussionItem{CommentID: strconv.Itoa(i + 1), Text: fmt.Sprintf("测试评论 %d：滚动加载时保持焦点和原有列表。", i+1), Author: "测试观众", Likes: i})
+				mu.Lock()
+				removed := deleted[strconv.Itoa(i+1)]
+				mu.Unlock()
+				if removed {
+					continue
+				}
+				items = append(items, DiscussionItem{CommentID: strconv.Itoa(i + 1), Text: fmt.Sprintf("测试评论 %d：滚动加载时保持焦点和原有列表。", i+1), Author: "测试观众", Likes: i, Replies: 2, Own: i == 0, Created: time.Now().Unix() - 86400})
 			}
 			writeJSON(w, 200, map[string]any{"ok": true, "data": DiscussionResult{Items: items, HasMore: offset+20 < 70, NextCursor: strconv.Itoa(offset + 20), Total: 70}})
+			return
+		}
+		if r.URL.Path == "/api/v1/replies" && playerFixture {
+			offset, _ := strconv.Atoi(q.Get("cursor"))
+			items := []DiscussionItem{}
+			for i := offset; i < offset+20 && i < 35; i++ {
+				items = append(items, DiscussionItem{CommentID: strconv.Itoa(i + 101), Text: fmt.Sprintf("回复 %d", i+1), Author: "回复观众"})
+			}
+			writeJSON(w, 200, map[string]any{"ok": true, "data": DiscussionResult{Items: items, HasMore: offset+20 < 35, NextCursor: strconv.Itoa(offset + 20), Total: 35}})
 			return
 		}
 		if r.URL.Path == "/api/v1/danmaku" {
@@ -90,6 +171,28 @@ func TestListsBrowserFixture(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/api/v1/play/info" {
+			if playerFixture {
+				mu.Lock()
+				fail := failQuality && q.Get("quality") == "1080P"
+				if fail {
+					failQuality = false
+				}
+				mu.Unlock()
+				if q.Get("quality") != "" {
+					select {
+					case <-r.Context().Done():
+						return
+					case <-time.After(700 * time.Millisecond):
+					}
+				}
+				if fail {
+					writeError(w, 502, "测试清晰度切换失败")
+					return
+				}
+				quality := firstNonEmpty(q.Get("quality"), "720P")
+				writeJSON(w, 200, map[string]any{"ok": true, "data": PlayInfo{Path: "/fixture-media.mp4?quality=" + quality, Quality: quality, Qualities: []string{"480P", "720P", "1080P"}, Vid: q.Get("vid")}})
+				return
+			}
 			writeError(w, 502, "测试不播放媒体")
 			return
 		}
@@ -125,6 +228,10 @@ func TestListsBrowserFixture(t *testing.T) {
 		writeJSON(w, 200, map[string]any{"ok": true, "data": out})
 	})
 	mux.Handle("/", http.FileServer(http.Dir("ui")))
-	t.Log("list fixture http://127.0.0.1:18797/")
-	t.Fatal(http.ListenAndServe("127.0.0.1:18797", mux))
+	addr := "127.0.0.1:18797"
+	if playerFixture {
+		addr = "127.0.0.1:18897"
+	}
+	t.Log("UI fixture http://" + addr + "/")
+	t.Fatal(http.ListenAndServe(addr, mux))
 }

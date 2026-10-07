@@ -202,7 +202,7 @@ func TestCoverFallbackPreservesSignedOriginal(t *testing.T) {
 
 func TestPlayInfoUsesEmbeddedPlaybackOnly(t *testing.T) {
 	client := newHongguoClient()
-	client.internalPlayback = func(_ context.Context, seriesID, vid string) (PlayInfo, error) {
+	client.internalPlayback = func(_ context.Context, seriesID, vid, quality string, fallback bool) (PlayInfo, error) {
 		if seriesID != "123" || vid != "456" {
 			t.Fatalf("unexpected embedded playback arguments: %s/%s", seriesID, vid)
 		}

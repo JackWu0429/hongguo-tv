@@ -15,6 +15,7 @@
 | 推荐四频道 | GET `/reading/bookapi/bookmall/tab/v` 与 `/reading/bookapi/bookmall/cell/change/v` | `/api/v1/lists/recommend` | 关注=45、漫剧=36、真人剧=39、推荐=16；tab→cell 阶段 |
 | 当前集评论 | GET `/novel/commentapi/comment/list/{vid}/v1/` | `/api/v1/comments` | 原样传递 JSON 字符串 cursor |
 | 当前集弹幕 | 同上 | `/api/v1/danmaku` | 当前时间的 30 秒窗口 |
+| 评论楼中楼 | POST `/novel/commentapi/reply/list/{comment_id}/v1/` | GET `/api/v1/replies` | comment_source=504、count=10、原始 cursor |
 | 关键词搜索 | GET `/reading/bookapi/search/tab/v`；官网 `/search/{query}` | `/api/v1/lists/search` | search_id/passback/offset；首批失败回退网页 |
 | 历史、收藏、点赞 | 既有本机库/账号同步 | `/api/v1/library` | 已保存数据每 20 条渐进显示 |
 
@@ -47,7 +48,8 @@ Go 和 Node 测试覆盖字段、ID 精度、预约成功确认、账号隔离�
 
 - 匿名 App 搜索当前 HTTP 200 空响应，保留官网搜索。官网没有已确认的远程分页契约，只展示真实返回的单批结果。
 - 真实账号关注、预约写入、登录风控和跨设备同步需要 APK 验收；本轮没有发送短信或写真实云端，fixture 不等于真实账号验证。
-- 评论发表/回复/点赞、弹幕发送/点赞、演员主页、关注写操作、下载管理、手动清晰度、找剧长度筛选及打赏尚未实现，不用其它数据冒充。
+- 评论发表/回复/点赞/本人删除、弹幕发送及手动清晰度已接入，协议与验证范围见 [播放操作](player-actions.md)。真实账号写入仍待验收。
+- 弹幕点赞、演员主页、关注写操作、下载管理、找剧长度筛选及打赏尚未实现，不用其它数据冒充。
 - 实体 TV 遥控器、不同 WebView 和长时间播放按此前约定暂缓。
 
 证据来自 Mac v1.1.5 静态注册表、Go 类型与反汇编；二进制 SHA256 为 72d00b6af7bb69ea9cfb61344ce4592c9f5ba8c404fde5029aaf89a7713dd22d。原始响应与二进制保留在仓库外，不提交账号或设备身份信息。
