@@ -92,7 +92,7 @@ def publish(directory, notes):
     if release['draft']:
         raise RuntimeError('Release remains a draft; update metadata was not changed')
     old_result = gh('api', f'repos/{REPOSITORY}/contents/update.json', required=False)
-    payload = {'message': f'Publish Android update {tag}', 'content': base64.b64encode(manifest_path.read_bytes()).decode()}
+    payload = {'message': f'Publish Android TV update {tag}', 'content': base64.b64encode(manifest_path.read_bytes()).decode()}
     if old_result.returncode == 0:
         old = json.loads(old_result.stdout)
         previous = json.loads(base64.b64decode(old['content']))
