@@ -4,19 +4,23 @@ const {create} = require('../core/cmd/hongguotv/ui/episode-prefetch.js');
 const deferred = () => {let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 const tick = () => new Promise(r=>setImmediate(r));
 const info = (extra={}) => ({series_id:'123',vid:'111',episode:1,quality:'720P',generation:3,owner:2,
-  duration:120,position:76,active:true,started:true,paused:false,ended:false,...extra});
+  duration:120,position:8,stable_seconds:5,active:true,started:true,paused:false,ended:false,...extra});
 const target = (extra={}) => ({series_id:'123',vid:'222',episode:2,quality:'720P',owner:2,...extra});
 function fixture(lookup) {
   const calls=[],signals=[];
   const p=create({lookup:lookup || (async x=>target({quality:x.quality})),prepare:async(x,signal)=>{calls.push(x);signals.push(signal);return {path:'/media/next.mp4'};}});
   return {p,calls,signals};
 }
-test('starts once after 62 percent or in the final 45 seconds, never before five seconds', async()=>{
+test('starts once after five stable playback seconds, early in a long episode', async()=>{
   const f=fixture();
-  for(const x of [info({position:4,duration:10}),info({position:74,duration:120}),info({paused:true}),info({active:false}),info({started:false}),info({ended:true}),info({duration:NaN}),info({duration:Infinity})]) f.p.maybe(x);
+  for(const x of [info({stable_seconds:4.99}),info({stable_seconds:0,position:110}),info({stable_seconds:NaN}),info({stable_seconds:undefined}),info({paused:true}),info({active:false}),info({started:false}),info({ended:true}),info({duration:NaN}),info({duration:Infinity})]) f.p.maybe(x);
   await tick();assert.equal(f.calls.length,0);
-  f.p.maybe(info({position:74.4}));f.p.maybe(info({position:90}));await tick();assert.equal(f.calls.length,1);
-  const g=fixture();g.p.maybe(info({duration:60,position:15}));await tick();assert.equal(g.calls.length,1);
+  f.p.maybe(info());f.p.maybe(info({position:90}));await tick();assert.equal(f.calls.length,1);
+  const g=fixture();g.p.maybe(info({duration:600,position:2.5}));await tick();assert.equal(g.calls.length,1);
+});
+test('seek and resume position alone do not bypass the stable interval',async()=>{
+  const f=fixture();f.p.maybe(info({position:119,stable_seconds:0}));await tick();assert.equal(f.calls.length,0);
+  f.p.maybe(info({position:119,stable_seconds:5}));await tick();assert.equal(f.calls.length,1);
 });
 test('does not recursively prepare further episodes or another season',async()=>{
   const f=fixture();f.p.maybe(info());await tick();for(let i=0;i<10;i++)f.p.maybe(info({position:110}));await tick();assert.equal(f.calls.length,1);

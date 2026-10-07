@@ -181,6 +181,9 @@
   var playbackRequest = null;
   var playbackInfoRequest = null;
   var playbackPrefetchHandoff = null;
+  var playbackTiming = [];
+  // Bounded, memory-only diagnostics. No drama IDs, titles or account data.
+  window.HongguoTVPlaybackTiming = { snapshot: function () { return playbackTiming.map(function (item) { return Object.assign({}, item); }); } };
   var episodePrefetch = HongguoEpisodePrefetch.create({
     lookup: function (info, signal) {
       return getDetail(info.item, signal).then(function (detail) {
@@ -2082,7 +2085,7 @@
     getDetail(playback.item).then(function (detail) {
       if (!canContinuePlayback(playback)) return;
       if (detail.vid_list && detail.vid_list[playback.episode]) {
-        playFeedItem(feedIndex, playback.episode + 1, 0);
+        playFeedItem(feedIndex, playback.episode + 1, 0, playback);
         return;
       }
       // Missing/incomplete episode data must not be mistaken for season end.
@@ -2199,9 +2202,10 @@
     episodePrefetch.maybe({ item: playback.item, series_id: playback.item.series_id, vid: playback.vid,
       episode: playback.episode, quality: playbackPreferences.quality, generation: playback.generation, owner: accountEpoch,
       duration: Number(video.duration), position: Number(video.currentTime), paused: video.paused, ended: video.ended,
+      stable_seconds: playback.stableSince ? Math.max(0, Date.now() - playback.stableSince) / 1000 : 0,
       started: playback.started, active: playback.generation === feedGeneration && isPlaybackPage() && !applicationInBackground && !document.hidden && !qualityPrevious });
   }
-  function playFeedItem(index, forcedEpisode, forcedPosition) {
+  function playFeedItem(index, forcedEpisode, forcedPosition, continuation) {
     closePlayerOptions(false);
     closeDiscussion(false); resetDanmaku();
     if (!feedItems.length) return;
@@ -2218,11 +2222,17 @@
     if (index >= feedItems.length) return;
     var item = feedItems[index];
     if (!item || !item.series_id) return;
+    var switchStartedAt = Date.now();
+    var fastContinuation = !!(continuation && continuation.completed && canContinuePlayback(continuation) &&
+      continuation.owner === accountEpoch && continuation.item.series_id === item.series_id &&
+      forcedEpisode === continuation.episode + 1 && forcedPosition === 0 && libraryLoaded);
     cancelPlaybackPreparation();
     var request = new AbortController();
     playbackInfoRequest = request;
     episodePrefetch.keepFor(item.series_id, forcedEpisode, playbackPreferences.quality, accountEpoch);
-    saveProgress(true);
+    // ended has already queued the completed episode. Keep that write alive,
+    // but do not queue it twice or make the next source wait for its fsync.
+    if (!fastContinuation) saveProgress(true);
     activePlayback = null;
     playbackRequest = { index: index, episode: forcedEpisode, position: forcedPosition };
     playbackQuality = '';
@@ -2249,7 +2259,8 @@
     video.removeAttribute('src');
     video.load();
     updatePlaybackControls();
-    Promise.resolve(libraryReady).then(function () { return libraryQueue.catch(function () {}); }).then(function () {
+    var waitForLibrary = fastContinuation ? Promise.resolve() : Promise.resolve(libraryReady).then(function () { return libraryQueue.catch(function () {}); });
+    waitForLibrary.then(function () {
       if (generation !== feedGeneration || request.signal.aborted) return null;
       var entry = libraryEntry(item.series_id);
       var episode = forcedEpisode || resumeEpisode(entry, item);
@@ -2263,7 +2274,8 @@
         var vid = episode === 1 ? firstVid(detail) : detail.vid_list && detail.vid_list[episode - 1];
         if (!vid) throw new Error('第' + episode + '集暂无视频数据');
         var playing = Object.assign({}, item, detail, { start_episode: episode, vid: vid });
-        activePlayback = { item: playing, episode: episode, vid: vid, position: position, generation: generation, started: false, lastWrite: 0, completed: false };
+        activePlayback = { item: playing, episode: episode, vid: vid, position: position, generation: generation, owner: accountEpoch, started: false, stableSince: 0, lastWrite: 0, completed: false,
+          timing: { episode: episode, automatic_next: fastContinuation, started_at: switchStartedAt, ready_at: 0, prefetch_ms: null, prepared_before_switch: false, reported: false } };
         setFeatured(playing);
         setPlayerStatus(episodeLoadingText(episode));
         var target = { series_id: item.series_id, vid: vid, episode: episode, quality: playbackPreferences.quality, owner: accountEpoch };
@@ -2272,6 +2284,10 @@
         return (handoff ? handoff.promise : Promise.resolve()).then(function () {
           if (generation !== feedGeneration || request.signal.aborted || applicationInBackground || document.hidden) return null;
           playbackPrefetchHandoff = null;
+          if (handoff && handoff.timing.ready_at) {
+            activePlayback.timing.prefetch_ms = Math.max(0, handoff.timing.ready_at - handoff.timing.started_at);
+            activePlayback.timing.prepared_before_switch = handoff.timing.ready_at <= switchStartedAt;
+          }
           // Revalidate the prepared cache entry; the core reuses the same file
           // and retries a failed speculative job through the normal resolver.
           var params = { series_id: item.series_id, vid: vid, quality: playbackPreferences.quality, fallback: '1' };
@@ -2284,6 +2300,7 @@
         if (!data) return;
         playbackInfoRequest = null;
         if (!data.path) throw new Error('播放服务没有返回地址');
+        activePlayback.timing.ready_at = Date.now();
         video.src = data.path;
         playbackQuality = data.quality || '';
         playbackQualities = data.qualities || [];
@@ -3509,6 +3526,16 @@
     if (applicationInBackground || document.hidden) { media.pause(); return; }
     document.getElementById('hero').classList.remove('is-preparing-video');
     activePlayback.started = true;
+    activePlayback.stableSince = Date.now();
+    if (activePlayback.timing && !activePlayback.timing.reported) {
+      var timing = activePlayback.timing;
+      timing.reported = true;
+      playbackTiming.push({ episode: timing.episode, automatic_next: timing.automatic_next, prefetch_ms: timing.prefetch_ms,
+        prepared_before_switch: timing.prepared_before_switch,
+        source_ready_ms: Math.max(0, timing.ready_at - timing.started_at),
+        video_start_ms: Math.max(0, Date.now() - timing.ready_at), total_ms: Math.max(0, Date.now() - timing.started_at) });
+      if (playbackTiming.length > 20) playbackTiming.shift();
+    }
     setPlayerStatus(''); updatePlaybackControls(); scheduleControlsHide();
     saveProgress(true);
   });
@@ -3520,6 +3547,7 @@
     saveProgress(false);
   });
   media.addEventListener('pause', function () {
+    if (activePlayback) activePlayback.stableSince = 0;
     document.getElementById('danmaku-layer').classList.add('is-paused');
     saveProgress(true); updatePlaybackControls();
     if (activePlayback && activePlayback.started && media.getAttribute('src') && media.paused && !media.ended) revealControls();
@@ -3527,14 +3555,15 @@
   media.addEventListener('ratechange', updatePlaybackControls);
   media.addEventListener('volumechange', updatePlaybackControls);
   media.addEventListener('emptied', updatePlaybackControls);
-  media.addEventListener('waiting', function () { if (activePlayback) setPlayerStatus(activePlayback.started ? '正在缓冲…' : episodeLoadingText(activePlayback.episode)); });
+  media.addEventListener('waiting', function () { if (activePlayback) { activePlayback.stableSince = 0; setPlayerStatus(activePlayback.started ? '正在缓冲…' : episodeLoadingText(activePlayback.episode)); } });
+  media.addEventListener('seeking', function () { if (activePlayback) activePlayback.stableSince = 0; });
   media.addEventListener('canplay', function () {
     if (media.paused && activePlayback && activePlayback.generation === feedGeneration && media.readyState >= 2) {
       document.getElementById('hero').classList.remove('is-preparing-video');
       setPlayerStatus('');
     }
   });
-  media.addEventListener('seeked', function () { resetDanmaku(); tickDanmaku(); updatePlaybackControls(); saveProgress(true); if (media.paused) setPlayerStatus(''); });
+  media.addEventListener('seeked', function () { if (activePlayback && activePlayback.started && !media.paused && !media.ended) activePlayback.stableSince = Date.now(); resetDanmaku(); tickDanmaku(); updatePlaybackControls(); saveProgress(true); if (media.paused) setPlayerStatus(''); });
   media.addEventListener('error', function () { if (activePlayback && media.getAttribute('src')) setPlayerStatus('这集未能正常播放', true); });
   media.addEventListener('ended', function () {
     var playback = activePlayback;

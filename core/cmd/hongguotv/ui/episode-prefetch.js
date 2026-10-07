@@ -15,12 +15,12 @@
     }
     function maybe(info) {
       if (!info.active || !info.started || info.paused || info.ended || !isFinite(info.duration) ||
-          !(info.duration > 0) || !isFinite(info.position) || info.position < 5 ||
-          info.position / info.duration < .62 && info.duration - info.position > 45) return;
+          !(info.duration > 0) || !isFinite(info.position) || info.position < 0 ||
+          !isFinite(info.stable_seconds) || info.stable_seconds < 5) return;
       var identity = key(info);
       if (entry && entry.key === identity) return;
       cancel();
-      var candidate = { key: identity, info: info, target: null,
+      var candidate = { key: identity, info: info, target: null, timing: { started_at: Date.now(), ready_at: 0 },
         request: typeof AbortController === 'function' ? new AbortController() : null };
       entry = candidate;
       candidate.promise = Promise.resolve().then(function () {
@@ -31,6 +31,9 @@
             candidate.expectedVid && candidate.expectedVid !== target.vid) return null;
         candidate.target = target;
         return options.prepare(target, candidate.request && candidate.request.signal);
+      }).then(function (data) {
+        if (current(candidate) && data && data.path) candidate.timing.ready_at = Date.now();
+        return data;
       }).catch(function () {
         // Silent failure; foreground playback retries through the normal resolver.
         return null;
@@ -50,7 +53,7 @@
       entry = null;
       previous.claimed = true;
       previous.expectedVid = target.vid;
-      return { promise: previous.promise, cancel: function () { if (previous.request) previous.request.abort(); } };
+      return { promise: previous.promise, timing: previous.timing, cancel: function () { if (previous.request) previous.request.abort(); } };
     }
     return { maybe: maybe, cancel: cancel, keepFor: keepFor, consume: consume };
   }
