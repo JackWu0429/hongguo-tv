@@ -35,6 +35,8 @@ type accountStatus struct {
 	SMSState   string          `json:"sms_state,omitempty"`
 	SMSNumber  string          `json:"sms_number,omitempty"`
 	SMSContent string          `json:"sms_content,omitempty"`
+	SMSQRCode  string          `json:"sms_qr,omitempty"`
+	MFAExpires int64           `json:"mfa_expires_at,omitempty"` // Local login-session safety deadline, not a server TTL.
 	Error      string          `json:"error,omitempty"`
 	Sync       syncStatus      `json:"sync"`
 }
@@ -42,6 +44,7 @@ type loginAttempt struct {
 	client        *passportClient
 	phone, code   string
 	mfa           *accountMFA
+	smsQRCode     string
 	expires       time.Time
 	requestCtx    context.Context
 	cancelRequest context.CancelFunc
@@ -175,6 +178,7 @@ func (m *accountManager) status() accountStatus {
 	return m.statusLocked()
 }
 func (m *accountManager) statusLocked() accountStatus {
+	m.expireMFALocked()
 	s := accountStatus{LoggedIn: m.disk.Profile != nil, Phase: m.phase, Error: m.lastError, SMSState: m.smsState, Sync: syncStatus{State: "local"}}
 	if m.disk.Profile != nil {
 		p := *m.disk.Profile
@@ -183,15 +187,34 @@ func (m *accountManager) statusLocked() accountStatus {
 	}
 	if m.login != nil {
 		s.Phone = maskPhone(m.login.phone)
-		if m.login.mfa != nil {
+		if m.login.mfa != nil && m.phase == "mfa" && time.Now().Before(m.login.expires) {
 			s.SMSNumber = m.login.mfa.Number
 			s.SMSContent = m.login.mfa.Content
+			s.SMSQRCode = m.login.smsQRCode
+			s.MFAExpires = m.login.expires.UnixMilli()
 		}
 	}
 	if left := time.Until(m.codeAfter); left > 0 {
 		s.RetryAfter = int(math.Ceil(left.Seconds()))
 	}
 	return s
+}
+
+// The session deadline is independent of every 90-second UI polling round.
+// Neither polling nor opening the QR can extend the login attempt's lifetime.
+func (m *accountManager) expireMFALocked() bool {
+	if m.phase != "mfa" || m.login == nil || time.Now().Before(m.login.expires) {
+		return false
+	}
+	if m.login.cancelRequest != nil {
+		m.login.cancelRequest()
+	}
+	m.generation++
+	m.login = nil
+	m.busy = false
+	m.phase = "phone"
+	m.lastError = "短信验证会话已过期，请重新获取验证码"
+	return true
 }
 func maskPhone(phone string) string {
 	if len(phone) == 11 {
@@ -345,12 +368,14 @@ func (m *accountManager) loginSMS(ctx context.Context, phone, code string) error
 		if passportSuccess(p) {
 			err = m.finishLogin(ctx, g, a, p)
 		} else if mfa := parseAccountMFA(passportData(p)); mfa != nil {
+			qr := smsQRDataURL(mfa.Number, mfa.Content)
 			m.mu.Lock()
 			if g != m.generation {
 				m.mu.Unlock()
 				return errors.New("登录已取消")
 			}
 			a.mfa = mfa
+			a.smsQRCode = qr
 			m.mu.Unlock()
 			m.endLogin(g, "mfa", nil)
 			return nil
@@ -367,7 +392,8 @@ func (m *accountManager) loginSMS(ctx context.Context, phone, code string) error
 }
 func (m *accountManager) verifyLogin(ctx context.Context) error {
 	m.mu.Lock()
-	if m.login == nil || m.login.mfa == nil || time.Now().After(m.login.expires) {
+	expired := m.expireMFALocked()
+	if expired || m.login == nil || m.login.mfa == nil || time.Now().After(m.login.expires) {
 		m.mu.Unlock()
 		return errors.New("验证已过期，请重新登录")
 	}
@@ -376,8 +402,11 @@ func (m *accountManager) verifyLogin(ctx context.Context) error {
 		return errors.New("正在验证，请稍候")
 	}
 	a, g := m.login, m.generation
+	a.requestCtx, a.cancelRequest = context.WithCancel(ctx)
+	ctx = a.requestCtx
 	m.busy = true
 	m.mu.Unlock()
+	defer a.cancelRequest()
 	p, err := a.client.verifyMFA(ctx, a.mfa)
 	if err == nil && passportErrorCode(p) == "1045" {
 		m.endLogin(g, "mfa", nil)

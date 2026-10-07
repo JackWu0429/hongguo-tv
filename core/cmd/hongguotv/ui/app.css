@@ -420,6 +420,12 @@ button:focus { outline: none; }
 .account-footnote { margin-top: 2rem; font-size: 1rem; }
 .account-avatar svg { width: 3.5rem; height: 3.5rem; margin-bottom: 1rem; }
 .account-card dd { margin: .5rem 0 1.2rem; padding: .6rem; background: #101016; font-size: 1.35rem; letter-spacing: .08em; word-wrap: break-word; overflow-wrap: anywhere; }
+.account-sms-details { display: flex; flex-wrap: wrap; align-items: center; }
+.account-sms-details dl { flex: 1 1 200px; min-width: 0; margin: 0 12px 0 0; }
+.account-sms-qr { flex: 0 0 auto; width: 194px; padding: 10px; margin: 12px 0; background: #fff; color: #20202a; }
+.account-sms-qr img { display: block; width: 170px; height: 170px; }
+.account-sms-qr span { display: block; margin-top: 7px; font-size: 12px; }
+#account-sms-qr-help { margin-top: .5rem; font-size: .9rem; }
 
 /* Same-IP selector: one focusable row, with official labels and state. */
 .detail-tabs { display: flex; padding: 8px 24px 0; gap: 16px; }
@@ -495,4 +501,4 @@ button:focus { outline: none; }
   .support-card > p { margin-top: 12px; }
   .support-thanks { margin-top: 16px; }
 }
-.app-shell[data-mode="support"] .top-bar { background: #111217; }
+.app-shell[data-mode="support"] .top-bar, .app-shell[data-mode="account"] .top-bar { background: #111217; }

@@ -144,8 +144,7 @@
   var accountEpoch = 0;
   var accountRequestGeneration = 0;
   var accountPollTimer = null;
-  var accountVerifyTimer = null;
-  var accountVerifyGeneration = 0;
+  var smsVerification = null;
   var accountCountdownUntil = 0;
   var libraryData = { entries: [] };
   var libraryLoaded = false;
@@ -968,6 +967,8 @@
       return null;
     }
     if (zone === 'accountInputs' || zone === 'accountActions') {
+      if (current.id === 'account-sms-qr') return direction === 'down' ? firstVisible('#account-verify') || firstVisible('#account-cancel') : direction === 'left' || direction === 'up' ? activeSidebar() : null;
+      if (accountData && accountData.phase === 'mfa' && direction === 'up' && (current.id === 'account-verify' || current.id === 'account-cancel')) return firstVisible('#account-sms-qr') || activeSidebar();
       var leftSelector = '#account-login-form .account-input, #account-login-form .account-action, #account-mfa .account-action, #account-profile .account-action';
       if (current.id === 'account-sync') return direction === 'down' ? firstVisible('.app-update-action') : direction === 'left' ? (focusables(leftSelector).indexOf(accountLeftFocus) >= 0 ? accountLeftFocus : firstVisible(leftSelector)) : null;
       if (zone === 'accountInputs' && direction === 'down') {
@@ -1438,6 +1439,7 @@
     return true;
   }
   function pauseForBackground() {
+    if (smsVerification) smsVerification.stop();
     var video = document.getElementById('hero-video');
     var preparing = playbackInfoRequest || playbackPrefetchHandoff || activePlayback && !video.getAttribute('src');
     applicationInBackground = true;
@@ -1687,6 +1689,7 @@
     var owner = data.profile && data.profile.uid || '';
     var previousOwner = previous && previous.profile && previous.profile.uid || '';
     accountData = data;
+    if (smsVerification) smsVerification.setSession(!data.logged_in && data.phase === 'mfa' && data.mfa_expires_at ? { key: String(data.mfa_expires_at) + ':' + (data.sms_number || '') + ':' + (data.sms_content || ''), expiresAt: data.mfa_expires_at } : null);
     accountCountdownUntil = Date.now() + (data.retry_after || 0) * 1000;
     if (owner !== previousOwner || owner !== (libraryData.owner_id || '')) {
       ++accountEpoch;
@@ -1724,6 +1727,8 @@
     var data = accountData || { phase: 'phone', logged_in: false, sync: { state: 'local' } };
     var logged = !!data.logged_in;
     var mfa = !logged && data.phase === 'mfa';
+    var verification = smsVerification ? smsVerification.snapshot() : { state: 'idle', remaining: 0 };
+    var mfaExpired = mfa && (verification.state === 'expired' || data.mfa_expires_at && Date.now() >= data.mfa_expires_at);
     document.getElementById('account-login-form').classList.toggle('is-hidden', logged || mfa);
     document.getElementById('account-profile').classList.toggle('is-hidden', !logged);
     document.getElementById('account-mfa').classList.toggle('is-hidden', !mfa);
@@ -1737,6 +1742,11 @@
     document.querySelectorAll('.account-input').forEach(function (node) { node.disabled = accountBusy; });
     document.querySelectorAll('.account-action:not(.app-update-action)').forEach(function (node) { node.disabled = accountBusy; });
     document.getElementById('account-cancel').disabled = false;
+    document.getElementById('account-verify').disabled = accountBusy || mfaExpired || verification.state === 'waiting';
+    document.getElementById('account-verify').textContent = verification.state === 'waiting' ? '等待确认…' : verification.state === 'timeout' ? '再次查询' : '我已发送';
+    document.getElementById('account-cancel').textContent = mfaExpired ? '重新获取验证码' : '取消验证';
+    document.getElementById('account-mfa-session').textContent = mfaExpired ? '验证会话已过期，请重新获取验证码。' : mfa && data.mfa_expires_at ? '验证会话剩余 ' + clockText(Math.ceil((data.mfa_expires_at - Date.now()) / 1000)) + '，红果也可能提前要求重新验证。' : '';
+    document.getElementById('account-mfa-wait').textContent = verification.state === 'waiting' ? '正在等待短信确认 · 本轮剩余 ' + verification.remaining + ' 秒' : verification.state === 'timeout' ? '本轮等待已结束。会话仍有效时可以再次查询，无需重复发送短信。' : '';
     document.getElementById('account-change-phone').disabled = false;
     var remaining = Math.max(0, Math.ceil((accountCountdownUntil - Date.now()) / 1000));
     var send = document.getElementById('account-send-code');
@@ -1749,6 +1759,15 @@
     }
     document.getElementById('account-sms-number').textContent = data.sms_number || '';
     document.getElementById('account-sms-content').textContent = data.sms_content || '';
+    var smsImage = document.getElementById('account-sms-qr-image');
+    var smsQR = mfa && !mfaExpired && /^data:image\/png;base64,/.test(data.sms_qr || '') ? data.sms_qr : '';
+    if (smsImage.getAttribute('src') !== smsQR) {
+      if (smsQR) smsImage.setAttribute('src', smsQR); else smsImage.removeAttribute('src');
+    }
+    document.getElementById('account-sms-qr').classList.toggle('is-hidden', !smsQR);
+    document.getElementById('account-sms-qr-help').classList.toggle('is-hidden', !smsQR);
+    document.getElementById('account-sms-qr').disabled = false;
+    if (supportModalOpen && supportReturnFocus && supportReturnFocus.id === 'account-sms-qr' && !smsQR) closeSupportQR();
     var sync = data.sync || {};
     var syncLabel = !logged ? '未登录 · 记录保存在本机' : ({ syncing: '正在同步…', pending: '等待同步', error: '同步暂未完成', idle: sync.last_sync ? '已同步' : '尚未同步' })[sync.state] || '等待同步';
     document.getElementById('account-sync-state').textContent = syncLabel;
@@ -1772,7 +1791,7 @@
     }).catch(function (error) { if (pageMode() === 'account') setAccountMessage(error.message); })
       .then(function () { accountPollBusy = false; });
   }
-  function accountRequest(action, value) {
+  function accountRequest(action, value, signal) {
     if (accountBusy && action !== 'cancel') return Promise.resolve(false);
     var returnFocus = document.activeElement;
     function restoreRequestFocus() {
@@ -1781,8 +1800,13 @@
     accountBusy = true;
     accountNotice = '';
     var generation = ++accountRequestGeneration;
+    function aborted() {
+      if (generation !== accountRequestGeneration) return;
+      ++accountRequestGeneration; accountBusy = false; renderAccount(); restoreRequestFocus();
+    }
+    if (signal) signal.addEventListener('abort', aborted);
     renderAccount();
-    return fetch('/api/v1/account/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value || {}) })
+    return fetch('/api/v1/account/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value || {}), signal: signal })
       .then(function (response) { return response.json(); }).then(function (payload) {
         if (generation !== accountRequestGeneration) return false;
         accountBusy = false;
@@ -1796,7 +1820,7 @@
         setAccountMessage(error.message);
         restoreRequestFocus();
         return false;
-      });
+      }).then(function (ok) { if (signal) signal.removeEventListener('abort', aborted); return ok; });
   }
   function accountSendCode() {
     var phone = document.getElementById('account-phone').value.trim();
@@ -1816,8 +1840,7 @@
     });
   }
   function cancelAccountVerification(returnToSidebar) {
-    ++accountVerifyGeneration;
-    clearTimeout(accountVerifyTimer);
+    if (smsVerification) smsVerification.stop();
     return accountRequest('cancel').then(function () {
       document.getElementById('account-code').value = '';
       if (pageMode() === 'account') goFocus(returnToSidebar === true ? activeSidebar() : document.getElementById('account-phone'));
@@ -1825,26 +1848,13 @@
   }
   function verifyAccountSMS() {
     if (accountBusy) return;
-    var generation = ++accountVerifyGeneration;
-    var deadline = Date.now() + 90000;
-    var count = 0;
-    function verify() {
-      if (generation !== accountVerifyGeneration || pageMode() !== 'account' || document.hidden) return;
-      accountRequest('verify').then(function (ok) {
-        if (generation !== accountVerifyGeneration) return;
-        if (!ok || accountData.logged_in) { if (pageMode() === 'account') goFocus(accountData.logged_in ? document.getElementById('account-logout') : document.getElementById('account-verify')); return; }
-        if (++count >= 30 || Date.now() >= deadline) { setAccountMessage('暂未确认短信，请检查收件号码和内容后重试'); goFocus(document.getElementById('account-verify')); return; }
-        setAccountMessage('正在等待短信验证，可以按返回取消');
-        accountVerifyTimer = setTimeout(verify, 3000);
-      });
-    }
-    verify();
+    if (smsVerification) smsVerification.start();
   }
   function confirmAccountLogout() {
     ++confirmationGeneration;
     confirmReturnFocus = document.activeElement;
     confirmOperation = function () {
-      ++accountVerifyGeneration; clearTimeout(accountVerifyTimer);
+      if (smsVerification) smsVerification.stop();
       return accountRequest('logout').then(function (ok) { if (ok) { document.getElementById('account-phone').value = ''; document.getElementById('account-code').value = ''; } return ok; });
     };
     confirmOpen = true;
@@ -3208,6 +3218,7 @@
   }
 
   function activatePage(item, restoring) {
+    if (smsVerification) smsVerification.stop();
     if (supportModalOpen) closeSupportQR();
     finishAccountEditing(false);
     engagement.clear();
@@ -3491,10 +3502,9 @@
   });
   document.addEventListener('visibilitychange', function () { if (document.hidden) pauseForBackground(); else resumeFromBackground(); });
 
-  function openSupportQR(card) {
+  function openQRCode(card, image, title) {
     supportReturnFocus = card; supportModalOpen = true;
-    var image = card.querySelector('img');
-    document.getElementById('support-modal-title').textContent = card.querySelector('h2').textContent;
+    document.getElementById('support-modal-title').textContent = title;
     document.getElementById('support-large-qr').src = image.getAttribute('src');
     document.getElementById('support-large-qr').alt = image.alt;
     document.getElementById('support-modal').classList.remove('is-hidden');
@@ -3505,9 +3515,14 @@
     supportModalOpen = false;
     document.getElementById('support-modal').classList.add('is-hidden');
     document.getElementById('support-modal').setAttribute('aria-hidden', 'true');
-    goFocus(supportReturnFocus || firstContentFocus());
+    document.getElementById('support-large-qr').removeAttribute('src');
+    goFocus(focusables().indexOf(supportReturnFocus) >= 0 ? supportReturnFocus : firstContentFocus());
   }
-  document.querySelectorAll('.support-card').forEach(function (card) { card.addEventListener('click', function () { openSupportQR(card); }); });
+  document.querySelectorAll('.support-card').forEach(function (card) { card.addEventListener('click', function () { openQRCode(card, card.querySelector('img'), card.querySelector('h2').textContent); }); });
+  document.getElementById('account-sms-qr').addEventListener('click', function () {
+    var image = document.getElementById('account-sms-qr-image');
+    if (image.getAttribute('src')) openQRCode(this, image, '扫码填写短信 · 请手动发送');
+  });
   document.getElementById('support-close').addEventListener('click', closeSupportQR);
   document.querySelectorAll('.account-input').forEach(function (input) {
     if (androidShell) {
@@ -3531,6 +3546,22 @@
         var button = document.querySelector('.round-action[data-action="' + kind + '"]');
         button.setAttribute('aria-label', button.querySelector('small').textContent + ' · ' + text);
       });
+    }
+  });
+
+  smsVerification = window.HongguoSMSVerification.create({
+    canPoll: function () { return pageMode() === 'account' && !document.hidden; },
+    request: function () {
+      var controller = new AbortController();
+      return { abort: function () { controller.abort(); }, promise: accountRequest('verify', {}, controller.signal).then(function (ok) {
+        return { confirmed: ok && accountData && accountData.logged_in, active: ok && accountData && accountData.phase === 'mfa', error: !ok };
+      }) };
+    },
+    onState: function (value) {
+      if (value.state === 'expired') accountNotice = '短信验证会话已过期，请重新获取验证码';
+      renderAccount();
+      if (value.state === 'timeout' && pageMode() === 'account' && !supportModalOpen) goFocus(document.getElementById('account-verify'));
+      if (value.state === 'expired' && !document.hidden) pollAccount();
     }
   });
 

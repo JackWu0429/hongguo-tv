@@ -54,6 +54,7 @@ jobs:
           node --check core/cmd/hongguotv/ui/episode-prefetch.js
           node --check core/cmd/hongguotv/ui/updates.js
           node --check core/cmd/hongguotv/ui/engagement.js
+          node --check core/cmd/hongguotv/ui/sms-verification.js
           python3 -m unittest discover -s tests -p "test_*.py"
           node --test tests/*.test.cjs
       - name: Check release tag

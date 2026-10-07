@@ -157,7 +157,14 @@
               <div class="account-code-field is-hidden" id="account-code-field"><label for="account-code">短信验证码</label><input class="account-input" id="account-code" data-focus="account-code" type="text" inputmode="numeric" maxlength="8" autocomplete="one-time-code" placeholder="请输入验证码"></div>
               <p class="account-input-help">遥控器：确认键输入，返回键完成；输入完成后可用方向键选择按钮。</p><div class="account-form-actions"><button class="account-action" id="account-send-code" data-focus="account-send">获取验证码</button><button class="account-action account-primary is-hidden" id="account-login" data-focus="account-login">登录</button><button class="account-action is-hidden" id="account-change-phone" data-focus="account-change-phone">换手机号</button></div>
             </div>
-            <div id="account-mfa" class="is-hidden"><h2>还需要短信验证</h2><p>请用登录的手机号，发送以下短信：</p><dl><dt>收件号码</dt><dd id="account-sms-number"></dd><dt>短信内容</dt><dd id="account-sms-content"></dd></dl><p>发送后点击“我已发送”。最多等待 90 秒，可以随时取消。</p><div class="account-form-actions"><button class="account-action account-primary" id="account-verify" data-focus="account-verify">我已发送</button><button class="account-action" id="account-cancel" data-focus="account-cancel">取消验证</button></div></div>
+            <div id="account-mfa" class="is-hidden">
+              <h2>还需要短信验证</h2><p>红果要求本次登录完成短信验证。请用登录的手机号发送以下短信：</p><p id="account-mfa-session" class="account-footnote"></p>
+              <div class="account-sms-details"><dl><dt>收件号码</dt><dd id="account-sms-number"></dd><dt>短信内容</dt><dd id="account-sms-content"></dd></dl><button id="account-sms-qr" class="account-action account-sms-qr is-hidden" data-focus="account-sms-qr" aria-label="放大短信验证二维码"><img id="account-sms-qr-image" alt="收件号码与短信内容二维码"><span>手机扫码 · 确认键放大</span></button></div>
+              <p id="account-sms-qr-help" class="account-footnote is-hidden">用手机相机扫码，尝试打开短信编辑；若扫码工具显示文本，可复制其中的号码与内容。请核对后手动发送。</p>
+              <p>先发送短信，再点击“我已发送”。点击后最多等待 90 秒确认结果，这不是输入号码的倒计时；验证会话仍有有效期。</p>
+              <p id="account-mfa-wait" role="status" aria-live="polite"></p>
+              <div class="account-form-actions"><button class="account-action account-primary" id="account-verify" data-focus="account-verify">我已发送</button><button class="account-action" id="account-cancel" data-focus="account-cancel">取消验证</button></div>
+            </div>
             <div id="account-profile" class="is-hidden"><div class="account-avatar"><svg><use href="#icon-user" xlink:href="#icon-user"></use></svg></div><h2 id="account-name"></h2><p id="account-phone-mask"></p><button class="account-action" id="account-logout" data-focus="account-logout">退出账号</button></div>
             <p id="account-message" class="account-message" role="status" aria-live="polite"></p>
           </div>
@@ -263,6 +270,7 @@
   <script src="/episode-prefetch.js"></script>
   <script src="/updates.js"></script>
   <script src="/engagement.js"></script>
+  <script src="/sms-verification.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
