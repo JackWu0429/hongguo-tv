@@ -62,7 +62,18 @@ test('busy inputs cannot start editing and completion does not submit',()=>{
   assert.equal(c.started,0);assert.equal(c.phone.readOnly,true);assert.equal(c.submissions,0);
 });
 test('editing retains caret keys, after finishing the same keys navigate',()=>{
-  const c=account();key(c,13);key(c,37);key(c,39);
+  const c=account();key(c,13);key(c,37);key(c,38);key(c,39);key(c,40);
   assert.equal(c.moved.length,0);c.finishAccountEditing(false);c.document.activeElement=c.phone;
   key(c,39);assert.deepEqual(Array.from(c.moved),['right']);
+});
+test('clicking the editing input again does not restart or reset its keyboard',()=>{
+  const c=account();c.startAccountEditing(c.phone);c.phone.value='138';c.startAccountEditing(c.phone);
+  assert.equal(c.started,1);assert.equal(c.phone.value,'138');assert.equal(c.phone.readOnly,false);
+});
+test('an editing input rejects even a mistakenly forwarded native vertical key',()=>{
+  const c=account();c.startAccountEditing(c.phone);
+  assert.equal(c.remoteKey(19,false),false);assert.equal(c.remoteKey(20,false),false);
+  assert.equal(c.moved.length,0);assert.equal(c.document.activeElement,c.phone);
+  c.finishAccountEditing(false);c.document.activeElement=c.phone;
+  assert.equal(c.remoteKey(20,false),true);assert.equal(c.document.activeElement.id,'account-send-code');
 });

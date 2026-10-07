@@ -44,6 +44,7 @@ public class MainActivity extends Activity {
     private AlertDialog exitDialog;
     private boolean keyboardVisible;
     private boolean accountEditing;
+    private boolean inputBackPending;
     private int accountEditGeneration;
     private LinearLayout startupPanel;
     private TextView startupMessage;
@@ -56,7 +57,7 @@ public class MainActivity extends Activity {
     private AnimatedVectorDrawable startupAnimation;
     private AppUpdater appUpdater;
     private final Runnable restoreFullscreen = () -> {
-        if (activityForeground && hasWindowFocus() && !isFinishing() && !isDestroyed() && !isKeyboardVisible()) {
+        if (activityForeground && hasWindowFocus() && !isFinishing() && !isDestroyed() && !accountEditing && !isKeyboardVisible()) {
             applyFullscreen();
         }
     };
@@ -75,7 +76,22 @@ public class MainActivity extends Activity {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
 
         startCoreService();
-        webView = new WebView(this);
+        webView = new WebView(this) {
+            @Override
+            public boolean onKeyPreIme(int keyCode, KeyEvent event) {
+                // Floating TV keyboards have no reliable resize/hide signal.
+                // Finish explicitly before Back can be consumed by the IME.
+                if (keyCode == KeyEvent.KEYCODE_BACK && (accountEditing || inputBackPending)) {
+                    if (event.getAction() == KeyEvent.ACTION_DOWN) inputBackPending = true;
+                    if (event.getAction() == KeyEvent.ACTION_UP) {
+                        inputBackPending = false;
+                        completeAccountEditing();
+                    }
+                    return true;
+                }
+                return super.onKeyPreIme(keyCode, event);
+            }
+        };
         webView.setBackgroundColor(0xFF0C0D12);
         webView.setFocusable(true);
         webView.setFocusableInTouchMode(true);
@@ -281,7 +297,7 @@ public class MainActivity extends Activity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus && activityForeground) applyFullscreen();
+        if (hasFocus && activityForeground && !accountEditing && !isKeyboardVisible()) applyFullscreen();
     }
 
     private void startCoreService() {
@@ -302,7 +318,8 @@ public class MainActivity extends Activity {
             // Old WebView can consume vertical keys as input caret movement.
             // Use the same JS router as browser keys, while leaving the IME's
             // own arrow navigation, text editing and startup controls native.
-            if (event.getAction() == KeyEvent.ACTION_DOWN && pageReady && webView.hasFocus() && !isKeyboardVisible()) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && pageReady && webView.hasFocus() &&
+                    InputKeyPolicy.routeVerticalKey(accountEditing, isKeyboardVisible())) {
                 routedVerticalKeys |= verticalBit;
                 webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.remoteKey(" + event.getKeyCode() + "," + (event.getRepeatCount() > 0) + ")", null);
                 return true;
@@ -329,6 +346,8 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 if (destroyed || !pageReady || !activityForeground || webView == null) return;
                 accountEditing = true;
+                inputBackPending = false;
+                routedVerticalKeys = 0;
                 final int generation = ++accountEditGeneration;
                 webView.requestFocus();
                 // The same DOM input was read-only during D-pad navigation.
@@ -352,6 +371,7 @@ public class MainActivity extends Activity {
                 accountEditGeneration++;
                 InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
                 if (keyboard != null) keyboard.hideSoftInputFromWindow(webView.getWindowToken(), 0);
+                scheduleFullscreen();
             });
         }
     }
@@ -413,6 +433,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         activityForeground = false;
+        inputBackPending = false;
         routedVerticalKeys = 0;
         completeAccountEditing();
         if (startupAnimation != null) startupAnimation.stop();

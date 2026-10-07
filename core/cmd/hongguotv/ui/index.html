@@ -27,6 +27,13 @@
     <symbol id="icon-comment" viewBox="0 0 24 24"><path d="M4 4h16v13H9l-5 4zM8 8h8M8 12h5" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.7"/></symbol>
     <symbol id="icon-danmaku" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6 8h6M9 12h9M6 16h7" stroke="currentColor" stroke-width="1.7"/></symbol>
     <symbol id="icon-connection" viewBox="0 0 24 24"><path d="M10 7l2-2a5 5 0 0 1 7 7l-2 2M14 17l-2 2a5 5 0 0 1-7-7l2-2M8 16l8-8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-send-danmaku" viewBox="0 0 24 24"><path d="M11 19H9l-5 3V5h16v6M8 9h8M8 13h3M14 17l5-5 3 3-5 5-4 1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-episodes" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 5h1v2H4zM4 11h1v2H4zM4 17h1v2H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-seasons" viewBox="0 0 24 24"><path d="M7 3h14v14M4 6h14v14H4zM8 10h6M8 14h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-quality" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 21h8M12 17v4M7 8v5M10 8v5M7 10.5h3M14 8h2a2.5 2.5 0 0 1 0 5h-2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-speed" viewBox="0 0 24 24"><path d="M4 19a9 9 0 1 1 16 0M12 5v2M5 10l2 1M19 10l-2 1M12 15l4-5M8 20h8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="15" r="1.5" fill="currentColor"/></symbol>
+    <symbol id="icon-volume" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zM16 8a6 6 0 0 1 0 8M19 5a10 10 0 0 1 0 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-volume-muted" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zM17 9l5 6M22 9l-5 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   </svg>
   <main class="app-shell" data-mode="recommend">
     <aside class="sidebar" aria-label="主导航">
@@ -153,8 +160,8 @@
           <div class="account-card">
             <div id="account-login-form">
               <h2>手机号登录</h2>
-              <label for="account-phone">手机号</label><input class="account-input" id="account-phone" data-focus="account-phone" type="tel" inputmode="tel" maxlength="11" autocomplete="off" placeholder="请输入手机号">
-              <div class="account-code-field is-hidden" id="account-code-field"><label for="account-code">短信验证码</label><input class="account-input" id="account-code" data-focus="account-code" type="text" inputmode="numeric" maxlength="8" autocomplete="one-time-code" placeholder="请输入验证码"></div>
+              <label for="account-phone">手机号</label><input class="account-input" id="account-phone" data-focus="account-phone" tabindex="0" type="tel" inputmode="tel" maxlength="11" autocomplete="off" placeholder="请输入手机号">
+              <div class="account-code-field is-hidden" id="account-code-field"><label for="account-code">短信验证码</label><input class="account-input" id="account-code" data-focus="account-code" tabindex="0" type="text" inputmode="numeric" maxlength="8" autocomplete="one-time-code" placeholder="请输入验证码"></div>
               <p class="account-input-help">遥控器：确认键输入，返回键完成；输入完成后可用方向键选择按钮。</p><div class="account-form-actions"><button class="account-action" id="account-send-code" data-focus="account-send">获取验证码</button><button class="account-action account-primary is-hidden" id="account-login" data-focus="account-login">登录</button><button class="account-action is-hidden" id="account-change-phone" data-focus="account-change-phone">换手机号</button></div>
             </div>
             <div id="account-mfa" class="is-hidden">
@@ -174,7 +181,7 @@
           <h2>版本更新</h2>
           <p>当前版本 <strong id="app-current-version">读取中…</strong></p>
           <p id="app-update-state" role="status" aria-live="polite">启动后每天自动检查一次，播放时不打扰。</p>
-          <div class="app-update-actions"><button class="app-update-action account-action" id="app-check-update" data-focus="app-check-update">检查更新</button><button class="app-update-action account-action" id="app-update-source" data-focus="app-update-source">下载设置</button></div>
+          <div class="app-update-actions"><button class="app-update-action account-action" id="app-check-update" data-focus="app-check-update">检查更新</button></div>
         </div>
       </section>
 
@@ -225,12 +232,12 @@
           </div>
           <div class="playback-buttons">
           <button class="control-button has-icon" data-action="pause" data-focus="control-pause" aria-label="播放"><svg aria-hidden="true" focusable="false"><use href="#icon-play" xlink:href="#icon-play"></use></svg><span class="control-label">播放</span></button>
-          <button class="control-button" data-action="send-danmaku" data-focus="control-send-danmaku">发弹幕</button>
-          <button class="control-button" data-action="episodes" data-focus="control-episodes">选集 · -- 集</button>
-          <button class="control-button is-hidden" data-action="seasons" data-focus="control-seasons">选季…</button>
-          <button class="control-button" data-action="quality" data-focus="control-quality">清晰度</button>
-          <button class="control-button" data-action="speed" data-focus="control-speed">1.0x</button>
-          <button class="control-button" data-action="volume" data-focus="control-volume">音量</button>
+          <button class="control-button has-icon" data-action="send-danmaku" data-focus="control-send-danmaku"><svg aria-hidden="true" focusable="false"><use href="#icon-send-danmaku" xlink:href="#icon-send-danmaku"></use></svg><span class="control-label">发弹幕</span></button>
+          <button class="control-button has-icon" data-action="episodes" data-focus="control-episodes"><svg aria-hidden="true" focusable="false"><use href="#icon-episodes" xlink:href="#icon-episodes"></use></svg><span class="control-label">选集 · -- 集</span></button>
+          <button class="control-button has-icon is-hidden" data-action="seasons" data-focus="control-seasons"><svg aria-hidden="true" focusable="false"><use href="#icon-seasons" xlink:href="#icon-seasons"></use></svg><span class="control-label">选季…</span></button>
+          <button class="control-button has-icon" data-action="quality" data-focus="control-quality"><svg aria-hidden="true" focusable="false"><use href="#icon-quality" xlink:href="#icon-quality"></use></svg><span class="control-label">清晰度</span></button>
+          <button class="control-button has-icon" data-action="speed" data-focus="control-speed"><svg aria-hidden="true" focusable="false"><use href="#icon-speed" xlink:href="#icon-speed"></use></svg><span class="control-label">1.0x</span></button>
+          <button class="control-button has-icon" data-action="volume" data-focus="control-volume"><svg aria-hidden="true" focusable="false"><use href="#icon-volume" xlink:href="#icon-volume"></use></svg><span class="control-label">音量</span></button>
           <button class="control-button has-icon" data-action="fullscreen" data-focus="control-fullscreen" aria-label="全屏"><svg aria-hidden="true" focusable="false"><use href="#icon-fullscreen" xlink:href="#icon-fullscreen"></use></svg><span class="control-label">全屏</span></button>
           </div>
         </div>

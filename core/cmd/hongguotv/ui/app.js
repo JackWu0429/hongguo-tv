@@ -1069,6 +1069,7 @@
       goFocus(firstVisible('#account-code') || firstVisible('#account-change-phone')); return;
     }
     if (accountEditingInput && accountEditingInput !== input) finishAccountEditing(false);
+    if (accountEditingInput === input) return;
     accountEditingInput = input; input.readOnly = false;
     input.setAttribute('aria-label', input.id === 'account-phone' ? '输入手机号，返回键完成' : '输入验证码，返回键完成');
     input.focus();
@@ -1103,6 +1104,9 @@
     var current = document.activeElement;
     if (current && current.classList.contains('player-text-input') && ['Escape', 'ArrowUp', 'ArrowDown'].indexOf(key) < 0) return;
     if (current && current.classList.contains('account-input')) {
+      // A floating TV IME may send hardware arrows through WebView. While
+      // editing, all four belong to the keyboard/caret, never the page router.
+      if (androidShell && accountEditingInput === current && /^Arrow/.test(key)) return;
       if (!current.readOnly && (key === 'Backspace' || key === 'Delete' || key === 'ArrowLeft' || key === 'ArrowRight')) return;
       if (key === 'Enter') {
         event.preventDefault(); event.stopPropagation();
@@ -1244,9 +1248,10 @@
     progress.querySelector('span').style.width = (duration ? position / duration * 100 : 0) + '%';
     var paused = video.paused || video.ended;
     setControlIcon('pause', paused ? '播放' : '暂停', paused ? 'icon-play' : 'icon-pause');
-    document.querySelector('[data-action="speed"]').textContent = video.playbackRate + 'x';
-    document.querySelector('[data-action="volume"]').textContent = video.muted || !video.volume ? '静音' : '音量 ' + Math.round(video.volume * 100) + '%';
-    document.querySelector('[data-action="quality"]').textContent = playbackQuality ? (playbackPreferences.quality ? '' : '自动 · ') + playbackQuality : '清晰度';
+    setControlIcon('speed', video.playbackRate + 'x', 'icon-speed');
+    var muted = video.muted || !video.volume;
+    setControlIcon('volume', muted ? '静音' : '音量 ' + Math.round(video.volume * 100) + '%', muted ? 'icon-volume-muted' : 'icon-volume');
+    setControlIcon('quality', playbackQuality ? (playbackPreferences.quality ? '' : '自动 · ') + playbackQuality : '清晰度', 'icon-quality');
     var cinema = shell.classList.contains('is-cinema');
     setControlIcon('fullscreen', cinema ? '退出全屏' : '全屏', cinema ? 'icon-fullscreen-exit' : 'icon-fullscreen');
   }
@@ -1439,6 +1444,7 @@
     return true;
   }
   function pauseForBackground() {
+    if (accountEditingInput) finishAccountEditing(false);
     if (smsVerification) smsVerification.stop();
     var video = document.getElementById('hero-video');
     var preparing = playbackInfoRequest || playbackPrefetchHandoff || activePlayback && !video.getAttribute('src');
@@ -1467,7 +1473,7 @@
   }
   function canShowAppUpdate() {
     var current = document.activeElement;
-    return !applicationInBackground && !document.hidden && !isPlaybackPage() && !supportModalOpen && !detailModalOpen && !discussionOpen && !confirmOpen && !playerOptionsOpen && !accountBusy && !(current && /INPUT|TEXTAREA/.test(current.tagName));
+    return !applicationInBackground && !document.hidden && !isPlaybackPage() && !supportModalOpen && !detailModalOpen && !discussionOpen && !confirmOpen && !playerOptionsOpen && !accountBusy && !accountEditingInput && !(current && /INPUT|TEXTAREA/.test(current.tagName));
   }
   window.HongguoTV = { remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () { finishAccountEditing(true); } };
 
@@ -1937,7 +1943,7 @@
     if (placeholderSummary) placeholderSummary.textContent = item.intro || '';
     updateSavedButtons();
     if (engagement) engagement.select(activePlayback && activePlayback.item.series_id === item.series_id ? { series_id: item.series_id, vid: activePlayback.vid } : null);
-    document.querySelector('[data-action="episodes"]').textContent = '选集 · ' + (item.episode_count || '--') + ' 集';
+    setControlIcon('episodes', '选集 · ' + (item.episode_count || '--') + ' 集', 'icon-episodes');
     updateSeasonControl(item);
   }
 
@@ -2939,7 +2945,7 @@
     seasonControlID = id; seasonControlState = id ? 'loading' : '';
     button.classList.toggle('is-hidden', !hinted);
     if (!hinted && document.activeElement === button) goFocus(document.querySelector('[data-action="episodes"]'));
-    button.textContent = '选季…'; button.setAttribute('aria-busy', id ? 'true' : 'false');
+    setControlIcon('seasons', '选季…', 'icon-seasons'); button.setAttribute('aria-busy', id ? 'true' : 'false');
     if (!id) {
       return;
     }
@@ -2949,13 +2955,13 @@
       if (generation !== seasonControlGeneration || !featuredItem || featuredItem.series_id !== id) return;
       seasonControlState = 'loaded';
       var count = items.filter(function (season) { return season.playable && !season.upcoming; }).length;
-      button.textContent = '选季 · ' + count + ' 季'; button.setAttribute('aria-busy', 'false');
+      setControlIcon('seasons', '选季 · ' + count + ' 季', 'icon-seasons'); button.setAttribute('aria-busy', 'false');
       var hasSeasons = items.length > 1 || items.some(function (season) { return !!(season.season_index > 0 || season.label || posterSeasonLabel(season)); });
       button.classList.toggle('is-hidden', !hasSeasons);
       if (!hasSeasons && document.activeElement === button) goFocus(document.querySelector('[data-action="episodes"]'));
     }).catch(function () {
       if (generation !== seasonControlGeneration) return;
-      seasonControlState = 'error'; button.textContent = '选季'; button.setAttribute('aria-busy', 'false');
+      seasonControlState = 'error'; setControlIcon('seasons', '选季', 'icon-seasons'); button.setAttribute('aria-busy', 'false');
     });
   }
 
@@ -3578,12 +3584,9 @@
       check.disabled = !data.supported;
       check.setAttribute('aria-disabled', data.state === 'checking' || data.state === 'downloading' ? 'true' : 'false');
       check.textContent = data.state === 'checking' ? '检查中…' : data.state === 'available' || data.state === 'ready' ? '查看更新 ' + data.latest_version : '检查更新';
-      document.getElementById('app-update-source').disabled = !data.supported;
-      document.getElementById('app-update-source').setAttribute('aria-disabled', data.state === 'checking' || data.state === 'downloading' ? 'true' : 'false');
     }
   });
   document.getElementById('app-check-update').addEventListener('click', appUpdates.check);
-  document.getElementById('app-update-source').addEventListener('click', appUpdates.configure);
   appUpdates.refresh();
   setInterval(appUpdates.refresh, 1000);
   goFocus(document.querySelector('.side-item.is-active'));
