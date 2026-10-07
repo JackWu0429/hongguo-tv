@@ -20,7 +20,9 @@ func isolatedMediaJobs(t *testing.T) string {
 	root := t.TempDir()
 	miniReelState.Lock()
 	oldJobs, oldRoot := miniReelState.jobs, miniReelState.root
+	oldLease, oldRootCleanup := miniReelState.lease, miniReelState.lastRootCleanup
 	miniReelState.jobs, miniReelState.root = map[string]*miniReelMediaJob{}, root
+	miniReelState.lease, miniReelState.lastRootCleanup = nil, time.Time{}
 	miniReelState.Unlock()
 	t.Cleanup(func() {
 		miniReelState.Lock()
@@ -35,7 +37,11 @@ func isolatedMediaJobs(t *testing.T) string {
 			awaitMediaSignal(t, job.Ready)
 		}
 		miniReelState.Lock()
+		if miniReelState.lease != nil {
+			miniReelState.lease.Close()
+		}
 		miniReelState.jobs, miniReelState.root = oldJobs, oldRoot
+		miniReelState.lease, miniReelState.lastRootCleanup = oldLease, oldRootCleanup
 		miniReelState.Unlock()
 	})
 	return root

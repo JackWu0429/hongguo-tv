@@ -858,7 +858,7 @@
       return null;
     }
     if (zone === 'actions') {
-      if (direction === 'up' || direction === 'down') return moveWithinZone(zone, current, direction);
+      if (direction === 'up' || direction === 'down') return moveWithinZone(zone, current, direction) || (direction === 'down' ? firstVisible('.playback-buttons [data-action="fullscreen"]') : null);
       if (direction === 'left') return firstVisible('.hero-feed-focus') || firstVisible('.primary-action') || firstCatalog();
       return null;
     }
@@ -867,7 +867,10 @@
         var controlTarget = moveWithinZone(zone, current, direction);
         return controlTarget || (direction === 'left' ? activeSidebar() : null);
       }
-      if (direction === 'up') return firstVisible('#control-progress') || firstVisible('.hero-feed-focus') || firstCatalog() || firstVisible('.primary-action');
+      if (direction === 'up') {
+        if (current.dataset.action === 'fullscreen') return firstVisible('.round-action[data-action="danmaku"]') || firstVisible('#control-progress');
+        return firstVisible('#control-progress') || firstVisible('.hero-feed-focus') || firstCatalog() || firstVisible('.primary-action');
+      }
       return null;
     }
     if (zone === 'searchInput') {
@@ -3362,11 +3365,12 @@
     var request = new XMLHttpRequest();
     request.open('GET', '/api/v1/status', true);
     request.timeout = 8000;
-    function failed() { status.textContent = '本机服务连接失败，请重新打开应用'; status.dataset.ok = 'false'; }
+    var label = document.getElementById('core-status-label');
+    function failed() { label.textContent = '本机服务连接失败，请重新打开应用'; status.dataset.ok = 'false'; }
     request.onload = function () {
       try {
         var data = JSON.parse(request.responseText);
-        status.textContent = request.status === 200 && data.ok ? '已连接' : '连接异常';
+        label.textContent = request.status === 200 && data.ok ? '已连接' : '连接异常';
         status.dataset.ok = request.status === 200 && data.ok ? 'true' : 'false';
         if (request.status === 200 && data.ok) status.title = '版本 ' + data.version;
       } catch (error) { failed(); }

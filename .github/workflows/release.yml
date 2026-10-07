@@ -13,7 +13,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      HONGGUO_CORE_VERSION: 0.2.5-${{ github.sha }}
+      HONGGUO_CORE_VERSION: 0.2.6-${{ github.sha }}
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
     steps:
       - name: Checkout
@@ -51,7 +51,7 @@ jobs:
           node --test tests/*.test.cjs
       - name: Check release tag
         if: startsWith(github.ref, 'refs/tags/')
-        run: test "$GITHUB_REF_NAME" = "v0.2.5"
+        run: test "$GITHUB_REF_NAME" = "v0.2.6"
       - name: Build Android native binaries
         run: bash scripts/build_android_binaries.sh
         env:
@@ -74,15 +74,24 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" > "$RUNNER_TEMP/apk-badging.txt"
           sed -n '1,5p' "$RUNNER_TEMP/apk-badging.txt"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          metadata = (Path(os.environ['RUNNER_TEMP']) / 'apk-badging.txt').read_text()
+          assert "versionCode='8'" in metadata and "versionName='0.2.6'" in metadata
+          assert "application-label:'红果短剧'" in metadata
+          assert "sdkVersion:'23'" in metadata and 'application-debuggable' not in metadata
+          print("Verified application label: 红果短剧; version 0.2.6 / code 8; minimum Android 6")
+          PY
       - name: Remove temporary signing key
         if: always()
         run: rm -f "$RUNNER_TEMP/hongguo-release.keystore"
       - name: Prepare versioned release files
         run: |
           mkdir -p "$RUNNER_TEMP/hongguo-release"
-          cp android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/hongguo-release/hongguo-tv-0.2.5.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/hongguo-release/hongguo-tv-0.2.6.apk"
           cd "$RUNNER_TEMP/hongguo-release"
-          sha256sum hongguo-tv-0.2.5.apk > SHA256SUMS.txt
+          sha256sum hongguo-tv-0.2.6.apk > SHA256SUMS.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -92,6 +101,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          name: 红果短剧 TV v0.2.5
-          body_path: docs/releases/v0.2.5.md
+          name: 红果短剧 v0.2.6
+          body_path: docs/releases/v0.2.6.md
           files: ${{ runner.temp }}/hongguo-release/*

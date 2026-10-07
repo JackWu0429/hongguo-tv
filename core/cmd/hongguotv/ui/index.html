@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>红果短剧 TV</title>
+  <title>红果短剧</title>
   <script src="/compat.js"></script>
   <link rel="stylesheet" href="/app.css">
   <link rel="stylesheet" href="/compat.css">
@@ -26,6 +26,7 @@
     <symbol id="icon-fullscreen-exit" viewBox="0 0 24 24"><path d="M4 9h5V4M20 9h-5V4M9 20v-5H4M15 20v-5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="icon-comment" viewBox="0 0 24 24"><path d="M4 4h16v13H9l-5 4zM8 8h8M8 12h5" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.7"/></symbol>
     <symbol id="icon-danmaku" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6 8h6M9 12h9M6 16h7" stroke="currentColor" stroke-width="1.7"/></symbol>
+    <symbol id="icon-connection" viewBox="0 0 24 24"><path d="M10 7l2-2a5 5 0 0 1 7 7l-2 2M14 17l-2 2a5 5 0 0 1-7-7l2-2M8 16l8-8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   </svg>
   <main class="app-shell" data-mode="recommend">
     <aside class="sidebar" aria-label="主导航">
@@ -55,7 +56,7 @@
           <button class="channel-tab" data-focus="channel-real">真人剧</button>
           <button class="channel-tab is-active" data-focus="channel-recommend">推荐</button>
         </div>
-        <div class="top-status" id="core-status">连接核心服务…</div>
+        <div class="top-status" id="core-status"><svg class="status-icon" aria-hidden="true" focusable="false"><use href="#icon-connection" xlink:href="#icon-connection"></use></svg><span id="core-status-label">连接核心服务…</span></div>
       </div>
 
       <section class="page-placeholder is-hidden" id="page-placeholder" aria-live="polite">
@@ -171,7 +172,7 @@
           <div id="danmaku-layer" class="danmaku-layer" aria-hidden="true"></div>
           <button class="hero-feed-focus" id="hero-feed-focus" data-focus="hero-feed" aria-label="当前推荐短剧"></button>
           <div class="hero-placeholder" id="hero-placeholder">
-            <div class="placeholder-kicker">红果短剧 TV</div>
+            <div class="placeholder-kicker">红果短剧</div>
             <h1 id="hero-placeholder-title">正在读取推荐</h1>
             <p id="hero-placeholder-summary" class="is-hidden"></p>
           </div>

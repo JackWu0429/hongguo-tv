@@ -14,10 +14,10 @@ button:focus { outline: none; }
 .brand-mark { display: grid; place-items: center; width: 29px; height: 29px; color: #fff; background: #ff693e; border-radius: 9px; }
 .brand-mark svg { width: 18px; height: 18px; fill: currentColor; }
 .side-nav { display: flex; flex-direction: column; gap: 5px; margin-top: 20px; }
-.side-item { display: flex; align-items: center; gap: 15px; width: 100%; min-height: 49px; padding: 0 16px; text-align: left; color: #c5c5ce; background: transparent; border-radius: 13px; transition: background .12s, color .12s, transform .12s; }
+.side-item { display: flex; align-items: center; gap: 15px; width: 100%; min-height: 54px; padding: 0 16px; font-size: 20px; text-align: left; color: #c5c5ce; background: transparent; border-radius: 13px; transition: background .12s, color .12s, transform .12s; }
 .side-item.is-active { color: #f35d7b; background: rgba(243,93,123,.22); font-weight: 700; }
 .side-item.is-focused, .side-item:focus { color: #fff; background: rgba(255,255,255,.17); box-shadow: 0 0 0 2px #fff; transform: scale(1.018); }
-.side-icon { display: inline-block; flex: 0 0 23px; width: 23px; height: 23px; fill: none; color: currentColor; }
+.side-icon { display: inline-block; flex: 0 0 32px; width: 32px; height: 32px; fill: none; color: currentColor; }
 .sidebar-bottom { margin-top: auto; padding-top: 16px; }
 .side-item-secondary { color: #c5c5ce; }
 
@@ -43,7 +43,10 @@ button:focus { outline: none; }
 .channel-tab { min-width: 76px; padding: 9px 18px; color: #d1d1da; background: transparent; border-radius: 20px; }
 .channel-tab.is-active { color: #fff; background: rgba(255,255,255,.18); font-weight: 700; }
 .channel-tab.is-focused, .channel-tab:focus { color: #fff; box-shadow: 0 0 0 3px #fff; }
-.top-status { width: 180px; color: #a4a5af; font-size: 12px; text-align: right; }
+.top-status { display: flex; align-items: center; justify-content: flex-end; width: 180px; color: #a4a5af; font-size: 12px; text-align: right; }
+.status-icon { flex: 0 0 15px; width: 15px; height: 15px; margin-right: 6px; }
+.top-status[data-ok="true"] .status-icon { color: #70c9a0; }
+.top-status[data-ok="false"] .status-icon { color: #f38b91; }
 
 .hero { position: relative; flex: 1 1 auto; width: 100%; height: 100%; min-height: 0; overflow: hidden; background: #25252a; }
 .hero-media { position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: radial-gradient(circle at 66% 40%, #58504e 0, #292a2e 30%, #111217 78%); }
@@ -112,6 +115,10 @@ button:focus { outline: none; }
 .progress-track.control-button::before { position: absolute; top: 20px; right: 0; bottom: 20px; left: 0; border-radius: 4px; background: rgba(255,255,255,.35); content: ''; }
 .progress-track.control-button { position: relative; }
 .progress-track.control-button span { position: relative; height: 4px; }
+.progress-track.control-button span::after { position: absolute; top: 50%; right: 0; width: 10px; height: 10px; border-radius: 50%; background: #fff; transform: translate(50%, -50%); content: ''; transition: width .12s, height .12s, box-shadow .12s; }
+.progress-track.control-button.is-focused, .progress-track.control-button:focus { box-shadow: none; background: transparent; }
+.progress-track.control-button.is-focused span::after, .progress-track.control-button:focus span::after { width: 18px; height: 18px; box-shadow: 0 0 0 4px rgba(255,255,255,.18); }
+.progress-track.control-button:disabled span::after { display: none; }
 .control-button:disabled { opacity: .4; }
 .player-options { position: absolute; z-index: 9; right: 28px; bottom: 132px; width: 320px; padding: 18px; color: #fff; background: #22232c; border: 1px solid #454652; border-radius: 14px; box-shadow: 0 8px 35px rgba(0,0,0,.5); }
 .player-options-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 20px; }
@@ -367,8 +374,8 @@ button:focus { outline: none; }
 .detail-episode.is-focused, .detail-episode:focus { box-shadow: 0 0 0 3px #fff; }
 
 @media (max-width: 1400px) {
-  .sidebar { flex-basis: 210px; }
-  .main-surface { width: calc(100% - 210px); }
+  .sidebar { flex-basis: 236px; }
+  .main-surface { width: calc(100% - 236px); }
   .top-bar { padding-left: 22px; padding-right: 22px; }
   .right-actions { right: 16px; }
   .bottom-controls { right: 16px; left: 16px; gap: 6px; }

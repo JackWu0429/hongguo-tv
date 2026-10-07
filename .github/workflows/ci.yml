@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      HONGGUO_CORE_VERSION: 0.2.5-${{ github.sha }}
+      HONGGUO_CORE_VERSION: 0.2.6-${{ github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

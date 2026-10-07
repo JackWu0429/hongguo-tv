@@ -45,6 +45,8 @@ const (
 )
 
 var miniReelDefinitionRE = regexp.MustCompile(`(?i)(\d{3,4})`)
+var miniReelCacheTokenRE = regexp.MustCompile(`^[a-f0-9]{24}$`)
+var miniReelCacheFileRE = regexp.MustCompile(`^[a-f0-9]{24}\.mp4$`)
 
 type miniReelOption struct {
 	URL      string
@@ -68,8 +70,10 @@ type miniReelMediaJob struct {
 
 var miniReelState = struct {
 	sync.Mutex
-	jobs map[string]*miniReelMediaJob
-	root string
+	jobs            map[string]*miniReelMediaJob
+	root            string
+	lease           *os.File
+	lastRootCleanup time.Time
 }{jobs: make(map[string]*miniReelMediaJob)}
 
 var miniReelIdentity = struct {
@@ -328,7 +332,20 @@ func ensureMiniReelRoot() error {
 			}
 			root, err := os.MkdirTemp(base, "minireel-go-")
 			if err == nil {
+				lease, leaseErr := createMediaCacheLease(root)
+				if leaseErr != nil && leaseErr != os.ErrInvalid {
+					_ = os.RemoveAll(root)
+					lastErr = leaseErr
+					continue
+				}
 				miniReelState.root = root
+				miniReelState.lease = lease
+				if leaseErr == nil {
+					// Never migrate unmarked directories in a shared system temp
+					// folder. The configured/user cache is owned by this application.
+					cleanupMediaCacheRoots(base, root, filepath.Clean(base) != filepath.Clean(os.TempDir()))
+					miniReelState.lastRootCleanup = time.Now()
+				}
 				break
 			}
 			lastErr = err
@@ -343,8 +360,92 @@ func ensureMiniReelRoot() error {
 	return nil
 }
 
+func createMediaCacheLease(root string) (*os.File, error) {
+	file, err := os.OpenFile(filepath.Join(root, ".core-lease"), os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err := lockMediaCacheLease(file); err != nil {
+		file.Close()
+		return nil, err
+	}
+	return file, nil
+}
+
+// An inactive marked directory cannot be reused: its job index existed only
+// in the exited process. Recent pre-lease directories are retained for the
+// original TTL so a concurrent older core is not interrupted during migration.
+func cleanupMediaCacheRoots(base, current string, migrateLegacy bool) {
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "minireel-go-") {
+			continue
+		}
+		root := filepath.Join(base, entry.Name())
+		if root == current {
+			continue
+		}
+		leasePath := filepath.Join(root, ".core-lease")
+		info, err := os.Lstat(leasePath)
+		if os.IsNotExist(err) {
+			if migrateLegacy && expiredLegacyMediaRoot(root) {
+				_ = os.RemoveAll(root)
+			}
+			continue
+		}
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		file, err := os.OpenFile(leasePath, os.O_RDWR, 0)
+		if err != nil {
+			continue
+		}
+		if lockMediaCacheLease(file) == nil {
+			_ = os.RemoveAll(root)
+		}
+		_ = file.Close()
+	}
+}
+
+func expiredLegacyMediaRoot(root string) bool {
+	cutoff := time.Now().Add(-miniReelTTL)
+	valid := true
+	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			valid = false
+			return filepath.SkipAll
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			valid = false
+			return filepath.SkipAll
+		}
+		info, err := entry.Info()
+		if err != nil || info.ModTime().After(cutoff) {
+			valid = false
+			return filepath.SkipAll
+		}
+		if path != root {
+			if entry.IsDir() && !miniReelCacheTokenRE.MatchString(entry.Name()) ||
+				!entry.IsDir() && !miniReelCacheFileRE.MatchString(entry.Name()) {
+				valid = false
+				return filepath.SkipAll
+			}
+		}
+		return nil
+	})
+	return valid
+}
+
 func miniReelCleanupLocked() {
 	now := time.Now()
+	if miniReelState.lease != nil && miniReelState.root != "" && now.Sub(miniReelState.lastRootCleanup) >= time.Minute {
+		base := filepath.Dir(miniReelState.root)
+		cleanupMediaCacheRoots(base, miniReelState.root, filepath.Clean(base) != filepath.Clean(os.TempDir()))
+		miniReelState.lastRootCleanup = now
+	}
 	for token, job := range miniReelState.jobs {
 		if job.Waiters > 0 || now.Sub(job.Accessed) <= miniReelTTL || job.Ready != nil && !isMiniReelReady(job.Ready) {
 			continue

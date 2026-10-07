@@ -22,7 +22,7 @@ import (
 //go:embed ui
 var uiFiles embed.FS
 
-var version = "0.2.5-dev"
+var version = "0.2.6-dev"
 
 type server struct {
 	instanceID   string
@@ -66,6 +66,10 @@ func main() {
 		log.Fatalf("prepare account: %v", err)
 	}
 	go s.accounts.run(ctx)
+	if err := ensureMiniReelRoot(); err != nil {
+		// Account and browsing pages remain usable; playback retries initialization.
+		log.Printf("prepare media cache: %v", err)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/health", s.health)
 	mux.HandleFunc("/api/v1/status", s.status)
