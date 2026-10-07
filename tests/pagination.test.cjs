@@ -49,3 +49,22 @@ test('feed switches from tab phase to cell phase at offset zero without stopping
   const p=create({cursor:(d,old)=>({offset:d.next_offset||0,feed_cell:d.feed_cell||old.feed_cell||'',feed_plan:d.feed_plan||old.feed_plan||''}),request:async q=>{calls.push(q);return q.feed_cell ? {items:[row('second')],next_offset:6,has_more:false} : {items:[row('first')],next_offset:0,feed_cell:'cell',feed_plan:'plan',has_more:true};},render:()=>{}});
   await p.reset({channel:'39'});assert.equal(p.hasMore(),true);await p.load();assert.equal(calls[1].offset,0);assert.equal(calls[1].feed_cell,'cell');assert.equal(p.items.length,2);assert.equal(p.hasMore(),false);
 });
+test('calendar continues when released offset resets, then follows the independent upcoming cursor', async () => {
+  const fs=require('node:fs'),vm=require('node:vm');
+  const source=fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'),'utf8');
+  const c=vm.createContext({});vm.runInContext(source.slice(source.indexOf('  function calendarCursor('),source.indexOf('  function createListPager(')),c);
+  const responses=[
+    {items:[row('released')],next_offset:45,has_more:true,session_id:'session'},
+    {items:[row('last-released'),row('pending')],next_offset:24,next_subscribe_offset:23,has_more:true},
+    {items:[row('pending'),row('pending-next')],next_offset:48,next_subscribe_offset:47,has_more:true},
+    {items:[row('pending-last')],next_offset:62,next_subscribe_offset:61,has_more:false}
+  ];
+  const calls=[];const p=create({cursor:c.calendarCursor,request:async q=>{calls.push(q);return responses.shift()},render:()=>{}});
+  await p.reset({date:'20261007'});await p.load();assert.equal(p.hasMore(),true);
+  await p.load();await p.load();
+  assert.deepEqual(calls.map(q=>q.subscribe_offset),[undefined,'','23','47']);
+  assert.deepEqual(calls.map(q=>q.offset),[undefined,45,24,48]);
+  assert.ok(calls.every(q=>q.date==='20261007'));
+  assert.deepEqual(p.items.map(x=>x.series_id),['released','last-released','pending','pending-next','pending-last']);
+  assert.equal(p.hasMore(),false);
+});

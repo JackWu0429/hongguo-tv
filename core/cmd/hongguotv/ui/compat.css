@@ -49,7 +49,6 @@
 .legacy-flex-gap .list-status > * + * { margin-left: 18px; }
 .legacy-flex-gap .list-status[aria-busy="true"]:before { margin-right: 18px; }
 .legacy-flex-gap .search-result-head > * + * { margin-left: 12px; }
-.legacy-flex-gap .rank-panel-row > * + * { margin-left: 12px; }
 .legacy-flex-gap .publication-row > img { margin-right: 20px; }
 .legacy-flex-gap .publication-action { margin-left: 20px; }
 .legacy-flex-gap .rank-tabs > * + *, .legacy-flex-gap .new-tabs > * + * { margin-left: 28px; }
@@ -98,3 +97,7 @@
 @media (max-width: 1080px) {
   .legacy-flex-gap .search-heading-row > .search-box { margin-left: 0; }
 }
+
+.legacy-grid .reservation-login { flex-direction: column; }
+.legacy-flex-gap .reservation-login .publication-action { margin-left: 0; }
+.legacy-grid .reservation-grid > .reservation-login { width: calc(100% - 20px); margin-right: 20px; }

@@ -15,15 +15,16 @@ import (
 // from the number of visible cards: calendar/search may contain non-video rows.
 type ListResult struct {
 	CategoryResult
-	SearchID     string          `json:"search_id,omitempty"`
-	Passback     string          `json:"passback,omitempty"`
-	Calendar     *CalendarSchema `json:"calendar,omitempty"`
-	Ranks        []RankOption    `json:"ranks,omitempty"`
-	Source       string          `json:"source,omitempty"`
-	FeedCell     string          `json:"feed_cell,omitempty"`
-	FeedPlan     string          `json:"feed_plan,omitempty"`
-	OnlineTotal  *int            `json:"online_total_count,omitempty"`
-	OfflineTotal *int            `json:"offline_total_count,omitempty"`
+	SearchID        string          `json:"search_id,omitempty"`
+	Passback        string          `json:"passback,omitempty"`
+	Calendar        *CalendarSchema `json:"calendar,omitempty"`
+	Ranks           []RankOption    `json:"ranks,omitempty"`
+	Source          string          `json:"source,omitempty"`
+	FeedCell        string          `json:"feed_cell,omitempty"`
+	FeedPlan        string          `json:"feed_plan,omitempty"`
+	OnlineTotal     *int            `json:"online_total_count,omitempty"`
+	OfflineTotal    *int            `json:"offline_total_count,omitempty"`
+	SubscribeOffset *int            `json:"next_subscribe_offset,omitempty"`
 }
 type CalendarSchema struct {
 	Dates       []string `json:"dates"`
@@ -66,6 +67,12 @@ func listQuery(r *http.Request) (url.Values, error) {
 	offset, err := strconv.Atoi(firstNonEmpty(q.Get("offset"), "0"))
 	if err != nil || offset < 0 || offset > 100000 {
 		return nil, errors.New("分页位置无效")
+	}
+	if value := q.Get("subscribe_offset"); value != "" {
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 0 || n > 100000 {
+			return nil, errors.New("日历分页位置无效")
+		}
 	}
 	for _, k := range []string{"session_id", "passback", "search_id", "shown", "rank", "rank_sub", "rank_panel"} {
 		if len(q.Get(k)) > 12000 {
@@ -339,6 +346,13 @@ func reservationDrama(v any) (Drama, bool) {
 func (c *passportClient) SubscriptionList(ctx context.Context, q url.Values, calendar bool) (ListResult, error) {
 	params := url.Values{"offset": {firstNonEmpty(q.Get("offset"), "0")}, "subscribe_offset": {firstNonEmpty(q.Get("offset"), "0")}, "session_id": {q.Get("session_id")}}
 	if calendar {
+		// The initial request must omit subscribe_offset. Zero jumps past
+		// today's released dramas to the upcoming section. The official response
+		// supplies a separate subscription cursor when that section is reached.
+		params.Del("subscribe_offset")
+		if value := q.Get("subscribe_offset"); value != "" {
+			params.Set("subscribe_offset", value)
+		}
 		params.Set("tab_type", "5")
 		params.Set("tab_style", "2")
 		params.Set("active_panel", "6")
@@ -398,7 +412,26 @@ func (c *passportClient) SubscriptionList(ctx context.Context, q url.Values, cal
 	if x, ok := asMap(d["calendar_schema"]); ok {
 		out.Calendar = &CalendarSchema{Dates: asStringSlice(x["date_list"]), DefaultDate: asString(x["default_date"]), CurrentDate: asString(x["current_date"])}
 	}
-	stopStalledPage(&out, asInt(q.Get("offset")))
+	if calendar {
+		if loc, ok := asMap(d["calendar_loc_info"]); ok {
+			if value, exists := loc["subscribe_offset"]; exists {
+				n := asInt(value)
+				if n >= 0 {
+					out.SubscribeOffset = &n
+				}
+			}
+			// has_more only describes the released section. Upcoming rows use
+			// down_has_more, even while has_more is false.
+			out.HasMore = out.HasMore || asBool(loc["down_has_more"])
+		}
+		advances := out.NextOffset > asInt(q.Get("offset"))
+		if out.SubscribeOffset != nil {
+			advances = advances || q.Get("subscribe_offset") == "" || *out.SubscribeOffset > asInt(q.Get("subscribe_offset"))
+		}
+		out.HasMore = out.HasMore && advances
+	} else {
+		stopStalledPage(&out, asInt(q.Get("offset")))
+	}
 	return out, nil
 }
 func (c *passportClient) SetReservation(ctx context.Context, id string, reserve bool) error {

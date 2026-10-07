@@ -8,6 +8,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.graphics.Color;
+import android.graphics.drawable.AnimatedVectorDrawable;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -16,6 +17,8 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.view.ViewTreeObserver;
+import android.view.inputmethod.InputMethodManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -26,6 +29,7 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Button;
+import android.widget.ImageView;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.io.BufferedReader;
@@ -45,6 +49,9 @@ public class MainActivity extends Activity {
     private Thread startupThread;
     private boolean destroyed;
     private boolean pageLoadFailed;
+    private boolean pageReady;
+    private int routedVerticalKeys;
+    private AnimatedVectorDrawable startupAnimation;
     private final Runnable restoreFullscreen = () -> {
         if (activityForeground && hasWindowFocus() && !isFinishing() && !isDestroyed() && !isKeyboardVisible()) {
             applyFullscreen();
@@ -76,10 +83,12 @@ public class MainActivity extends Activity {
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         webView.addJavascriptInterface(new PlaybackPreferences(this), "HongguoTVPreferences");
+        webView.addJavascriptInterface(new InputBridge(), "HongguoTVInput");
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 pageLoadFailed = false;
+                pageReady = false;
                 super.onPageStarted(view, url, favicon);
             }
 
@@ -94,6 +103,8 @@ public class MainActivity extends Activity {
                 super.onPageFinished(view, url);
                 if (!pageLoadFailed && coreUrl != null && url.startsWith(coreUrl)) {
                     startupPanel.setVisibility(View.GONE);
+                    startupAnimation.stop();
+                    pageReady = true;
                     webView.requestFocus();
                 }
                 view.evaluateJavascript("window.HongguoTV && window.HongguoTV." +
@@ -109,6 +120,13 @@ public class MainActivity extends Activity {
         int startupInset = Math.round(24 * getResources().getDisplayMetrics().density);
         startupPanel.setPadding(startupInset, startupInset, startupInset, startupInset);
         startupPanel.setBackgroundColor(0xFF0C0D12);
+        ImageView startupLogo = new ImageView(this);
+        startupAnimation = (AnimatedVectorDrawable) getDrawable(R.drawable.startup_loading);
+        startupLogo.setImageDrawable(startupAnimation);
+        int logoSize = Math.round(72 * getResources().getDisplayMetrics().density);
+        LinearLayout.LayoutParams logoLayout = new LinearLayout.LayoutParams(logoSize, logoSize);
+        logoLayout.bottomMargin = Math.round(20 * getResources().getDisplayMetrics().density);
+        startupPanel.addView(startupLogo, logoLayout);
         startupMessage = new TextView(this);
         startupMessage.setTextColor(Color.WHITE);
         startupMessage.setTextSize(22);
@@ -142,6 +160,8 @@ public class MainActivity extends Activity {
     private void showStartupFailure() {
         if (destroyed) return;
         startupMessage.setText("本机服务连接失败，请重试");
+        pageReady = false;
+        startupAnimation.stop();
         startupRetry.setVisibility(View.VISIBLE);
         startupPanel.setVisibility(View.VISIBLE);
         startupRetry.requestFocus();
@@ -152,6 +172,7 @@ public class MainActivity extends Activity {
         startupMessage.setText("正在启动红果短剧…");
         startupRetry.setVisibility(View.GONE);
         startupPanel.setVisibility(View.VISIBLE);
+        if (activityForeground) startupAnimation.start();
         startupThread = new Thread(() -> {
             long deadline = SystemClock.elapsedRealtime() + 30000;
             CoreEndpoint ready = null;
@@ -253,6 +274,21 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        int verticalBit = event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP ? 1 : event.getKeyCode() == KeyEvent.KEYCODE_DPAD_DOWN ? 2 : 0;
+        if (verticalBit != 0) {
+            if (event.getAction() == KeyEvent.ACTION_UP && (routedVerticalKeys & verticalBit) != 0) {
+                routedVerticalKeys &= ~verticalBit;
+                return true;
+            }
+            // Old WebView can consume vertical keys as input caret movement.
+            // Use the same JS router as browser keys, while leaving the IME's
+            // own arrow navigation, text editing and startup controls native.
+            if (event.getAction() == KeyEvent.ACTION_DOWN && pageReady && webView.hasFocus() && !isKeyboardVisible()) {
+                routedVerticalKeys |= verticalBit;
+                webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.remoteKey(" + event.getKeyCode() + "," + (event.getRepeatCount() > 0) + ")", null);
+                return true;
+            }
+        }
         if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) requestPageBack();
             return true;
@@ -266,6 +302,17 @@ public class MainActivity extends Activity {
             return true;
         }
         return super.dispatchKeyEvent(event);
+    }
+
+    public final class InputBridge {
+        @JavascriptInterface
+        public void finishEditing() {
+            runOnUiThread(() -> {
+                if (destroyed || webView == null) return;
+                InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (keyboard != null) keyboard.hideSoftInputFromWindow(webView.getWindowToken(), 0);
+            });
+        }
     }
 
     private String mediaCommand(int keyCode) {
@@ -315,6 +362,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         activityForeground = false;
+        routedVerticalKeys = 0;
+        if (startupAnimation != null) startupAnimation.stop();
         if (webView != null) {
             webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.pauseForBackground()", null);
             webView.onPause();
@@ -326,6 +375,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         activityForeground = true;
+        if (startupAnimation != null && startupPanel.getVisibility() == View.VISIBLE && startupRetry.getVisibility() != View.VISIBLE) startupAnimation.start();
         applyFullscreen();
         if (webView != null) {
             webView.onResume();
@@ -336,6 +386,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         destroyed = true;
+        if (startupAnimation != null) startupAnimation.stop();
         if (startupThread != null) startupThread.interrupt();
         View decor = getWindow().getDecorView();
         decor.removeCallbacks(restoreFullscreen);

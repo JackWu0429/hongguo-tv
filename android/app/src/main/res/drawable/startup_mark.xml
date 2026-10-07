@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="72dp" android:height="72dp" android:viewportWidth="72" android:viewportHeight="72">
+    <path android:fillColor="#00000000" android:strokeColor="#353541" android:strokeWidth="3"
+        android:pathData="M36,5 A31,31 0,1 1,36,67 A31,31 0,1 1,36,5" />
+    <group android:name="spinner" android:pivotX="36" android:pivotY="36">
+        <path android:fillColor="#00000000" android:strokeColor="#F35D7B" android:strokeWidth="3"
+            android:strokeLineCap="round" android:pathData="M36,5 A31,31 0,0 1,67,36" />
+    </group>
+    <path android:fillColor="#F35D7B" android:pathData="M29,23 L49,36 L29,49 Z" />
+</vector>

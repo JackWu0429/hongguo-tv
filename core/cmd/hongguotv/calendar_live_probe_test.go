@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -76,4 +77,67 @@ func TestLiveCalendarContract(t *testing.T) {
 			}
 		}
 	}
+}
+
+// Exercises the public adapter through all released/upcoming pages. Read only.
+func TestLiveAllDayCalendarAdapter(t *testing.T) {
+	dir := os.Getenv("HONGGUO_AUTH_READ_PROBE_DIR")
+	if dir == "" {
+		t.Skip("explicit authenticated read regression only")
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "account.json"))
+	if err != nil {
+		t.Fatal("session unavailable")
+	}
+	var disk accountDisk
+	if json.Unmarshal(b, &disk) != nil || disk.Profile == nil {
+		t.Fatal("not logged in")
+	}
+	c := newPassportClient(disk.Session)
+	c.uid = disk.Profile.UID
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	date := time.Now().In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("20060102")
+	q := url.Values{"date": {date}}
+	seen := map[string]bool{}
+	online, upcoming, pages := 0, 0, 0
+	for pages < 50 {
+		out, e := c.SubscriptionList(ctx, q, true)
+		if e != nil {
+			t.Fatal("calendar read failed")
+		}
+		pages++
+		for _, item := range out.Items {
+			if item.PublishTime > 0 && time.Unix(item.PublishTime, 0).In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("20060102") != date {
+				t.Fatal("calendar crossed selected date")
+			}
+			if seen[item.SeriesID] {
+				continue
+			}
+			seen[item.SeriesID] = true
+			if item.Upcoming {
+				upcoming++
+			} else {
+				online++
+			}
+		}
+		if !out.HasMore {
+			t.Logf("date=%s pages=%d unique=%d online=%d upcoming=%d", date, pages, len(seen), online, upcoming)
+			return
+		}
+		next := strconv.Itoa(out.NextOffset)
+		sub := q.Get("subscribe_offset")
+		if out.SubscribeOffset != nil {
+			sub = strconv.Itoa(*out.SubscribeOffset)
+		}
+		if q.Get("offset") == next && q.Get("subscribe_offset") == sub {
+			t.Fatal("calendar cursor stalled")
+		}
+		q.Set("offset", next)
+		q.Set("session_id", out.SessionID)
+		if sub != "" {
+			q.Set("subscribe_offset", sub)
+		}
+	}
+	t.Fatal("calendar pagination did not terminate")
 }

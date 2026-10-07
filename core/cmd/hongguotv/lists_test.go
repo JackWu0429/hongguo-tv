@@ -29,7 +29,7 @@ func TestOfficialListQueriesAndCursors(t *testing.T) {
 		ioJSON(w, `{"code":0,"data":{"next_offset":25,"has_more":false,"session_id":"s","calendar_schema":{"date_list":["20261007"],"default_date":"20261007","current_date":"20261007"},"subscribe_items":[{"item_id":"7692049770637954110","name":"待上线剧","cover":"https://example.com/cover.jpg","is_online":false,"has_subscribed":true,"schedule_publish_time":1791364920},{"item_id":"0","is_online":true,"subscribe_data":{"series_id":7692318643031395390,"title":"已上线剧","episode_cnt":69}}]}}`)
 	})
 	defer close()
-	out, err := c.SubscriptionList(context.Background(), url.Values{"offset": {"24"}, "session_id": {"calendar-session"}, "date": {"20261007"}, "gender": {"1"}}, true)
+	out, err := c.SubscriptionList(context.Background(), url.Values{"offset": {"24"}, "session_id": {"calendar-session"}, "date": {"20261007"}, "gender": {"1"}, "subscribe_offset": {"24"}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,5 +147,66 @@ func TestRankJSONSelectorsAndActors(t *testing.T) {
 	}
 	if len(out.Ranks) != 1 || len(out.Ranks[0].Children) != 1 || len(out.Items) != 1 || out.Items[0].ActorID == "" || validID(out.Items[0].SeriesID) {
 		t.Fatalf("actor mapped to playable drama: %+v", out)
+	}
+}
+
+func TestCalendarIndependentCursorsIncludeWholeDay(t *testing.T) {
+	calls := 0
+	c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		calls++
+		if q.Get("target_date") != "20261007" {
+			t.Error("lost selected day")
+		}
+		switch calls {
+		case 1:
+			if _, exists := q["subscribe_offset"]; exists {
+				t.Error("initial subscription cursor skips released dramas")
+			}
+			ioJSON(w, `{"code":0,"data":{"has_more":true,"next_offset":15,"session_id":"session","subscribe_items":[{"item_id":"0","is_online":true,"subscribe_data":{"series_id":"7692318643031395390","title":"已上线","episode_cnt":69}}]}}`)
+		case 2:
+			if q.Get("offset") != "45" || q.Get("subscribe_offset") != "" {
+				t.Error("released pagination lost")
+			}
+			ioJSON(w, `{"code":0,"data":{"has_more":true,"next_offset":24,"session_id":"session","calendar_loc_info":{"subscribe_offset":23},"subscribe_items":[{"item_id":"7692049770637954110","name":"待上线","is_online":false}]}}`)
+		case 3:
+			if q.Get("offset") != "24" || q.Get("subscribe_offset") != "23" {
+				t.Error("independent cursor lost", q)
+			}
+			ioJSON(w, `{"code":0,"data":{"has_more":false,"next_offset":48,"calendar_loc_info":{"subscribe_offset":47,"down_has_more":true},"subscribe_items":[]}}`)
+		case 4:
+			ioJSON(w, `{"code":0,"data":{"has_more":false,"next_offset":62,"calendar_loc_info":{"subscribe_offset":61,"down_has_more":false},"subscribe_items":[]}}`)
+		case 5:
+			ioJSON(w, `{"code":0,"data":{"has_more":true,"next_offset":62,"calendar_loc_info":{"subscribe_offset":61,"down_has_more":true},"subscribe_items":[]}}`)
+		}
+	})
+	defer close()
+	q := url.Values{"date": {"20261007"}}
+	out, err := c.SubscriptionList(context.Background(), q, true)
+	if err != nil || !out.HasMore || len(out.Items) != 1 || out.Items[0].Upcoming || out.SubscribeOffset != nil {
+		t.Fatalf("released first page: %+v %v", out, err)
+	}
+	q.Set("offset", "45")
+	out, err = c.SubscriptionList(context.Background(), q, true)
+	if err != nil || !out.HasMore || out.NextOffset != 24 || out.SubscribeOffset == nil || *out.SubscribeOffset != 23 || !out.Items[0].Upcoming {
+		t.Fatalf("section transition: %+v %v", out, err)
+	}
+	q.Set("offset", "24")
+	q.Set("subscribe_offset", "23")
+	out, err = c.SubscriptionList(context.Background(), q, true)
+	if err != nil || !out.HasMore || *out.SubscribeOffset != 47 {
+		t.Fatal("upcoming truncated", out, err)
+	}
+	q.Set("offset", "48")
+	q.Set("subscribe_offset", "47")
+	out, err = c.SubscriptionList(context.Background(), q, true)
+	if err != nil || out.HasMore {
+		t.Fatal("final page", out, err)
+	}
+	q.Set("offset", "62")
+	q.Set("subscribe_offset", "61")
+	out, err = c.SubscriptionList(context.Background(), q, true)
+	if err != nil || out.HasMore {
+		t.Fatal("stalled calendar cursor", out, err)
 	}
 }

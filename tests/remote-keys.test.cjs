@@ -59,3 +59,21 @@ test('text editing retains native left and right keys instead of moving focus', 
   }
   assert.equal(c.moved.length,0);
 });
+test('native vertical bridge uses the existing router once and ignores text editing keys', () => {
+  const c=keyboard();
+  assert.equal(c.remoteKey(20,false),true);
+  assert.equal(c.remoteKey(19,true),true);
+  assert.equal(c.remoteKey(21,false),false);
+  assert.deepEqual(Array.from(c.moved),['down','up']);
+  assert.deepEqual(Array.from(c.focused),['down','up']);
+});
+test('holding Enter in account inputs never submits an additional SMS or login', () => {
+  const c=keyboard();
+  vm.runInContext("var submissions=0;function accountSendCode(){submissions++};function accountLogin(){submissions++};var accountData=null;",c);
+  for (const id of ['account-phone','account-code']) {
+    vm.runInContext(`document.activeElement={id:'${id}',classList:{contains:function(name){return name==='account-input'}}}`,c);
+    const e={keyCode:13,preventDefault(){},stopPropagation(){}};
+    c.handleKey(e);c.handleKey({...e,repeat:true});
+  }
+  assert.equal(c.submissions,2);
+});

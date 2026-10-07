@@ -41,6 +41,17 @@ func TestListsBrowserFixture(t *testing.T) {
 		{ID: "ranklist_celebrity", Label: "演员", Children: []RankOption{{ID: "ranklist_actor_fans", Label: "星光榜"}}},
 		{ID: "series_album", Label: "系列剧", Children: []RankOption{{ID: "series_album_new_rank", Label: "新季榜"}}},
 	}
+	if os.Getenv("HONGGUO_ANDROID_LAYOUT_FIXTURE") == "1" {
+		groups := []CategoryFilterRow{}
+		for _, name := range []string{"综合", "主题", "年代", "情节"} {
+			options := []CategoryFilterOption{}
+			for i := 0; i < 18; i++ {
+				options = append(options, CategoryFilterOption{ID: fmt.Sprintf("%s-%d", name, i), Label: fmt.Sprintf("%s筛选%d", name, i+1)})
+			}
+			groups = append(groups, CategoryFilterRow{Type: name, Label: name, Options: options})
+		}
+		ranks[0].Children[0].Panels = groups
+	}
 	drama := func(i int) Drama {
 		vids := make([]string, 80)
 		for j := range vids {

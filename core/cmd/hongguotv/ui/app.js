@@ -222,6 +222,13 @@
     }
     node.setAttribute('aria-busy', String(pager.busy));
   }
+  function calendarCursor(data, old) {
+    var cursor = { offset: Number(data.next_offset) || 0, session_id: data.session_id || old.session_id || '',
+      subscribe_offset: data.next_subscribe_offset == null ? old.subscribe_offset || '' : String(data.next_subscribe_offset) };
+    var date = data.calendar && data.calendar.default_date || old.date;
+    if (date) cursor.date = date;
+    return cursor;
+  }
   function createListPager(endpoint, container, selector, id, render, metadata) {
     var pager = HongguoPagination.create({
       request: function (params, signal) { return fetchData((pager.endpoint || endpoint) + '?' + new URLSearchParams(params).toString(), signal ? { signal: signal } : {}); },
@@ -231,7 +238,7 @@
         render(items, append, p);
       },
       metadata: metadata,
-      cursor: endpoint === '/api/v1/lists/recommend' ? function (data, old) { return { offset: Number(data.next_offset) || 0, session_id: data.session_id || old.session_id || '', feed_cell: data.feed_cell || old.feed_cell || '', feed_plan: data.feed_plan || old.feed_plan || '' }; } : null,
+      cursor: endpoint === '/api/v1/lists/calendar' ? calendarCursor : endpoint === '/api/v1/lists/recommend' ? function (data, old) { return { offset: Number(data.next_offset) || 0, session_id: data.session_id || old.session_id || '', feed_cell: data.feed_cell || old.feed_cell || '', feed_plan: data.feed_plan || old.feed_plan || '' }; } : null,
       status: function (p) { listStatus(p, id); },
       after: queueTailCheck
     });
@@ -624,6 +631,8 @@
     if (window.getComputedStyle(element).visibility !== 'visible') return;
     // The default scroll behavior is sufficient; old WebViews have no
     // focus-options overload.
+    var previous = document.activeElement;
+    if (previous && previous.tagName === 'INPUT' && element.tagName !== 'INPUT' && window.HongguoTVInput) window.HongguoTVInput.finishEditing();
     element.focus();
     markFocus(element);
     if (!detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zoneOf(element) !== 'sidebar') {
@@ -923,6 +932,13 @@
     if (zone === 'accountInputs' || zone === 'accountActions') {
       var leftSelector = '#account-login-form .account-input, #account-login-form .account-action, #account-mfa .account-action, #account-profile .account-action';
       if (current.id === 'account-sync') return direction === 'left' ? (focusables(leftSelector).indexOf(accountLeftFocus) >= 0 ? accountLeftFocus : firstVisible(leftSelector)) : null;
+      if (zone === 'accountInputs' && direction === 'down') {
+        if (current.id === 'account-phone' && firstVisible('#account-code')) return document.getElementById('account-code');
+        return firstVisible('#account-login') || firstVisible('#account-send-code') || firstVisible('#account-change-phone');
+      }
+      if (zone === 'accountActions' && direction === 'up') {
+        return firstVisible('#account-code') || firstVisible('#account-phone') || moveGrid(leftSelector, current, direction);
+      }
       var target = moveGrid(leftSelector, current, direction);
       if (target) return target;
       if (direction === 'right' && firstVisible('#account-sync')) { accountLeftFocus = current; return document.getElementById('account-sync'); }
@@ -1028,6 +1044,7 @@
       if (key === 'Backspace' || key === 'Delete' || key === 'ArrowLeft' || key === 'ArrowRight') return;
       if (key === 'Enter') {
         event.preventDefault(); event.stopPropagation();
+        if (event.repeat) return;
         if (current.id === 'account-code') accountLogin();
         else if (accountData && accountData.phase === 'code') goFocus(document.getElementById('account-code'));
         else accountSendCode();
@@ -1098,6 +1115,13 @@
     // its own focus search when the remote reaches the end of a zone.
     event.preventDefault();
     event.stopPropagation();
+  }
+
+  function remoteKey(keyCode, repeat) {
+    if (keyCode !== 19 && keyCode !== 20) return false;
+    var handled = false;
+    handleKey({ keyCode: keyCode, repeat: !!repeat, preventDefault: function () { handled = true; }, stopPropagation: function () {} });
+    return handled;
   }
 
   function showNotice(message) {
@@ -1370,7 +1394,7 @@
     shell.classList.remove('is-controls-hidden'); exitCinema();
     setPlayerStatus('');
   }
-  window.HongguoTV = { requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground };
+  window.HongguoTV = { remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground };
 
   function isLibraryPage() { return ['history', 'favorites', 'likes'].indexOf(pageMode()) >= 0; }
   function libraryEntry(id) { return libraryData.entries.filter(function (entry) { return entry.drama.series_id === id; })[0] || null; }
@@ -2421,7 +2445,9 @@
       var node = document.createElement('button'); node.className = cls + (selected ? ' is-active' : '');
       node.dataset.focus = cls + '-' + (option.id || 'all'); node.textContent = option.label;
       node.setAttribute('aria-pressed', String(selected));
-      node.addEventListener('click', handler); target.appendChild(node); return node;
+      node.addEventListener('click', handler);
+      node.addEventListener('focus', function () { node.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });
+      target.appendChild(node); return node;
     }
     data.forEach(function (option) {
       button(option, 'rank-tab', option === active, root, function () {
@@ -2435,7 +2461,8 @@
     (sub && sub.panels || []).forEach(function (group) {
       var line = document.createElement('div'); line.className = 'rank-panel-row';
       var label = document.createElement('span'); label.textContent = group.label; line.appendChild(label);
-      group.options.forEach(function (option) { button(option, 'rank-panel', option.id === rankSelection.rank_panel, line, function () { rankSelection.rank_panel = option.id; renderRankSelectors(rankOptions); loadRank(); }); });
+      var options = document.createElement('div'); options.className = 'rank-panel-options'; line.appendChild(options);
+      group.options.forEach(function (option) { button(option, 'rank-panel', option.id === rankSelection.rank_panel, options, function () { rankSelection.rank_panel = option.id; renderRankSelectors(rankOptions); loadRank(); }); });
       panels.appendChild(line);
     });
     if (['rankTabs', 'rankSubnav', 'rankPanels'].indexOf(priorZone) >= 0) {
@@ -2653,9 +2680,11 @@
     if (restoring && reservationPager.loaded) { queueTailCheck(); return; }
     if (!accountData || !accountData.logged_in) {
       reservationPager.cancel(); reservationPager.items = []; reservationPager.loaded = false;
-      renderMessage(document.getElementById('reservation-list'), 'calendar-empty', '登录后查看你的预约');
-      var login = document.createElement('button'); login.className = 'publication-action'; login.textContent = '登录红果账号'; login.addEventListener('click', function () { activatePage(document.querySelector('.side-item[data-page="account"]')); });
-      document.getElementById('reservation-list').appendChild(login); return;
+      var list = document.getElementById('reservation-list'); list.innerHTML = '';
+      var empty = document.createElement('div'); empty.className = 'calendar-empty reservation-login';
+      var message = document.createElement('p'); message.textContent = '登录后查看你的预约'; empty.appendChild(message); list.appendChild(empty);
+      var login = document.createElement('button'); login.className = 'publication-action'; login.dataset.focus = 'reservation-login'; login.textContent = '登录红果账号'; login.addEventListener('click', function () { activatePage(document.querySelector('.side-item[data-page="account"]')); });
+      empty.appendChild(login); return;
     }
     reservationPager.reset({ mode: reservationMode });
   }
