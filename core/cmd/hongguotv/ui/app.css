@@ -255,7 +255,6 @@ button:focus { outline: none; }
 .search-result-card-image { display: block; width: 100%; aspect-ratio: 2 / 3; object-fit: cover; background: #2d2e36; border-radius: 10px; }
 .search-result-card-title { display: block; overflow: hidden; padding: 10px 4px 2px; font-size: 15px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .search-result-card-meta { display: block; overflow: hidden; padding: 0 4px; color: #9697a3; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.search-result-card.is-focused, .search-result-card:focus { border-color: #fff; box-shadow: 0 0 0 3px #fff, 0 12px 25px rgba(0,0,0,.35); transform: translateY(-3px) scale(1.025); }
 .search-result-empty { grid-column: 1 / -1; min-height: 170px; display: grid; place-items: center; padding: 20px; color: #9b9ca7; background: rgba(255,255,255,.035); border: 1px dashed rgba(255,255,255,.14); border-radius: 12px; text-align: center; }
 
 /* Mac-style content pages used by the Android TV build.  These pages keep
@@ -312,7 +311,6 @@ button:focus { outline: none; }
 .new-card-title { display: block; overflow: hidden; padding: 10px 4px 2px; font-size: 15px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .new-card-meta { display: block; overflow: hidden; padding: 0 4px; color: #92939e; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .new-card-score { display: block; padding: 5px 4px 0; color: #f3bb2f; font-size: 14px; font-weight: 700; }
-.new-card.is-focused, .new-card:focus { border-color: #fff; box-shadow: 0 0 0 3px #fff, 0 12px 25px rgba(0,0,0,.35); transform: translateY(-3px) scale(1.025); }
 
 .library-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 22px; margin-bottom: 20px; }
 .library-heading-row h1 { margin: 0 0 9px; font-size: 32px; font-size: clamp(28px,3vw,42px); }
@@ -325,7 +323,6 @@ button:focus { outline: none; }
 .library-grid { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 28px 20px; padding-bottom: 24px; }
 .library-tile { min-width: 0; }
 .library-card { display: block; position: relative; width: 100%; padding: 0 0 10px; color: #fff; text-align: left; background: transparent; border: 1px solid transparent; border-radius: 11px; scroll-margin: 14px; }
-.library-card.is-focused, .library-card:focus { outline: none; box-shadow: 0 0 0 3px #fff, 0 10px 25px rgba(0,0,0,.4); }
 .library-card img { display: block; width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 10px; background: #2d2e36; }
 .library-card-title { display: block; overflow: hidden; padding: 10px 4px 3px; white-space: nowrap; text-overflow: ellipsis; font-size: 15px; font-weight: 700; }
 .library-card-meta { display: block; overflow: hidden; padding: 0 4px; color: #b2b3be; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
@@ -497,7 +494,16 @@ button:focus { outline: none; }
 .confirm-reserve { background: #f35d7b; }
 
 /* Shared decoration for full poster cards; compact thumbnails keep their layout. */
-.drama-poster { display: block; position: relative; min-width: 0; }
+.drama-poster { display: block; position: relative; min-width: 0; border-radius: 10px; }
+/* The whole button keeps remote focus; only its poster paints the ring.
+   Draw inside the reserved box so clipped cards and old WebViews retain
+   all four rounded edges, even while the image is loading or unavailable. */
+.search-result-card.is-focused, .search-result-card:focus,
+.new-card.is-focused, .new-card:focus,
+.library-card.is-focused, .library-card:focus { outline: none; border-color: transparent; box-shadow: none; transform: none; }
+.search-result-card.is-focused > .drama-poster::after, .search-result-card:focus > .drama-poster::after,
+.new-card.is-focused > .drama-poster::after, .new-card:focus > .drama-poster::after,
+.library-card.is-focused > .drama-poster::after, .library-card:focus > .drama-poster::after { position: absolute; z-index: 2; top: 0; right: 0; bottom: 0; left: 0; border: 3px solid #fff; border-radius: inherit; content: ''; pointer-events: none; }
 .poster-season-badge { position: absolute; z-index: 1; top: 8px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 16px); padding: 4px 9px; overflow: hidden; color: #fff; background: rgba(12,13,18,.82); border: 1px solid rgba(255,255,255,.18); border-radius: 6px; font-size: 13px; font-weight: 600; line-height: 1.3; text-align: center; white-space: nowrap; text-overflow: ellipsis; pointer-events: none; }
 
 /* Keep the call to action inside the empty state, including old flex layouts. */
