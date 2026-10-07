@@ -35,6 +35,7 @@
     libraryItems: '.library-card',
     libraryRemovals: '.library-remove',
     accountInputs: '.account-input',
+    accountKeypad: '.account-keypad-key',
     accountActions: '.account-action',
     appUpdates: '.app-update-action',
     support: '.support-card, .support-close',
@@ -49,7 +50,9 @@
   var notice = document.getElementById('action-notice');
   var shell = document.querySelector('.app-shell');
   var androidShell = /HongguoTV-Android/.test(navigator.userAgent);
-  var accountEditingInput = null;
+  var numericKeypad;
+  var accountKeypadReturnFocus = null;
+  var accountKeypadPhase = '';
   var mainSurface = document.getElementById('main-surface');
   var supportPage = document.getElementById('support-page');
   var supportModalOpen = false;
@@ -195,7 +198,7 @@
     // WebView delivers DOM key codes, not Android KeyEvent constants.
     // Chromium 44 may omit event.key entirely.
     37: 'ArrowLeft', 38: 'ArrowUp', 39: 'ArrowRight', 40: 'ArrowDown',
-    13: 'Enter', 27: 'Escape', 8: 'Backspace', 32: ' ',
+    13: 'Enter', 27: 'Escape', 8: 'Backspace', 9: 'Tab', 46: 'Delete', 32: ' ',
     19: 'ArrowUp', 20: 'ArrowDown', 21: 'ArrowLeft', 22: 'ArrowRight',
     23: 'Enter', 66: 'Enter', 4: 'Escape', 111: 'Escape'
   };
@@ -580,7 +583,8 @@
     Array.prototype.forEach.call(document.querySelectorAll(query), function (element) {
       var style = window.getComputedStyle(element);
       var insideModal = element.closest && element.closest('#detail-modal');
-      if (supportModalOpen) { if (!element.closest('#support-modal')) return; }
+      if (accountKeypadOpen()) { if (!element.closest('#account-keypad-modal')) return; }
+      else if (supportModalOpen) { if (!element.closest('#support-modal')) return; }
       else if (confirmOpen) { if (!element.closest('#confirm-modal')) return; }
       else if (playerOptionsOpen) { if (!element.closest('#player-options')) return; }
       else if (discussionOpen) { if (!element.closest('#discussion-panel')) return; }
@@ -603,6 +607,7 @@
 
   function zoneOf(element) {
     if (!element) return '';
+    if (element.classList.contains('account-keypad-key')) return 'accountKeypad';
     if (element.classList.contains('support-card') || element.classList.contains('support-close')) return 'support';
     if (element.classList.contains('discussion-item') || element.classList.contains('discussion-close')) return 'discussion';
     if (element.classList.contains('side-item')) return 'sidebar';
@@ -654,11 +659,10 @@
     // The default scroll behavior is sufficient; old WebViews have no
     // focus-options overload.
     var previous = document.activeElement;
-    if (accountEditingInput && previous === accountEditingInput && element !== previous) finishAccountEditing(false);
     if (previous && previous.tagName === 'INPUT' && element.tagName !== 'INPUT' && window.HongguoTVInput) window.HongguoTVInput.finishEditing();
     element.focus();
     markFocus(element);
-    if (!detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zoneOf(element) !== 'sidebar') {
+    if (!accountKeypadOpen() && !detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zoneOf(element) !== 'sidebar') {
       lastContentFocus = element;
       lastPageFocus[pageMode()] = element;
     }
@@ -1063,38 +1067,22 @@
     return direction === 'right' ? firstContentFocus() : activeSidebar();
   }
 
-  function startAccountEditing(input) {
-    if (!androidShell || !input || input.disabled || accountBusy) return;
-    if (input.id === 'account-phone' && accountData && accountData.phase === 'code' && /^1[3-9]\d{9}$/.test(input.value)) {
-      goFocus(firstVisible('#account-code') || firstVisible('#account-change-phone')); return;
-    }
-    if (accountEditingInput && accountEditingInput !== input) finishAccountEditing(false);
-    if (accountEditingInput === input) return;
-    accountEditingInput = input;
-    input.setAttribute('aria-label', input.id === 'account-phone' ? '输入手机号，返回键完成' : '输入验证码，返回键完成');
-    // Editable inputs open the IME through WebView's original input connection.
-    // The bridge only marks ownership; it never forces or restarts a keyboard.
-    if (window.HongguoTVInput && window.HongguoTVInput.startAccountEditing) window.HongguoTVInput.startAccountEditing();
+  function accountKeypadOpen() { return !!(numericKeypad && numericKeypad.isOpen()); }
+  function accountKeypadFocus() {
+    return document.querySelectorAll('.account-keypad-key')[numericKeypad.snapshot().index];
   }
-  function finishAccountEditing(moveFocus) {
-    var input = accountEditingInput;
-    if (!input) return;
-    accountEditingInput = null; input.blur();
-    input.setAttribute('aria-label', input.id === 'account-phone' ? '手机号，确认键输入' : '短信验证码，确认键输入');
-    if (window.HongguoTVInput) window.HongguoTVInput.finishEditing();
-    if (moveFocus && pageMode() === 'account' && !accountBusy && !confirmOpen && !supportModalOpen) {
-      var next = input.id === 'account-code' ? firstVisible('#account-login') : firstVisible('#account-code') || firstVisible('#account-send-code') || firstVisible('#account-login');
-      goFocus(next || activeSidebar());
-    }
+  function renderAccountNumber(field) {
+    var code = field.id === 'account-code';
+    var placeholder = code ? '请输入验证码' : accountData && accountData.phase === 'code' && accountData.phone ? '请重新输入 ' + accountData.phone + ' 的完整手机号' : '请输入手机号';
+    field.textContent = field.value || placeholder;
+    field.classList.toggle('is-empty', !field.value);
+    field.setAttribute('aria-label', (code ? '短信验证码' : '手机号') + '，确认键输入');
   }
-  function accountInputBlur(input) {
-    // WebView's IME Done action may blur and select an unrelated button before
-    // Android reports that the keyboard closed. Keep the input owner until
-    // that focus change has settled. Explicit goFocus/page changes clear it
-    // synchronously and therefore never get pulled back by this callback.
-    setTimeout(function () {
-      if (accountEditingInput === input) finishAccountEditing(true);
-    }, 0);
+  function openAccountKeypad(field) {
+    if (!numericKeypad || !field || field.disabled || accountBusy || pageMode() !== 'account' || accountKeypadOpen()) return;
+    accountKeypadReturnFocus = field;
+    accountKeypadPhase = accountData && accountData.phase || 'phone';
+    numericKeypad.open(field.id === 'account-code' ? 'code' : 'phone', field.value);
   }
 
   function normalizedKey(event) {
@@ -1104,28 +1092,20 @@
       'U+000D': 'Enter', 'U+001B': 'Escape', 'U+0008': 'Backspace', 'U+0020': ' ' };
     if (aliases[key]) return aliases[key];
     if (!key || key === 'Unidentified' || key === 'Unknown' || /^U\+/.test(key)) {
-      key = keyNames[event.keyCode || event.which] || key || '';
+      var code = event.keyCode || event.which;
+      key = code >= 48 && code <= 57 ? String(code - 48) : code >= 96 && code <= 105 ? String(code - 96) : keyNames[code] || key || '';
     }
     return key;
   }
 
   function handleKey(event) {
     var key = normalizedKey(event);
+    if (accountKeypadOpen()) {
+      numericKeypad.handleKey(key, !!event.repeat);
+      event.preventDefault(); event.stopPropagation(); return;
+    }
     var current = document.activeElement;
     if (current && current.classList.contains('player-text-input') && ['Escape', 'ArrowUp', 'ArrowDown'].indexOf(key) < 0) return;
-    if (current && current.classList.contains('account-input')) {
-      // Keep IME directions, confirmation, digits and deletion native. Enter
-      // can be a keyboard activation/selection, not a request to end editing.
-      if (androidShell && !current.readOnly && key !== 'Escape') return;
-      if (!current.readOnly && (key === 'Backspace' || key === 'Delete' || key === 'ArrowLeft' || key === 'ArrowRight')) return;
-      if (key === 'Enter') {
-        event.preventDefault(); event.stopPropagation();
-        if (event.repeat) return;
-        if (androidShell) startAccountEditing(current);
-        else goFocus(current.id === 'account-code' ? firstVisible('#account-login') : firstVisible('#account-code') || firstVisible('#account-send-code') || firstVisible('#account-login'));
-        return;
-      }
-    }
     var direction = ({ ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' })[key];
 
     var command = ({ MediaPlayPause: 'toggle', MediaPlay: 'play', MediaPause: 'pause', MediaFastForward: 'forward', MediaRewind: 'rewind', ' ': 'toggle' })[key];
@@ -1427,7 +1407,7 @@
     revealControls();
   }
   function handleBack() {
-    if (accountEditingInput) { finishAccountEditing(true); return true; }
+    if (accountKeypadOpen()) { numericKeypad.close('back'); return true; }
     if (supportModalOpen) { closeSupportQR(); return true; }
     if (confirmOpen) closeConfirmation();
     else if (playerOptionsOpen) closePlayerOptions();
@@ -1454,7 +1434,7 @@
     return true;
   }
   function pauseForBackground() {
-    if (accountEditingInput) finishAccountEditing(false);
+    if (accountKeypadOpen()) numericKeypad.close('background');
     if (smsVerification) smsVerification.stop();
     var video = document.getElementById('hero-video');
     var preparing = playbackInfoRequest || playbackPrefetchHandoff || activePlayback && !video.getAttribute('src');
@@ -1473,6 +1453,7 @@
   function resumeFromBackground() {
     applicationInBackground = false;
     updatePlaybackControls();
+    if (pageMode() === 'account' && document.activeElement && document.activeElement.closest('#account-keypad-modal')) goFocus(firstContentFocus());
   }
   function resetPlayerUI() {
     episodePrefetch.cancel(); cancelPlaybackPreparation();
@@ -1483,9 +1464,10 @@
   }
   function canShowAppUpdate() {
     var current = document.activeElement;
-    return !applicationInBackground && !document.hidden && !isPlaybackPage() && !supportModalOpen && !detailModalOpen && !discussionOpen && !confirmOpen && !playerOptionsOpen && !accountBusy && !accountEditingInput && !(current && /INPUT|TEXTAREA/.test(current.tagName));
+    return !applicationInBackground && !document.hidden && !isPlaybackPage() && !supportModalOpen && !detailModalOpen && !discussionOpen && !confirmOpen && !playerOptionsOpen && !accountBusy && !accountKeypadOpen() && !(current && /INPUT|TEXTAREA/.test(current.tagName));
   }
-  window.HongguoTV = { remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () { finishAccountEditing(true); } };
+  // Old native IME callbacks are irrelevant to the app-owned numeric keypad.
+  window.HongguoTV = { remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {} };
 
   function isLibraryPage() { return ['history', 'favorites', 'likes'].indexOf(pageMode()) >= 0; }
   function libraryEntry(id) { return libraryData.entries.filter(function (entry) { return entry.drama.series_id === id; })[0] || null; }
@@ -1741,6 +1723,7 @@
   }
   function renderAccount() {
     var data = accountData || { phase: 'phone', logged_in: false, sync: { state: 'local' } };
+    if (accountKeypadOpen() && (data.logged_in || data.phase !== accountKeypadPhase || accountBusy)) numericKeypad.close('context');
     var logged = !!data.logged_in;
     var mfa = !logged && data.phase === 'mfa';
     var verification = smsVerification ? smsVerification.snapshot() : { state: 'idle', remaining: 0 };
@@ -1752,10 +1735,8 @@
     document.getElementById('account-login').classList.toggle('is-hidden', data.phase !== 'code');
     document.getElementById('account-change-phone').classList.toggle('is-hidden', data.phase !== 'code');
     var phoneInput = document.getElementById('account-phone');
-    phoneInput.readOnly = accountBusy || data.phase === 'code' && /^1[3-9]\d{9}$/.test(phoneInput.value);
-    document.getElementById('account-code').readOnly = false;
-    phoneInput.placeholder = data.phase === 'code' && !phoneInput.value && data.phone ? '请重新输入 ' + data.phone + ' 的完整手机号' : '请输入手机号';
-    document.querySelectorAll('.account-input').forEach(function (node) { node.disabled = accountBusy; });
+    document.querySelectorAll('.account-input').forEach(function (node) { node.disabled = accountBusy; renderAccountNumber(node); });
+    phoneInput.disabled = accountBusy || data.phase === 'code' && /^1[3-9]\d{9}$/.test(phoneInput.value) && !(accountKeypadOpen() && numericKeypad.snapshot().kind === 'phone');
     document.querySelectorAll('.account-action:not(.app-update-action)').forEach(function (node) { node.disabled = accountBusy; });
     document.getElementById('account-cancel').disabled = false;
     document.getElementById('account-verify').disabled = accountBusy || mfaExpired || verification.state === 'waiting';
@@ -1792,6 +1773,7 @@
     document.querySelector('.side-item[data-page="account"] span:last-child').textContent = logged ? '我的账号' : '我的 / 登录';
     if (pageMode() === 'account') document.getElementById('page-context').textContent = logged ? '我的账号' : '我的 / 登录';
     var current = document.activeElement;
+    if (!accountKeypadOpen() && !accountBusy && pageMode() === 'account' && current && current.closest('#account-keypad-modal')) goFocus(firstContentFocus());
     if (!accountBusy && !confirmOpen && pageMode() === 'account' && current && /accountInputs|accountActions/.test(zoneOf(current)) && focusables().indexOf(current) < 0) goFocus(firstContentFocus());
   }
   function setAccountMessage(message) { accountNotice = message; renderAccount(); }
@@ -1852,6 +1834,7 @@
     accountRequest('login', { phone: phone, code: code }).then(function (ok) {
       if (!ok) { if (pageMode() === 'account') goFocus(document.getElementById('account-code')); return; }
       document.getElementById('account-code').value = '';
+      renderAccountNumber(document.getElementById('account-code'));
       if (pageMode() === 'account') goFocus(accountData.logged_in ? document.getElementById('account-logout') : document.getElementById('account-verify'));
     });
   }
@@ -1859,6 +1842,7 @@
     if (smsVerification) smsVerification.stop();
     return accountRequest('cancel').then(function () {
       document.getElementById('account-code').value = '';
+      renderAccountNumber(document.getElementById('account-code'));
       if (pageMode() === 'account') goFocus(returnToSidebar === true ? activeSidebar() : document.getElementById('account-phone'));
     });
   }
@@ -1871,7 +1855,10 @@
     confirmReturnFocus = document.activeElement;
     confirmOperation = function () {
       if (smsVerification) smsVerification.stop();
-      return accountRequest('logout').then(function (ok) { if (ok) { document.getElementById('account-phone').value = ''; document.getElementById('account-code').value = ''; } return ok; });
+      return accountRequest('logout').then(function (ok) {
+        if (ok) document.querySelectorAll('.account-input').forEach(function (field) { field.value = ''; renderAccountNumber(field); });
+        return ok;
+      });
     };
     confirmOpen = true;
     document.getElementById('confirm-title').textContent = '退出当前账号？';
@@ -3236,7 +3223,7 @@
   function activatePage(item, restoring) {
     if (smsVerification) smsVerification.stop();
     if (supportModalOpen) closeSupportQR();
-    finishAccountEditing(false);
+    if (accountKeypadOpen()) numericKeypad.close('page');
     engagement.clear();
     if (detailModalOpen) closeDetail();
     saveProgress(true);
@@ -3306,13 +3293,18 @@
   document.addEventListener('scroll', queueTailCheck, true);
   window.addEventListener('resize', queueTailCheck);
   document.addEventListener('focusin', function (event) {
+    if (accountKeypadOpen()) {
+      if (!event.target.closest('#account-keypad-modal')) { goFocus(accountKeypadFocus()); return; }
+      var keyIndex = Array.prototype.indexOf.call(document.querySelectorAll('.account-keypad-key'), event.target);
+      if (keyIndex >= 0 && keyIndex !== numericKeypad.snapshot().index) numericKeypad.choose(keyIndex);
+    }
     markFocus(event.target);
     queueTailCheck();
     var zone = zoneOf(event.target);
     if (zone === 'controls' && event.target.closest('.playback-buttons')) lastPlaybackControl = event.target;
     if (zone === 'sidebar') clearTimeout(controlsTimer);
     else if (isPlaybackPage() && ['controls', 'timeline', 'actions', 'channels'].indexOf(zone) >= 0) revealControls();
-    if (!detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zone !== 'sidebar') {
+    if (!accountKeypadOpen() && !detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zone !== 'sidebar') {
       lastContentFocus = event.target;
       lastPageFocus[pageMode()] = event.target;
     }
@@ -3540,14 +3532,38 @@
     if (image.getAttribute('src')) openQRCode(this, image, '扫码填写短信 · 请手动发送');
   });
   document.getElementById('support-close').addEventListener('click', closeSupportQR);
-  document.querySelectorAll('.account-input').forEach(function (input) {
-    if (androidShell) {
-      input.addEventListener('focus', function () { startAccountEditing(input); });
-      input.addEventListener('click', function () { startAccountEditing(input); });
-      input.addEventListener('blur', function () { accountInputBlur(input); });
+  numericKeypad = window.HongguoNumericKeypad.create({
+    render: function (state) {
+      var modal = document.getElementById('account-keypad-modal');
+      modal.classList.toggle('is-hidden', !state.open); modal.setAttribute('aria-hidden', state.open ? 'false' : 'true');
+      document.getElementById('account-keypad-title').textContent = state.kind === 'code' ? '输入验证码' : '输入手机号';
+      var value = document.getElementById('account-keypad-value');
+      value.textContent = state.value || '请输入数字'; value.classList.toggle('is-empty', !state.value);
+      document.getElementById('account-keypad-hint').textContent = state.open ? state.value.length + ' / ' + state.maxLength + ' 位 · 也可使用遥控器数字键' : '';
+      document.getElementById('account-keypad-error').textContent = state.error;
+      if (state.open && document.activeElement !== accountKeypadFocus()) goFocus(accountKeypadFocus());
+    },
+    change: function (kind, value) {
+      var field = document.getElementById(kind === 'phone' ? 'account-phone' : 'account-code');
+      field.value = value; renderAccountNumber(field);
+    },
+    close: function (result) {
+      var origin = accountKeypadReturnFocus; accountKeypadReturnFocus = null; accountKeypadPhase = '';
+      if (result.reason !== 'complete' && result.reason !== 'back') return;
+      renderAccount();
+      if (pageMode() !== 'account' || accountBusy || confirmOpen || supportModalOpen) return;
+      var next = result.reason === 'back' ? origin : result.kind === 'code' ? firstVisible('#account-login') : firstVisible('#account-code') || firstVisible('#account-send-code');
+      goFocus(next || (origin && !origin.disabled ? origin : firstContentFocus()));
     }
   });
-  document.querySelector('.account-input-help').classList.toggle('is-hidden', !androidShell);
+  window.HongguoNumericKeypad.keys.forEach(function (key, index) {
+    var button = document.createElement('button'); button.type = 'button'; button.className = 'account-keypad-key';
+    button.setAttribute('data-key', key); button.setAttribute('data-focus', 'account-digit-' + key);
+    button.textContent = key === 'delete' ? '删除' : key === 'done' ? '完成' : key;
+    button.addEventListener('click', function () { numericKeypad.choose(index); numericKeypad.press(key); });
+    document.getElementById('account-keypad-keys').appendChild(button);
+  });
+  document.querySelectorAll('.account-input').forEach(function (field) { field.addEventListener('click', function () { openAccountKeypad(field); }); });
 
   engagement = window.HongguoEngagement.create({
     request: function (target) {

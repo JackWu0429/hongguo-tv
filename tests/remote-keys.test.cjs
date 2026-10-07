@@ -11,7 +11,7 @@ function keyboard() {
     var current={id:'sidebar-recommend',classList:{contains:function(){return false}}};
     var document={activeElement:current};
     var detailModalOpen=false,playerOptionsOpen=false,confirmOpen=false,discussionOpen=false;
-    var androidShell=false,accountEditingInput=null;
+    var androidShell=false; function accountKeypadOpen(){return false}
     function firstVisible(selector){return {id:selector.slice(1)}}
     var shell={classList:{contains:function(){return false}}};
     var moved=[],focused=[],clicks=0;
@@ -55,7 +55,7 @@ test('old DOM Enter activates once and repeat is suppressed', () => {
 });
 test('text editing retains native left and right keys instead of moving focus', () => {
   const c=keyboard();
-  for (const id of ['search-input','account-phone','player-compose-input']) {
+  for (const id of ['search-input','player-compose-input']) {
     vm.runInContext(`document.activeElement={id:'${id}',classList:{contains:function(name){return name==='${id==='account-phone'?'account-input':id==='player-compose-input'?'player-text-input':''}'}}}`,c);
     for (const keyCode of [37,39]) c.handleKey({keyCode,preventDefault(){assert.fail('editing key consumed')},stopPropagation(){assert.fail('editing key stopped')}});
   }
@@ -69,20 +69,19 @@ test('native vertical bridge uses the existing router once and ignores text edit
   assert.deepEqual(Array.from(c.moved),['down','up']);
   assert.deepEqual(Array.from(c.focused),['down','up']);
 });
-test('Enter in account inputs focuses the explicit action without sending SMS or logging in', () => {
+test('account number buttons activate once without submitting SMS or login', () => {
   const c=keyboard();
-  vm.runInContext("var submissions=0;function accountSendCode(){submissions++};function accountLogin(){submissions++};var accountData=null;",c);
+  vm.runInContext("var submissions=0;function accountSendCode(){submissions++};function accountLogin(){submissions++};",c);
   for (const id of ['account-phone','account-code']) {
-    vm.runInContext(`document.activeElement={id:'${id}',classList:{contains:function(name){return name==='account-input'}}}`,c);
+    vm.runInContext(`document.activeElement={id:'${id}',click:function(){clicks++},classList:{contains:function(name){return name==='account-input'}}}`,c);
     const e={keyCode:13,preventDefault(){},stopPropagation(){}};
     c.handleKey(e);c.handleKey({...e,repeat:true});
   }
-  assert.equal(c.submissions,0);
-  assert.deepEqual(Array.from(c.focused),['account-code','account-login']);
+  assert.equal(c.submissions,0);assert.equal(c.clicks,2);assert.equal(c.focused.length,0);
 });
-test('read-only Android account inputs route all arrows to navigation', () => {
+test('Android account number buttons route all arrows to navigation', () => {
   const c=keyboard();
-  vm.runInContext("androidShell=true;document.activeElement={id:'account-phone',readOnly:true,classList:{contains:function(name){return name==='account-input'}}}",c);
+  vm.runInContext("androidShell=true;document.activeElement={id:'account-phone',classList:{contains:function(name){return name==='account-input'}}}",c);
   for (const keyCode of [37,38,39,40]) c.handleKey({keyCode,preventDefault(){},stopPropagation(){}});
   assert.deepEqual(Array.from(c.moved),['left','up','right','down']);
 });

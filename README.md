@@ -23,6 +23,7 @@
 - [TV 布局与遥控器交互](docs/tv-design.md)
 - [协议证据与待验证接口](docs/protocol-evidence.md)
 - [账号登录与云同步](docs/account-sync.md)
+- [账号数字键盘](docs/numeric-keypad.md)
 - [播放操作与评论面板](docs/player-actions.md)
 - [系列剧选集、切季与预约](docs/series-seasons.md)
 - [GitHub Actions 构建方案](docs/build-plan.md)

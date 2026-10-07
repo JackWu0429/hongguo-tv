@@ -160,9 +160,9 @@
           <div class="account-card">
             <div id="account-login-form">
               <h2>手机号登录</h2>
-              <label for="account-phone">手机号</label><input class="account-input" id="account-phone" data-focus="account-phone" tabindex="0" type="tel" inputmode="tel" maxlength="11" autocomplete="off" placeholder="请输入手机号">
-              <div class="account-code-field is-hidden" id="account-code-field"><label for="account-code">短信验证码</label><input class="account-input" id="account-code" data-focus="account-code" tabindex="0" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="one-time-code" placeholder="请输入验证码"></div>
-              <p class="account-input-help">遥控器：确认键输入，返回键完成；输入完成后可用方向键选择按钮。</p><div class="account-form-actions"><button class="account-action" id="account-send-code" data-focus="account-send">获取验证码</button><button class="account-action account-primary is-hidden" id="account-login" data-focus="account-login">登录</button><button class="account-action is-hidden" id="account-change-phone" data-focus="account-change-phone">换手机号</button></div>
+              <label for="account-phone">手机号</label><button type="button" class="account-input is-empty" id="account-phone" data-focus="account-phone" value="" aria-haspopup="dialog" aria-controls="account-keypad-modal">请输入手机号</button>
+              <div class="account-code-field is-hidden" id="account-code-field"><label for="account-code">短信验证码</label><button type="button" class="account-input is-empty" id="account-code" data-focus="account-code" value="" aria-haspopup="dialog" aria-controls="account-keypad-modal">请输入验证码</button></div>
+              <p class="account-input-help">确认键打开数字键盘，输入后选择“完成”；返回键保留输入并关闭键盘。</p><div class="account-form-actions"><button class="account-action" id="account-send-code" data-focus="account-send">获取验证码</button><button class="account-action account-primary is-hidden" id="account-login" data-focus="account-login">登录</button><button class="account-action is-hidden" id="account-change-phone" data-focus="account-change-phone">换手机号</button></div>
             </div>
             <div id="account-mfa" class="is-hidden">
               <h2>还需要短信验证</h2><p>红果要求本次登录完成短信验证。请用登录的手机号发送以下短信：</p><p id="account-mfa-session" class="account-footnote"></p>
@@ -270,6 +270,7 @@
 
       <section class="discussion-panel is-hidden" id="discussion-panel" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="discussion-title"><div class="discussion-head"><h2 id="discussion-title">本集评论</h2><button id="discussion-close" class="discussion-close" data-focus="discussion-close">关闭</button></div><div id="discussion-scroll" class="discussion-scroll"><div id="discussion-list"></div><div id="discussion-pagination" class="list-status" role="status"></div></div><div class="discussion-composer"><p id="discussion-target" class="is-hidden"></p><label for="discussion-input" class="is-hidden">评论内容</label><textarea id="discussion-input" class="player-text-input" data-focus="discussion-input" rows="2" maxlength="1000" placeholder="说点什么…"></textarea><div class="discussion-compose-actions"><button id="discussion-cancel-reply" class="discussion-action is-hidden" data-focus="discussion-cancel-reply">取消回复</button><button id="discussion-send" class="discussion-action" data-focus="discussion-send">发送</button></div><p id="discussion-message" class="player-form-message" role="status" aria-live="polite"></p></div></section>
       <section class="confirm-modal is-hidden" id="confirm-modal" aria-hidden="true"><div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><h2 id="confirm-title">清空记录？</h2><p id="confirm-copy"></p><div class="confirm-actions"><button id="confirm-cancel" class="confirm-button" data-focus="confirm-cancel">取消</button><button id="confirm-accept" class="confirm-button confirm-danger" data-focus="confirm-accept">清空</button></div></div></section>
+      <section class="account-keypad-modal is-hidden" id="account-keypad-modal" aria-hidden="true"><div class="account-keypad-dialog" role="dialog" aria-modal="true" aria-labelledby="account-keypad-title"><h2 id="account-keypad-title">输入手机号</h2><div class="account-keypad-value" id="account-keypad-value" aria-live="polite"></div><p class="account-keypad-hint" id="account-keypad-hint"></p><div class="account-keypad-keys" id="account-keypad-keys"></div><p class="account-keypad-error" id="account-keypad-error" role="status" aria-live="polite"></p><p class="account-keypad-help">方向键选择 · 确认键输入 · 返回键关闭</p></div></section>
       <div class="notice is-hidden" id="action-notice" role="status" aria-live="polite"></div>
     </section>
   </main>
@@ -278,6 +279,7 @@
   <script src="/updates.js"></script>
   <script src="/engagement.js"></script>
   <script src="/sms-verification.js"></script>
+  <script src="/numeric-keypad.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

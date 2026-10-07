@@ -411,9 +411,24 @@ button:focus { outline: none; }
 .app-update-actions button { margin: 0 .8rem .6rem 0; }
 .account-card h2 { font-size: 1.45rem; margin: 0 0 1.3rem; }
 .account-card label { display: block; margin: 1rem 0 .6rem; color: #bbbcc8; }
-.account-input { width: 100%; padding: .9rem 1rem; box-sizing: border-box; border: 2px solid #41414c; border-radius: .6rem; background: #101016; color: #fff; font-size: 1.3rem; }
+.account-input { width: 100%; min-height: 3.2rem; padding: .9rem 1rem; box-sizing: border-box; border: 2px solid #41414c; border-radius: .6rem; background: #101016; color: #fff; font-size: 1.3rem; text-align: left; cursor: pointer; }
+.account-input.is-empty { color: #a9a9b5; }
+.account-input:disabled { opacity: .6; cursor: default; }
 .account-input:focus, .account-input.is-focused { border-color: #fff; outline: none; background: #242432; box-shadow: 0 0 0 3px rgba(255,255,255,.25); }
 .account-input-help { color: #b0afba; font-size: .95rem; line-height: 1.6; margin: .8rem 0; }
+.account-keypad-modal { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 300; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(0,0,0,.78); }
+.account-keypad-dialog { width: 440px; max-width: 100%; max-height: 100%; padding: 24px; box-sizing: border-box; overflow-y: auto; border: 1px solid #474653; border-radius: 16px; background: #1c1d27; box-shadow: 0 18px 60px rgba(0,0,0,.5); }
+.account-keypad-dialog h2 { margin: 0 0 14px; font-size: 24px; }
+.account-keypad-value { min-height: 44px; padding: 12px; border-radius: 8px; background: #101016; color: #fff; font-size: 30px; line-height: 1.2; letter-spacing: 2px; text-align: center; box-sizing: border-box; }
+.account-keypad-value.is-empty { color: #9293a3; font-size: 22px; }
+.account-keypad-hint { margin: 10px 0 14px; color: #b7b8c5; font-size: 15px; }
+.account-keypad-keys { display: flex; flex-wrap: wrap; margin: -5px; }
+.account-keypad-key { flex: 0 0 auto; width: calc(33.333333% - 10px); margin: 5px; min-height: 58px; padding: 8px; box-sizing: border-box; border: 3px solid transparent; border-radius: 9px; background: #333440; color: #fff; font-size: 26px; line-height: 1.2; }
+.account-keypad-key[data-key="delete"], .account-keypad-key[data-key="done"] { font-size: 21px; }
+.account-keypad-key[data-key="done"] { background: #c73555; }
+.account-keypad-key:focus, .account-keypad-key.is-focused { outline: none; border-color: #fff; background: #585b73; }
+.account-keypad-error { min-height: 20px; margin: 12px 0 0; color: #ffadb8; font-size: 15px; line-height: 1.4; }
+.account-keypad-help { margin: 8px 0 0; color: #acacba; font-size: 14px; text-align: center; }
 .account-form-actions { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 1.5rem; }
 .account-action { padding: .9rem 1.3rem; font: inherit; font-size: 1.15rem; color: #fff; border: 2px solid transparent; border-radius: .6rem; background: #333340; cursor: pointer; }
 .account-primary { background: #e64254; }
