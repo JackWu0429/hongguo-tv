@@ -1606,7 +1606,9 @@
   }
   function libraryFinished(entry) {
     var total = Number(entry.drama && entry.drama.episode_count) || 0;
-    return !!(entry.last_played_at && total > 0 && Number(entry.episode) >= total && entry.completed);
+    // Mac history marks a drama finished once its saved episode reaches the last one.
+    // completed is only for episode resume/auto-next and is absent in cloud history.
+    return !!(entry.last_played_at && total > 0 && Number(entry.episode) >= total);
   }
 
   function visibleLibraryEntries(kind, filter) {
@@ -1695,7 +1697,7 @@
       if (card.querySelector('img').alt !== entry.drama.title) setCover(card.querySelector('img'), entry.drama);
       updatePosterSeason(card.querySelector('.drama-poster'), entry.drama);
       card.querySelector('.library-card-title').textContent = entry.drama.title;
-      card.querySelector('.library-card-meta').textContent = entry.last_played_at ? libraryFinished(entry) ? '已看完 · 全' + entry.episode + '集' : '继续第' + resumeEpisode(entry, entry.drama) + '集' + (!entry.completed && entry.position ? ' · ' + clockText(entry.position) : '') : entry.drama.episode_count ? '全' + entry.drama.episode_count + '集' : '从第一集播放';
+      card.querySelector('.library-card-meta').textContent = entry.last_played_at ? libraryFinished(entry) ? '已看完 · 全' + entry.drama.episode_count + '集' : '继续第' + resumeEpisode(entry, entry.drama) + '集' + (!entry.completed && entry.position ? ' · ' + clockText(entry.position) : '') : entry.drama.episode_count ? '全' + entry.drama.episode_count + '集' : '从第一集播放';
       card.querySelector('.library-card-time').textContent = new Date(libraryTime(entry, kind)).toLocaleDateString();
       card.querySelector('.library-progress').classList.toggle('is-hidden', !entry.last_played_at || !entry.duration);
       card.querySelector('.library-progress > span').style.width = Math.min(100, entry.duration ? entry.position / entry.duration * 100 : 0) + '%';
@@ -1709,7 +1711,7 @@
     document.getElementById('library-clear').disabled = !entries.length;
     document.getElementById('library-empty').classList.toggle('is-hidden', entries.length > 0);
     document.getElementById('library-empty-title').textContent = libraryError ? '读取本机记录失败' : !libraryLoaded ? '正在读取本机记录…' : kind === 'history' ? filter === 'finished' ? '还没有已看完的短剧' : filter === 'unfinished' ? '没有未看完的短剧' : '还没有观看记录' : '还没有' + label + '的短剧';
-    document.getElementById('library-empty-copy').textContent = libraryError || (kind === 'history' ? filter === 'finished' ? '最后一集播放结束后会显示在这里。云端旧记录缺少结束标记时归入未看完。' : filter === 'unfinished' ? '可以切换到“全部”查看观看记录' : '开始播放后，会自动保存集数和进度' : '在播放页点' + label + '，以后可从这里继续观看');
+    document.getElementById('library-empty-copy').textContent = libraryError || (kind === 'history' ? filter === 'finished' ? '看到最后一集的短剧会显示在这里' : filter === 'unfinished' ? '可以切换到“全部”查看观看记录' : '开始播放后，会自动保存集数和进度' : '在播放页点' + label + '，以后可从这里继续观看');
     if (currentTile && !document.contains(current)) {
       var cards = focusables('.library-card');
       goFocus(cards[Math.min(priorIndex, cards.length - 1)] || firstVisible('.history-filter.is-active') || firstVisible('[data-action="library-discover"]'));
