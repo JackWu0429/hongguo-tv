@@ -55,6 +55,7 @@ public class MainActivity extends Activity {
     private int routedVerticalKeys;
     private AnimatedVectorDrawable startupAnimation;
     private AppUpdater appUpdater;
+    private volatile String diagnosticDeviceJSON = "{}";
     private final Runnable restoreFullscreen = () -> {
         if (activityForeground && hasWindowFocus() && !isFinishing() && !isDestroyed() && !accountEditing && !isKeyboardVisible()) {
             applyFullscreen();
@@ -103,6 +104,12 @@ public class MainActivity extends Activity {
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
+        diagnosticDeviceJSON = DeviceDiagnostics.snapshot(this);
+        webView.addJavascriptInterface(new Object() {
+            @JavascriptInterface public String readDevice() {
+                return pageReady && !destroyed ? diagnosticDeviceJSON : "{}";
+            }
+        }, "HongguoTVDiagnostics");
         webView.addJavascriptInterface(new PlaybackPreferences(this), "HongguoTVPreferences");
         webView.addJavascriptInterface(new InputBridge(), "HongguoTVInput");
         appUpdater = new AppUpdater(this, new AppUpdater.Host() {

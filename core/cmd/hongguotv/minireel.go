@@ -118,6 +118,7 @@ func handleMiniReelMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := strings.TrimSuffix(name, ".mp4")
+	w = &diagnosticMediaWriter{ResponseWriter: w, token: token}
 
 	miniReelState.Lock()
 	job := miniReelState.jobs[token]

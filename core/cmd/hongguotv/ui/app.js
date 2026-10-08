@@ -176,6 +176,8 @@
   var detailCache = {};
   var playerOptionsOpen = false;
   var playerOptionsReturn = null;
+  var diagnosticEpoch = 0;
+  var diagnosticRequest = null;
   var controlsTimer = null;
   var lastPlaybackControl = null;
   var nativeFullscreen = false;
@@ -848,6 +850,9 @@
     if (supportModalOpen) return document.getElementById('support-close');
     if (confirmOpen) return direction === 'left' || direction === 'right' ? moveWithinZone('confirmation', current, direction) : null;
     if (playerOptionsOpen) {
+      if (document.getElementById('player-options').classList.contains('is-diagnostics')) {
+        return direction === 'left' || direction === 'right' ? moveGrid('.diagnostic-action', current, direction) : null;
+      }
       if (current.id === 'player-compose-input') return direction === 'down' ? document.getElementById('player-compose-send') : direction === 'up' ? document.getElementById('player-options-close') : null;
       if (current.id === 'player-compose-send') return direction === 'up' ? document.getElementById('player-compose-input') : null;
       if (current.id === 'player-options-close') return direction === 'down' ? firstVisible('#player-compose-input') || document.querySelector('.player-option.is-selected') || firstVisible('#player-options-list .player-option') : null;
@@ -1338,7 +1343,69 @@
     updateDanmakuButton();
     updatePlaybackControls();
   }
+  function cancelDiagnosticRead() {
+    ++diagnosticEpoch;
+    if (diagnosticRequest) diagnosticRequest.abort();
+    diagnosticRequest = null;
+  }
+  function renderPlaybackDiagnostics(snapshot) {
+    var report = window.HongguoPlaybackDiagnostics.report(snapshot);
+    document.getElementById('player-diagnostics-summary').textContent = report.summary;
+    var rows = document.getElementById('player-diagnostics-rows'); rows.innerHTML = '';
+    report.rows.forEach(function (item) {
+      var row = document.createElement('div'); row.className = 'diagnostic-row';
+      var label = document.createElement('span'); label.className = 'diagnostic-label'; label.textContent = item.label;
+      var value = document.createElement('span'); value.className = 'diagnostic-value'; value.textContent = item.value;
+      row.appendChild(label); row.appendChild(value); rows.appendChild(row);
+    });
+    document.getElementById('player-diagnostics-time').textContent = '快照 ' + report.capturedAt;
+  }
+  function refreshPlaybackDiagnostics() {
+    if (!playerOptionsOpen || !document.getElementById('player-options').classList.contains('is-diagnostics')) return;
+    cancelDiagnosticRead();
+    var epoch = diagnosticEpoch, video = document.getElementById('hero-video'), hero = document.getElementById('hero');
+    var device = {};
+    try { if (window.HongguoTVDiagnostics) device = JSON.parse(window.HongguoTVDiagnostics.readDevice()); } catch (ignored) {}
+    var style = window.getComputedStyle(video), now = new Date();
+    var presentation = activePlayback && activePlayback.presentation;
+    var source = video.getAttribute('src') || '';
+    var snapshot = {
+      device: device || {}, userAgent: navigator.userAgent,
+      capturedAt: ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2) + ':' + ('0' + now.getSeconds()).slice(-2),
+      video: window.HongguoPlaybackDiagnostics.readVideo(video),
+      episode: activePlayback && activePlayback.episode || playbackRequest && playbackRequest.episode || 0,
+      quality: playbackQuality,
+      flags: { preparing: hero.classList.contains('is-preparing-video'), resolving: !!playbackInfoRequest,
+        loading: !document.getElementById('player-status').classList.contains('is-hidden'),
+        source: !!source, waiting: !!(presentation && presentation.waiting), audioHeld: !!playbackAudioHold,
+        failed: !!(presentation && presentation.failed) || !document.getElementById('player-retry').classList.contains('is-hidden'),
+        videoVisible: style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity) > 0,
+        background: applicationInBackground || document.hidden }
+    };
+    renderPlaybackDiagnostics(snapshot);
+    // Read only local status for this exact source; never resolve or fetch media.
+    var path = /^\/minireel-proxy\/media\/[a-f0-9]{24}\.mp4$/.test(source) ? source : '';
+    var request = new XMLHttpRequest(); diagnosticRequest = request;
+    request.open('GET', '/api/v1/player/diagnostics?media=' + encodeURIComponent(path), true); request.timeout = 2500;
+    function finish(core) {
+      if (epoch !== diagnosticEpoch || diagnosticRequest !== request || !playerOptionsOpen) return;
+      diagnosticRequest = null; snapshot.core = core; renderPlaybackDiagnostics(snapshot);
+    }
+    request.onload = function () {
+      try {
+        var result = JSON.parse(request.responseText);
+        if (request.status !== 200 || !result.ok || !result.data) throw new Error('unavailable');
+        finish(result.data);
+      } catch (ignoredResponse) { finish({ unavailable: true }); }
+    };
+    request.onerror = request.ontimeout = function () { finish({ unavailable: true }); };
+    request.send();
+  }
   function closePlayerOptions(restoring) {
+    cancelDiagnosticRead();
+    document.getElementById('player-options').classList.remove('is-diagnostics');
+    document.getElementById('player-diagnostics').classList.add('is-hidden');
+    document.getElementById('player-diagnostics-shade').classList.add('is-hidden');
     cancelQualitySwitch();
     ++composeEpoch;
     if (composeSession) storeDraft(danmakuDrafts, draftKey(composeSession), document.getElementById('player-compose-input').value);
@@ -1414,6 +1481,20 @@
     revealControls(); clearTimeout(controlsTimer);
     playerOptionsReturn = entry;
     playerOptionsOpen = true;
+    document.getElementById('player-options').classList.toggle('is-diagnostics', kind === 'diagnostics');
+    document.getElementById('player-diagnostics').classList.toggle('is-hidden', kind !== 'diagnostics');
+    document.getElementById('player-diagnostics-shade').classList.toggle('is-hidden', kind !== 'diagnostics');
+    if (kind === 'diagnostics') {
+      document.getElementById('player-options').classList.remove('is-composer');
+      document.getElementById('player-options-title').textContent = '播放诊断';
+      document.getElementById('player-options-list').classList.add('is-hidden');
+      document.getElementById('player-compose').classList.add('is-hidden');
+      document.getElementById('player-options-message').textContent = '';
+      document.getElementById('player-options').classList.remove('is-hidden');
+      refreshPlaybackDiagnostics();
+      goFocus(document.getElementById('player-diagnostics-refresh'));
+      return;
+    }
     var video = document.getElementById('hero-video');
     var values = kind === 'speed' ? playbackSpeeds : kind === 'quality' ? [''].concat(playbackQualities) : [0, 25, 50, 75, 100];
     var selected = kind === 'speed' ? video.playbackRate : kind === 'quality' ? playbackPreferences.quality : (playbackAudioHold ? playbackAudioHold.muted : video.muted) ? 0 : Math.round(video.volume * 100);
@@ -3708,6 +3789,7 @@
         else showNotice('当前还没有可打开的短剧。');
       }
       else if (['speed', 'volume', 'quality', 'send-danmaku'].indexOf(item.dataset.action) >= 0) openPlayerOptions(item.dataset.action, item);
+      else if (item.dataset.action === 'diagnostics') openPlayerOptions('diagnostics', item);
       else if (item.dataset.action === 'fullscreen') toggleCinema();
       else if (item.dataset.action === 'retry') {
         if (playbackRequest) { goFocus(document.getElementById('hero-feed-focus')); playFeedItem(playbackRequest.index, playbackRequest.episode, playbackRequest.position); }
@@ -3801,6 +3883,8 @@
   document.getElementById('hero-feed-focus').addEventListener('click', toggleVideo);
   installRecommendationGestures();
   document.getElementById('player-options-close').addEventListener('click', function () { closePlayerOptions(); });
+  document.getElementById('player-diagnostics-close').addEventListener('click', function () { closePlayerOptions(); });
+  document.getElementById('player-diagnostics-refresh').addEventListener('click', refreshPlaybackDiagnostics);
   document.getElementById('control-progress').addEventListener('click', function (event) {
     if (!event.detail) return;
     var rect = this.getBoundingClientRect();

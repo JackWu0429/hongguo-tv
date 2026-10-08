@@ -102,6 +102,7 @@ func main() {
 	mux.HandleFunc("/api/v1/replies", s.discussion)
 	mux.HandleFunc("/api/v1/player/action", s.playerAction)
 	mux.HandleFunc("/api/v1/player/stats", s.engagement)
+	mux.HandleFunc("/api/v1/player/diagnostics", s.playbackDiagnostics)
 	mux.HandleFunc("/api/v1/Search", s.search)
 	mux.HandleFunc("/api/v1/play/info", s.playInfo)
 	mux.HandleFunc("/api/v1/PlayInfo", s.playInfo)

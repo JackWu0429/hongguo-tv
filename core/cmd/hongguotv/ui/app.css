@@ -142,6 +142,24 @@ button:focus { outline: none; }
 .player-option { min-height: 44px; padding: 8px 12px; color: #dddde6; background: #343540; border-radius: 8px; text-align: center; }
 .player-option.is-selected { color: #fff; background: #f35d7b; }
 .player-option.is-focused { outline: none; box-shadow: 0 0 0 3px #fff; }
+.player-options.is-diagnostics { position: fixed; z-index: 151; top: 50%; right: auto; bottom: auto; left: 50%; width: calc(100% - 48px); max-width: 900px; max-height: calc(100% - 40px); padding: 20px 24px; box-sizing: border-box; overflow-y: auto; transform: translate(-50%,-50%); background: #20212b; }
+.player-options.is-diagnostics .player-options-heading { margin-bottom: 8px; }
+.player-options.is-diagnostics #player-options-close, .player-options.is-diagnostics #player-options-message { display: none; }
+.diagnostic-shade { position: fixed; z-index: 150; top: 0; right: 0; bottom: 0; left: 0; background: rgba(0,0,0,.72); }
+#player-diagnostics-summary { margin: 0 0 12px; color: #f4c4ce; font-size: 15px; line-height: 1.4; }
+.diagnostic-rows { display: flex; flex-wrap: wrap; margin: 0 -10px; }
+.diagnostic-row { display: flex; align-items: flex-start; flex: 0 0 50%; width: 50%; min-height: 39px; padding: 7px 10px; box-sizing: border-box; border-bottom: 1px solid #353642; font-size: 15px; line-height: 1.4; }
+.diagnostic-label { display: block; flex: 0 0 88px; width: 88px; color: #aeb0bf; }
+.diagnostic-value { display: block; flex: 1 1 auto; min-width: 0; color: #f2f2f7; word-wrap: break-word; }
+.diagnostic-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; }
+#player-diagnostics-time { color: #aeb0bf; font-size: 13px; }
+.diagnostic-action { margin-left: 12px; min-width: 82px; }
+.diagnostic-action:focus { outline: none; box-shadow: 0 0 0 3px #fff; }
+@media (max-height: 600px) {
+  .player-options.is-diagnostics { padding: 16px 20px; }
+  .diagnostic-row { min-height: 34px; padding-top: 5px; padding-bottom: 5px; font-size: 14px; }
+  .diagnostic-footer { margin-top: 12px; }
+}
 .player-status { position: absolute; z-index: 6; top: 50%; left: 50%; display: flex; flex-direction: column; align-items: center; gap: 15px; max-width: 75%; padding: 22px 28px; background: rgba(10,11,16,.75); border-radius: 14px; transform: translate(-50%,-50%); font-size: 18px; text-align: center; }
 .player-status.is-loading { padding: 0; color: #fff; background: transparent; border-radius: 0; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
 .player-spinner { width: 34px; height: 34px; border: 3px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: player-spin .8s linear infinite; }
