@@ -18,23 +18,24 @@ test('first start keeps the new title and unknown/resolved episode together with
   const f=fixture(),spinner=f.spinner;
   f.c.setPlayerStatus(f.c.episodeLoadingText(0));
   assert.equal(f.title.textContent,'新剧名称');assert.equal(f.title.classList.contains('is-hidden'),false);
-  assert.equal(f.text.textContent,'正在加载…');assert.equal(f.hero.classList.contains('is-transition-loading'),true);
+  assert.equal(f.text.textContent,'');assert.equal(f.text.classList.contains('is-hidden'),true);
+  assert.equal(f.hero.classList.contains('is-transition-loading'),true);assert.equal(f.panel.classList.contains('is-hidden'),false);
   f.c.setPlayerStatus(f.c.episodeLoadingText(7));
-  assert.equal(f.text.textContent,'正在加载第 7 集…');assert.equal(f.panel.querySelector('.player-spinner'),spinner);
+  assert.equal(f.text.textContent,'第 7 集');assert.equal(f.text.classList.contains('is-hidden'),false);assert.equal(f.panel.querySelector('.player-spinner'),spinner);
   assert.equal(f.c.reveals,0);
 });
 test('same-drama episode switches use the target episode alone, with no repeated title',()=>{
   const f=fixture();f.hero.classList.add('is-episode-transition');
   f.c.setPlayerStatus(f.c.episodeLoadingText(28));
   assert.equal(f.title.textContent,'');assert.equal(f.title.classList.contains('is-hidden'),true);
-  assert.equal(f.text.textContent,'正在加载第 28 集…');assert.equal(f.hero.classList.contains('is-transition-loading'),true);
+  assert.equal(f.text.textContent,'第 28 集');assert.equal(f.hero.classList.contains('is-transition-loading'),true);
 });
 test('natural continuation hides scattered copy even while the next episode detail is still pending',()=>{
   const f=fixture();f.hero.classList.remove('is-preparing-video');f.c.activePlayback={started:true,continuationPending:true};
   f.c.setPlayerStatus(f.c.episodeLoadingText(4));
   assert.equal(f.hero.classList.contains('is-transition-loading'),true);
   assert.equal(f.title.classList.contains('is-hidden'),true);assert.equal(f.title.textContent,'');
-  assert.equal(f.text.textContent,'正在加载第 4 集…');
+  assert.equal(f.text.textContent,'第 4 集');
 });
 test('switching to another drama replaces old copy and clearing loading restores normal visibility ownership',()=>{
   const f=fixture();f.hero.classList.add('is-episode-transition');f.c.setPlayerStatus(f.c.episodeLoadingText(2));
@@ -43,7 +44,7 @@ test('switching to another drama replaces old copy and clearing loading restores
   assert.equal(f.title.textContent,'另一部剧 · 更新后的标题');assert.equal(f.title.classList.contains('is-hidden'),false);
   f.hero.classList.remove('is-preparing-video');f.c.setPlayerStatus('');
   assert.equal(f.hero.classList.contains('is-transition-loading'),false);
-  assert.equal(f.title.textContent,'');assert.equal(f.panel.classList.contains('is-hidden'),true);
+  assert.equal(f.title.textContent,'');assert.equal(f.panel.classList.contains('is-hidden'),true);assert.equal(f.text.classList.contains('is-hidden'),true);
   assert.equal(f.c.reveals,0);
 });
 test('ordinary buffering and failure do not retain a stale incoming title or transition copy suppression',()=>{
@@ -51,9 +52,11 @@ test('ordinary buffering and failure do not retain a stale incoming title or tra
   f.hero.classList.remove('is-preparing-video');f.c.activePlayback={started:true};
   f.c.setPlayerStatus('正在缓冲…');
   assert.equal(f.hero.classList.contains('is-transition-loading'),false);assert.equal(f.title.textContent,'');
+  assert.equal(f.text.textContent,'正在缓冲…');assert.equal(f.text.classList.contains('is-hidden'),false);
   assert.equal(f.spinner.classList.contains('is-hidden'),false);
   f.hero.classList.add('is-preparing-video');f.c.setPlayerStatus('暂时无法播放这集',true);
   assert.equal(f.hero.classList.contains('is-transition-loading'),false);assert.equal(f.title.classList.contains('is-hidden'),true);
   assert.equal(f.spinner.classList.contains('is-hidden'),true);assert.equal(f.retry.classList.contains('is-hidden'),false);
+  assert.equal(f.text.textContent,'暂时无法播放这集');assert.equal(f.text.classList.contains('is-hidden'),false);
   assert.equal(f.c.reveals,1);assert.equal(f.c.focused,f.retry);
 });

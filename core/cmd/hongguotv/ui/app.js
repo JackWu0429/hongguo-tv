@@ -1265,7 +1265,12 @@
     title.textContent = name;
     title.classList.toggle('is-hidden', !name);
     panel.classList.toggle('is-hidden', !message);
-    document.getElementById('player-status-text').textContent = message || '';
+    // The ellipsis keeps loading active while the target episode is unknown.
+    // Its spinner already conveys loading; do not invent an episode number.
+    var text = document.getElementById('player-status-text');
+    var copy = message === '…' ? '' : message || '';
+    text.textContent = copy;
+    text.classList.toggle('is-hidden', !copy);
     panel.querySelector('.player-spinner').classList.toggle('is-hidden', !!failed);
     document.getElementById('player-retry').classList.toggle('is-hidden', !failed);
     if (failed) {
@@ -1273,7 +1278,7 @@
       if (zoneOf(document.activeElement) === 'feed') goFocus(document.getElementById('player-retry'));
     }
   }
-  function episodeLoadingText(episode) { return episode > 0 ? '正在加载第 ' + episode + ' 集…' : '正在加载…'; }
+  function episodeLoadingText(episode) { return episode > 0 ? '第 ' + episode + ' 集' : '…'; }
   function setControlIcon(action, label, icon) {
     var button = document.querySelector('[data-action="' + action + '"]');
     var text = button.querySelector('.control-label');
