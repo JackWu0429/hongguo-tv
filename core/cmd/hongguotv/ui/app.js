@@ -698,6 +698,9 @@
 
   function firstContentFocus() {
     if (pageMode() === 'player') return document.querySelector('.hero-feed-focus');
+    // Restored recommendations are already visible; enter the channel bar
+    // explicitly instead of relying on the loading placeholder.
+    if (pageMode() === 'recommend') return activeChannel();
     var remembered = lastPageFocus[pageMode()];
     if (remembered && focusables().indexOf(remembered) >= 0) return remembered;
     if (pageMode() === 'search') return searchInput || document.querySelector('.search-submit');
@@ -707,8 +710,7 @@
     if (pageMode() === 'rank') return firstVisible('.rank-tab.is-active') || firstRankTab();
     if (pageMode() === 'new') return firstVisible('.new-tab.is-active') || firstNewTab();
     if (pageMode() === 'reservations') return firstVisible('.reservation-tab.is-active');
-    if (pageMode() !== 'recommend') return document.querySelector('.page-placeholder-action');
-    return firstVisible('.hero-feed-focus') || activeChannel() || firstCatalog();
+    return document.querySelector('.page-placeholder-action');
   }
 
   function activeSidebar() {
@@ -1243,7 +1245,7 @@
   function scheduleControlsHide() {
     clearTimeout(controlsTimer);
     var video = document.getElementById('hero-video');
-    if (!isPlaybackPage() || shell.classList.contains('is-controls-hidden') || video.paused || video.ended || detailModalOpen || confirmOpen || playerOptionsOpen || discussionOpen || zoneOf(document.activeElement) === 'sidebar') return;
+    if (!isPlaybackPage() || shell.classList.contains('is-controls-hidden') || video.paused || video.ended || detailModalOpen || confirmOpen || playerOptionsOpen || discussionOpen || ['sidebar', 'channels'].indexOf(zoneOf(document.activeElement)) >= 0) return;
     controlsTimer = setTimeout(function () { hideControls(); }, 4000);
   }
   function revealControls() {
@@ -2743,7 +2745,8 @@
     var item = document.querySelector('.side-item[data-page="' + page + '"]');
     if (!item) item = document.querySelector('.side-item[data-page="recommend"]');
     if (item) activatePage(item, true);
-    if (target && document.contains(target)) goFocus(target);
+    if (pageMode() === 'recommend') goFocus(firstContentFocus());
+    else if (target && document.contains(target)) goFocus(target);
     else goFocus(firstContentFocus());
   }
 
@@ -3729,7 +3732,7 @@
 
   function activatePage(item, restoring) {
     if (item.dataset.page === 'recommend' && pageMode() === 'recommend') {
-      if (!restoring) goFocus(firstContentFocus());
+      if (!restoring) { revealControls(); goFocus(firstContentFocus()); }
       return;
     }
     if (searchScanOpen) closeSearchScan(false);
@@ -3821,6 +3824,7 @@
     if (zone === 'controls' && event.target.closest('.playback-buttons')) lastPlaybackControl = event.target;
     if (zone === 'sidebar') clearTimeout(controlsTimer);
     else if (isPlaybackPage() && ['controls', 'timeline', 'actions', 'channels'].indexOf(zone) >= 0) revealControls();
+    else if (isPlaybackPage() && zone === 'feed') scheduleControlsHide();
     if (!searchScanOpen && !accountKeypadOpen() && !detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zone !== 'sidebar') {
       lastContentFocus = event.target;
       lastPageFocus[pageMode()] = event.target;

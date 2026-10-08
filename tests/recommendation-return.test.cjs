@@ -69,7 +69,7 @@ function fixture({ failSave = false, writeGate = null, sourceGate = null } = {})
     function waitForPlaybackPaint(){return Promise.resolve(true)}function bindPlaybackPresentation(){}
     function setPlayerStatus(){}function showRecommendationPlaceholder(){}function episodeLoadingText(){return 'loading'}function revealControls(){}function showNotice(x){calls.push({kind:'notice',text:x})}
     function playMedia(v){v.paused=false;calls.push({kind:'play',src:v.src});return Promise.resolve()}
-    function accountKeypadOpen(){return false}function hideWorkspacePages(){}function goFocus(x){document.activeElement=x}function firstContentFocus(){return document.getElementById('hero-feed-focus')}
+    function accountKeypadOpen(){return false}function hideWorkspacePages(){}function goFocus(x){document.activeElement=x}function firstContentFocus(){return pageMode()==='recommend'?activeChannel():document.getElementById('hero-feed-focus')}
     function resetPlayerUI(){cancelPlaybackPreparation()}function renderAccount(){}function pollAccount(){}function queueTailCheck(){}
     var feedPager=HongguoPagination.create({request:function(params,signal){return fetchData('/api/v1/lists/recommend?'+new URLSearchParams(params),{signal:signal})},render:function(items,append){if(append)feedItems=feedItems.concat(items);else renderFeed(items)}});
     feedPager.local(feedItems,feedItems.length);feedPager.params={channel:'16'};var allPagers=[feedPager,searchPager];
@@ -88,6 +88,7 @@ test('leaving and returning restores the list, index, episode and position witho
   assert.equal(f.c.feedIndex, 1); assert.deepEqual(plain(f.c.feedItems.map(x => x.series_id)), ['r0','r1','r2','r3','r4']);
   assert.equal(f.c.activePlayback.episode, 2); assert.equal(f.c.activePlayback.position, 39);
   assert.equal(f.calls.filter(x => x.kind === 'recommend').length, 0);
+  assert.equal(f.c.document.activeElement, f.channel);
 });
 test('another-page single-drama playback cannot overwrite the recommendation list or move its current slot', async () => {
   const f = fixture(); f.c.activatePage(f.c.pages.search); await f.flush();
@@ -133,6 +134,13 @@ test('refresh invalidates the saved list and old save callbacks; subsequent retu
 test('selecting the already open recommendation sidebar does not reset playback or save progress twice', async () => {
   const f = fixture(), original = f.c.activePlayback; f.c.activatePage(f.c.pages.recommend); await f.flush();
   assert.equal(f.c.activePlayback, original); assert.equal(f.video.currentTime, 39); assert.equal(f.calls.length, 0);
+  assert.equal(f.c.document.activeElement, f.channel);
+});
+test('returning from the single-drama player to recommendation restores channel focus instead of its previous video focus', async () => {
+  const f = fixture(); f.c.startPlayer(f.c.feedItems[1], f.c.document.getElementById('hero-feed-focus')); await f.flush();
+  f.c.leavePlayer(); await f.flush();
+  assert.equal(f.c.pageMode(), 'recommend'); assert.equal(f.c.document.activeElement, f.channel);
+  assert.equal(f.c.feedIndex, 1); assert.equal(f.calls.filter(x => x.kind === 'recommend').length, 0);
 });
 test('owner or channel changes reject an old session instead of restoring another account or channel', async () => {
   for (const change of ['owner', 'channel']) {
