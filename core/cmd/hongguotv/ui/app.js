@@ -116,6 +116,7 @@
   var featuredItem = null;
   var feedItems = [];
   var feedIndex = -1;
+  var recommendationSession = null;
   var feedGeneration = 0;
   var continuationGeneration = 0;
   var searchInput = document.getElementById('search-input');
@@ -1874,6 +1875,7 @@
     accountCountdownUntil = Date.now() + (data.retry_after || 0) * 1000;
     if (owner !== previousOwner || owner !== (libraryData.owner_id || '')) {
       ++accountEpoch;
+      recommendationSession = null;
       if (engagement) engagement.resetAccount();
       episodePrefetch.cancel();
       var interruptedPlayback = playbackInfoRequest || playbackPrefetchHandoff || activePlayback && document.getElementById('hero').classList.contains('is-preparing-video');
@@ -2141,6 +2143,66 @@
   function updateFeedCounter() {
     var counter = document.getElementById('hero-top-count');
     if (counter) counter.textContent = feedItems.length ? (feedIndex + 1) + ' / ' + feedItems.length : '0 / 0';
+  }
+
+  function recommendationChannel() {
+    var channel = activeChannel();
+    return ({ 'channel-follow': '45', 'channel-comic': '36', 'channel-real': '39', 'channel-recommend': '16' })[channel && channel.dataset.focus] || '16';
+  }
+
+  function progressFingerprint(entry) {
+    return entry && entry.last_played_at ? JSON.stringify([entry.last_played_at, entry.episode, entry.position || 0, entry.duration || 0, !!entry.completed, entry.video_id || '']) : '';
+  }
+
+  function rememberRecommendation() {
+    if (pageMode() !== 'recommend' || feedIndex < 0 || !feedItems[feedIndex] || !feedPager.loaded) return null;
+    var item = feedItems[feedIndex], playback = activePlayback, video = document.getElementById('hero-video');
+    var checkpoint = null;
+    if (playback && playback.owner === accountEpoch && playback.generation === feedGeneration && playback.item.series_id === item.series_id) {
+      checkpoint = { episode: playback.episode, position: playback.started ? Math.max(0, Number(video.currentTime) || 0) : playback.position || 0, completed: !!playback.completed };
+    } else if (playbackRequest && playbackRequest.index === feedIndex && playbackRequest.episode) {
+      checkpoint = { episode: playbackRequest.episode, position: playbackRequest.position || 0, completed: false };
+    }
+    if (checkpoint) {
+      checkpoint.history = progressFingerprint(libraryEntry(item.series_id));
+      checkpoint.ready = Promise.resolve();
+    }
+    // Only keep this channel in memory; the single-drama player may replace
+    // feedItems, but must never replace the saved recommendation list.
+    recommendationSession = { owner: accountEpoch, channel: recommendationChannel(), items: feedItems.slice(), index: feedIndex, checkpoint: checkpoint };
+    return recommendationSession;
+  }
+
+  function settleRecommendationSave(session, save) {
+    if (!session || !session.checkpoint) return;
+    session.checkpoint.pending = true;
+    session.checkpoint.ready = Promise.all([Promise.resolve(save).catch(function () {}), libraryQueue.catch(function () {})]).then(function () {
+      if (recommendationSession !== session || session.owner !== accountEpoch) return;
+      // Include our own queued departure write in the baseline. A later
+      // history change then means the same drama was watched elsewhere.
+      session.checkpoint.history = progressFingerprint(libraryEntry(session.items[session.index].series_id));
+      session.checkpoint.pending = false;
+    });
+  }
+
+  function recommendationResume(checkpoint, entry, item) {
+    if (!checkpoint || !checkpoint.episode) return null;
+    if (!checkpoint.pending && entry && entry.last_played_at && entry.episode && progressFingerprint(entry) !== checkpoint.history) {
+      var episode = resumeEpisode(entry, item);
+      return { episode: episode, position: !entry.completed && episode === entry.episode ? entry.position || 0 : 0 };
+    }
+    var captured = { last_played_at: 1, episode: checkpoint.episode, completed: checkpoint.completed };
+    return { episode: resumeEpisode(captured, item), position: checkpoint.completed ? 0 : checkpoint.position || 0 };
+  }
+
+  function restoreRecommendation() {
+    var session = recommendationSession;
+    if (!session || session.owner !== accountEpoch || session.channel !== recommendationChannel() || !session.items[session.index] || !feedPager.loaded) return false;
+    feedItems = session.items.slice();
+    feedIndex = session.index;
+    setCatalogHeading(activeChannel().textContent);
+    playFeedItem(feedIndex, undefined, undefined, null, session.checkpoint);
+    return true;
   }
 
   function showRecommendationPlaceholder(title, summary) {
@@ -2509,7 +2571,7 @@
     }
     finishPlaybackPreparation(playback);
   }
-  function playFeedItem(index, forcedEpisode, forcedPosition, continuation) {
+  function playFeedItem(index, forcedEpisode, forcedPosition, continuation, resumeCheckpoint) {
     closePlayerOptions(false);
     closeDiscussion(false); resetDanmaku();
     if (!feedItems.length) return;
@@ -2555,7 +2617,8 @@
     hero.classList.toggle('is-episode-transition', sameSeries);
     placeholder.classList.add('is-hidden');
     updateFeedCounter();
-    var incomingEpisode = forcedEpisode || (libraryLoaded ? resumeEpisode(libraryEntry(item.series_id), item) : 0);
+    var incomingResume = resumeCheckpoint && recommendationResume(resumeCheckpoint, libraryEntry(item.series_id), item);
+    var incomingEpisode = forcedEpisode || (incomingResume ? incomingResume.episode : libraryLoaded ? resumeEpisode(libraryEntry(item.series_id), item) : 0);
     setFeatured(Object.assign({}, item, { start_episode: incomingEpisode }), !incomingEpisode);
     updateSeriesRows();
     setPlayerStatus(episodeLoadingText(incomingEpisode));
@@ -2571,11 +2634,13 @@
       return true;
     });
     var waitForLibrary = fastContinuation ? Promise.resolve() : Promise.resolve(libraryReady).then(function () { return libraryQueue.catch(function () {}); });
+    if (resumeCheckpoint) waitForLibrary = Promise.all([waitForLibrary, resumeCheckpoint.ready]);
     Promise.all([waitForLibrary, coveredReset]).then(function (ready) {
       if (!ready[1] || generation !== feedGeneration || request.signal.aborted) return null;
       var entry = libraryEntry(item.series_id);
-      var episode = forcedEpisode || resumeEpisode(entry, item);
-      var position = forcedPosition !== undefined ? forcedPosition : entry && episode === entry.episode && !entry.completed ? entry.position || 0 : 0;
+      var resumed = resumeCheckpoint && recommendationResume(resumeCheckpoint, entry, item);
+      var episode = forcedEpisode || (resumed ? resumed.episode : resumeEpisode(entry, item));
+      var position = forcedPosition !== undefined ? forcedPosition : resumed ? resumed.position : entry && episode === entry.episode && !entry.completed ? entry.position || 0 : 0;
       playbackRequest.episode = episode; playbackRequest.position = position;
       setFeatured(Object.assign({}, item, { start_episode: episode }));
       setPlayerStatus(episodeLoadingText(episode));
@@ -2648,6 +2713,7 @@
 
   function startPlayer(item, returnFocus) {
     if (!item || !item.series_id) return;
+    var recommendation = rememberRecommendation();
     allPagers.forEach(function (pager) { pager.cancel(); });
     if (!isPlaybackPage()) resetPlayerUI();
     if (pageMode() !== 'player') {
@@ -2665,6 +2731,7 @@
     feedItems = [item];
     feedIndex = 0;
     playFeedItem(0, item.__explicitEpisode ? item.start_episode : undefined, item.__explicitEpisode ? 0 : undefined);
+    if (recommendation) settleRecommendationSave(recommendation, libraryQueue);
     goFocus(document.getElementById('hero-feed-focus'));
   }
 
@@ -3239,6 +3306,7 @@
   }
 
   function loadCatalog(title) {
+    recommendationSession = null;
     episodePrefetch.cancel(); cancelPlaybackPreparation();
     saveProgress(true); activePlayback = null; ++feedGeneration;
     document.getElementById('hero-video').pause();
@@ -3251,8 +3319,7 @@
     featuredItem = null; feedItems = []; feedIndex = -1;
     updateSeasonControl(null);
     showRecommendationPlaceholder('正在读取推荐');
-    var channel = activeChannel();
-    var tab = ({ 'channel-follow': '45', 'channel-comic': '36', 'channel-real': '39', 'channel-recommend': '16' })[channel && channel.dataset.focus] || '16';
+    var tab = recommendationChannel();
     if (tab === '45' && (!accountData || !accountData.logged_in)) {
       feedPager.cancel(); renderFeed([]);
       showRecommendationPlaceholder('登录后查看关注内容', '在我的账号中登录红果账号。'); return Promise.resolve([]);
@@ -3661,13 +3728,19 @@
   }
 
   function activatePage(item, restoring) {
+    if (item.dataset.page === 'recommend' && pageMode() === 'recommend') {
+      if (!restoring) goFocus(firstContentFocus());
+      return;
+    }
     if (searchScanOpen) closeSearchScan(false);
     if (smsVerification) smsVerification.stop();
     if (supportModalOpen) closeSupportQR();
     if (accountKeypadOpen()) numericKeypad.close('page');
     engagement.clear();
     if (detailModalOpen) closeDetail();
-    saveProgress(true);
+    closePlayerOptions(false);
+    var recommendation = rememberRecommendation();
+    settleRecommendationSave(recommendation, saveProgress(true));
     allPagers.forEach(function (pager) { pager.cancel(); });
     activePlayback = null;
     ++feedGeneration;
@@ -3687,7 +3760,7 @@
       pagePlaceholder.classList.add('is-hidden');
       document.getElementById('hero').classList.add('is-feed');
       var active = document.querySelector('.channel-tab.is-active');
-      loadCatalog(active ? active.textContent : '推荐');
+      if (!restoreRecommendation()) loadCatalog(active ? active.textContent : '推荐');
     } else if (item.dataset.page === 'search') {
       mainSurface.classList.remove('has-placeholder');
       pagePlaceholder.classList.add('is-hidden');
@@ -3807,6 +3880,7 @@
 
   document.querySelectorAll('.channel-tab').forEach(function (item) {
     item.addEventListener('click', function () {
+      if (item.id === 'recommend-refresh') { loadCatalog(activeChannel().textContent); return; }
       document.querySelectorAll('.channel-tab').forEach(function (node) { node.classList.toggle('is-active', node === item); });
       loadCatalog(item.textContent);
     });

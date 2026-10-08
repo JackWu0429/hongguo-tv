@@ -44,9 +44,10 @@ button:focus { outline: none; }
 .top-bar { position: absolute; z-index: 5; top: 0; left: 0; right: 0; display: flex; align-items: center; min-height: 72px; padding: 16px 34px; background: linear-gradient(180deg, rgba(9,10,14,.85), rgba(9,10,14,0)); }
 .page-context { width: 110px; color: #e7e7ee; font-size: 16px; font-weight: 700; }
 .channel-tabs { display: flex; gap: 4px; margin: auto; padding: 4px; background: rgba(18,18,23,.66); border-radius: 24px; }
-.channel-tab { min-width: 76px; padding: 9px 18px; color: #d1d1da; background: transparent; border-radius: 20px; }
+.channel-tab { flex-shrink: 0; min-width: 76px; padding: 9px 18px; color: #d1d1da; background: transparent; border-radius: 20px; white-space: nowrap; }
 .channel-tab.is-active { color: #fff; background: rgba(255,255,255,.18); font-weight: 700; }
 .channel-tab.is-focused, .channel-tab:focus { color: #fff; box-shadow: 0 0 0 3px #fff; }
+.recommend-refresh { min-width: 0; margin-left: 8px; padding-left: 12px; padding-right: 12px; white-space: nowrap; }
 .top-status { display: flex; align-items: center; justify-content: flex-end; width: 180px; color: #a4a5af; font-size: 12px; text-align: right; }
 .status-icon { flex: 0 0 15px; width: 15px; height: 15px; margin-right: 6px; }
 .top-status[data-ok="true"] .status-icon { color: #70c9a0; }
