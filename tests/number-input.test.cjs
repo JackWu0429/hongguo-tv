@@ -19,6 +19,19 @@ test('scan completes a validated field once and stops polling without sending SM
   assert.deepEqual(f.completed,[{kind:'code',value:'012345'}]);assert.equal(f.requests[2].method,'DELETE');
   assert.equal(f.timers.filter(t=>t.active).length,0);
 });
+test('text scan accepts Chinese/letters/spaces but isolates late completion and invalid values',async()=>{
+  for(const value of ['魏家逆子 BOSS 2 & 第十三季','万妖图录传']){
+    const f=fixture();f.scan.start('search');ready(f.requests[0],'text','search');await flush();f.tick();
+    f.requests[1].resolve({state:'completed',kind:'search',value});await flush();
+    assert.deepEqual(f.completed,[{kind:'search',value}]);assert.equal(f.requests.at(-1).method,'DELETE');
+  }
+  for(const value of ['  ','a'.repeat(101),'test\x00x']){
+    const f=fixture();f.scan.start('search');ready(f.requests[0],'text','search');await flush();f.tick();
+    f.requests[1].resolve({state:'completed',kind:'search',value});await flush();assert.equal(f.completed.length,0);
+  }
+  const f=fixture();f.scan.start('search');ready(f.requests[0],'text','search');await flush();f.tick();const pending=f.requests[1];
+  f.scan.stop();pending.resolve({state:'completed',kind:'search',value:'魏家逆子'});await flush();assert.equal(f.completed.length,0);
+});
 test('late create after Back is cancelled and cannot resurrect a QR',async()=>{
   const f=fixture();f.scan.start('phone');f.scan.stop();ready(f.requests[0],'old','phone');await flush();
   assert.equal(f.requests[1].method,'DELETE');assert.equal(f.requests[1].id,'old');assert.equal(f.render.at(-1).state,'closed');assert.equal(f.completed.length,0);

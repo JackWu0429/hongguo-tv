@@ -25,12 +25,13 @@ var uiFiles embed.FS
 var version = "0.2.9-dev"
 
 type server struct {
-	instanceID   string
-	startedAt    time.Time
-	hongguo      *hongguoClient
-	libraryStore *libraryStore
-	accounts     *accountManager
-	numberInputs *numberInputManager
+	instanceID         string
+	startedAt          time.Time
+	hongguo            *hongguoClient
+	libraryStore       *libraryStore
+	accounts           *accountManager
+	numberInputs       *numberInputManager
+	searchHistoryStore *searchHistoryStore
 }
 
 type statusResponse struct {
@@ -64,6 +65,10 @@ func main() {
 	s := &server{instanceID: *instanceID, startedAt: time.Now().UTC(), hongguo: newHongguoClient(), libraryStore: library}
 	s.numberInputs = newNumberInputManager()
 	defer s.numberInputs.close()
+	s.searchHistoryStore, err = newSearchHistoryStore(*dataDir)
+	if err != nil {
+		log.Printf("prepare recent search: %v", err)
+	}
 	s.accounts, err = newAccountManager(*dataDir, library, s.hongguo)
 	if err != nil {
 		log.Fatalf("prepare account: %v", err)
@@ -80,6 +85,7 @@ func main() {
 	mux.HandleFunc("/api/v1/account", s.account)
 	mux.HandleFunc("/api/v1/account/", s.account)
 	mux.HandleFunc("/api/v1/number-input", s.numberInput)
+	mux.HandleFunc("/api/v1/search-history", s.searchHistory)
 	mux.HandleFunc("/api/v1/category", s.category)
 	mux.HandleFunc("/api/v1/Category", s.category)
 	mux.HandleFunc("/api/v1/rank", s.rank)

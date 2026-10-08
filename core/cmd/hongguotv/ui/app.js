@@ -14,6 +14,8 @@
     timeline: '#control-progress',
     searchInput: '#search-input',
     searchActions: '.search-action',
+    searchHistory: '.search-history-action',
+    searchScan: '.search-scan-action',
     searchFilters: '.search-filter',
     searchResults: '.search-result-card',
     listRetry: '.list-retry',
@@ -53,6 +55,11 @@
   var androidShell = /HongguoTV-Android/.test(navigator.userAgent);
   var numericKeypad;
   var accountNumberScan;
+  var searchNumberScan;
+  var searchScanOpen = false;
+  var searchScanReturnFocus = null;
+  var searchHistory;
+  var searchHistoryEpoch = 0;
   var accountKeypadReturnFocus = null;
   var accountKeypadPhase = '';
   var mainSurface = document.getElementById('main-surface');
@@ -288,6 +295,10 @@
           if (searchPanelPending && (!data.filters || !data.filters.length)) throw new Error('筛选条件未返回');
           if (data.filters && data.filters.length) { searchPanelPending = false; renderFilterRows(data.filters); }
           document.getElementById('search-result-title').textContent = filterSummary(); document.getElementById('filter-state').textContent = filterSummary();
+        } else if (!searchPager.loaded && searchPager.params.q && searchHistory && searchPager.historyEpoch === searchHistoryEpoch) {
+          // First successful page, including empty results and a successful
+          // retry. The pager excludes failed/cancelled/superseded responses.
+          searchHistory.add(searchPager.params.q);
         }
       },
       status: function (p) { listStatus(p, 'search-pagination'); }, after: queueTailCheck
@@ -592,7 +603,8 @@
     Array.prototype.forEach.call(document.querySelectorAll(query), function (element) {
       var style = window.getComputedStyle(element);
       var insideModal = element.closest && element.closest('#detail-modal');
-      if (accountKeypadOpen()) { if (!element.closest('#account-keypad-modal')) return; }
+      if (searchScanOpen) { if (!element.closest('#search-scan-modal')) return; }
+      else if (accountKeypadOpen()) { if (!element.closest('#account-keypad-modal')) return; }
       else if (supportModalOpen) { if (!element.closest('#support-modal')) return; }
       else if (confirmOpen) { if (!element.closest('#confirm-modal')) return; }
       else if (playerOptionsOpen) { if (!element.closest('#player-options')) return; }
@@ -616,6 +628,8 @@
 
   function zoneOf(element) {
     if (!element) return '';
+    if (element.classList.contains('search-scan-action')) return 'searchScan';
+    if (element.classList.contains('search-history-action')) return 'searchHistory';
     if (element.classList.contains('account-keypad-key')) return 'accountKeypad';
     if (element.classList.contains('support-card') || element.classList.contains('support-close')) return 'support';
     if (element.classList.contains('discussion-item') || element.classList.contains('discussion-close')) return 'discussion';
@@ -672,7 +686,7 @@
     if (previous && previous.tagName === 'INPUT' && element.tagName !== 'INPUT' && window.HongguoTVInput) window.HongguoTVInput.finishEditing();
     element.focus();
     markFocus(element);
-    if (!accountKeypadOpen() && !detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zoneOf(element) !== 'sidebar') {
+    if (!searchScanOpen && !accountKeypadOpen() && !detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zoneOf(element) !== 'sidebar') {
       lastContentFocus = element;
       lastPageFocus[pageMode()] = element;
     }
@@ -742,7 +756,7 @@
     document.querySelectorAll('.filter-row[data-filter-group]').forEach(function (node) { rows.push(node); });
     var rowIndex = rows.indexOf(row);
     var targetRowIndex = rowIndex + (direction === 'up' ? -1 : 1);
-    if (targetRowIndex < 0) return searchInput;
+    if (targetRowIndex < 0) return firstVisible('.search-history-action') || firstVisible('.search-submit') || searchInput;
     if (targetRowIndex >= rows.length) return firstSearchResult() || firstVisible('.search-more');
     var targetItems = focusables('.filter-row[data-filter-group="' + rows[targetRowIndex].dataset.filterGroup + '"] .search-filter');
     if (!targetItems.length) return null;
@@ -825,6 +839,7 @@
   }
 
   function moveFrom(current, direction) {
+    if (searchScanOpen) return direction === 'left' || direction === 'right' ? moveWithinZone('searchScan', current, direction) : null;
     if (supportModalOpen) return document.getElementById('support-close');
     if (confirmOpen) return direction === 'left' || direction === 'right' ? moveWithinZone('confirmation', current, direction) : null;
     if (playerOptionsOpen) {
@@ -902,14 +917,22 @@
     }
     if (zone === 'searchInput') {
       if (direction === 'up') return activeSidebar();
-      if (direction === 'down') return firstSearchFilter() || firstVisible('.search-submit');
+      // Left/right remain text-editing keys in this input. Down must reach the
+      // action row first so scan/search are accessible without a mouse or Tab.
+      if (direction === 'down') return firstVisible('.search-submit');
       if (direction === 'right') return firstVisible('.search-submit');
       return null;
     }
     if (zone === 'searchActions') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? searchInput : null);
       if (direction === 'up') return activeSidebar();
-      if (direction === 'down') return firstSearchFilter() || firstSearchResult();
+      if (direction === 'down') return firstVisible('.search-history-action') || firstSearchFilter() || firstSearchResult();
+      return null;
+    }
+    if (zone === 'searchHistory') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'up') return firstVisible('.search-submit') || searchInput;
+      if (direction === 'down') return firstSearchFilter() || firstSearchResult() || firstVisible('#search-page .list-retry') || firstVisible('.search-submit');
       return null;
     }
     if (zone === 'searchFilters') {
@@ -920,7 +943,7 @@
         var resultTarget = moveGrid('.search-result-card', current, direction);
         return resultTarget || (direction === 'left' ? activeSidebar() : null);
       }
-      if (direction === 'up') return moveGrid('.search-result-card', current, direction) || lastSearchFilter() || searchInput;
+      if (direction === 'up') return moveGrid('.search-result-card', current, direction) || lastSearchFilter() || firstVisible('.search-history-action') || searchInput;
       if (direction === 'down') return moveGrid('.search-result-card', current, direction) || listBoundary(searchPager, current, direction);
       return null;
     }
@@ -1441,6 +1464,7 @@
     revealControls();
   }
   function handleBack() {
+    if (searchScanOpen) { closeSearchScan(true); return true; }
     if (accountKeypadOpen()) { numericKeypad.close('back'); return true; }
     if (supportModalOpen) { closeSupportQR(); return true; }
     if (confirmOpen) closeConfirmation();
@@ -1468,6 +1492,7 @@
     return true;
   }
   function pauseForBackground() {
+    if (searchScanOpen) closeSearchScan(true);
     if (accountKeypadOpen()) numericKeypad.close('background');
     if (smsVerification) smsVerification.stop();
     var video = document.getElementById('hero-video');
@@ -3050,13 +3075,75 @@
   }
 
   function submitSearch() {
-    var query = searchInput ? searchInput.value.trim() : '';
-    if (!query) { showNotice('请输入剧名或关键词'); goFocus(searchInput); return; }
+    var query = window.HongguoSearchHistory.normalize(searchInput ? searchInput.value : '');
+    if (!query) { showNotice('请输入不超过100字的剧名或关键词'); goFocus(searchInput); return; }
+    searchInput.value = query;
     var returnTarget = document.activeElement;
     activeSearchQuery = query; searchKind = 'keyword';
     document.getElementById('filter-panel').classList.add('is-hidden'); document.getElementById('search-browse').classList.remove('is-hidden');
     document.getElementById('search-result-title').textContent = '搜索：' + query;
-    searchPager.reset({ q: query }).then(function () { if (activeSearchQuery === query && pageMode() === 'search' && !searchPager.error && document.activeElement === returnTarget) goFocus(firstSearchResult() || searchInput); });
+    var result = searchPager.reset({ q: query });
+    searchPager.historyEpoch = searchHistoryEpoch;
+    var generation = searchPager.generation;
+    result.then(function () {
+      if (generation !== searchPager.generation || activeSearchQuery !== query || pageMode() !== 'search' || searchPager.error || !searchPager.loaded) return;
+      if (document.activeElement === returnTarget) goFocus(firstSearchResult() || firstVisible('.search-submit'));
+    });
+  }
+
+  function renderSearchHistory(items) {
+    var container = document.getElementById('search-history-items');
+    var focused = document.activeElement;
+    var wasKeyword = focused && focused.__searchQuery;
+    var inHistory = focused && focused.closest('#search-history');
+    container.innerHTML = '';
+    items.forEach(function (query, index) {
+      var button = document.createElement('button');
+      button.className = 'search-history-action'; button.dataset.focus = 'search-history-' + index;
+      button.__searchQuery = query; button.textContent = query; button.title = query;
+      button.addEventListener('click', function () { searchInput.value = query; submitSearch(); });
+      button.addEventListener('focus', function () { button.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });
+      container.appendChild(button);
+    });
+    document.getElementById('search-history').classList.toggle('is-hidden', !items.length);
+    if (!inHistory) container.scrollLeft = 0;
+    if (inHistory && !confirmOpen && pageMode() === 'search') {
+      var target = null;
+      container.querySelectorAll('button').forEach(function (button) { if (button.__searchQuery === wasKeyword) target = button; });
+      goFocus(target || firstVisible('.search-history-action') || firstVisible('.search-submit'));
+    }
+  }
+
+  function confirmClearSearchHistory() {
+    ++confirmationGeneration;
+    confirmReturnFocus = document.activeElement;
+    confirmOperation = function () { ++searchHistoryEpoch; return searchHistory.clear(); };
+    confirmOpen = true;
+    document.getElementById('confirm-title').textContent = '清空最近搜索？';
+    document.getElementById('confirm-copy').textContent = '清空这台设备保存的搜索关键词。';
+    document.getElementById('confirm-accept').textContent = '清空';
+    document.getElementById('confirm-modal').classList.remove('is-hidden');
+    document.getElementById('confirm-modal').setAttribute('aria-hidden', 'false');
+    goFocus(document.getElementById('confirm-cancel'));
+  }
+
+  function closeSearchScan(restore) {
+    searchScanOpen = false;
+    if (searchNumberScan) searchNumberScan.stop();
+    document.getElementById('search-scan-modal').classList.add('is-hidden');
+    document.getElementById('search-scan-modal').setAttribute('aria-hidden', 'true');
+    var target = searchScanReturnFocus; searchScanReturnFocus = null;
+    if (restore && pageMode() === 'search') goFocus(focusables().indexOf(target) >= 0 ? target : firstVisible('#search-scan'));
+  }
+
+  function openSearchScan() {
+    if (pageMode() !== 'search' || searchScanOpen || applicationInBackground) return;
+    searchScanReturnFocus = document.activeElement;
+    searchScanOpen = true;
+    document.getElementById('search-scan-modal').classList.remove('is-hidden');
+    document.getElementById('search-scan-modal').setAttribute('aria-hidden', 'false');
+    goFocus(document.getElementById('search-scan-close'));
+    searchNumberScan.start('search');
   }
 
   function loadCatalog(title) {
@@ -3482,6 +3569,7 @@
   }
 
   function activatePage(item, restoring) {
+    if (searchScanOpen) closeSearchScan(false);
     if (smsVerification) smsVerification.stop();
     if (supportModalOpen) closeSupportQR();
     if (accountKeypadOpen()) numericKeypad.close('page');
@@ -3513,6 +3601,7 @@
       pagePlaceholder.classList.add('is-hidden');
       mainSurface.classList.add('has-search');
       searchPage.classList.remove('is-hidden');
+      searchHistory.load();
       if (!searchPager.loaded) { if (searchKind === 'keyword' && activeSearchQuery) submitSearch(); else loadBrowse(false, !filterRows.length); } else queueTailCheck();
     } else if (item.dataset.page === 'rank') {
       mainSurface.classList.add('has-workspace');
@@ -3554,6 +3643,7 @@
   document.addEventListener('scroll', queueTailCheck, true);
   window.addEventListener('resize', queueTailCheck);
   document.addEventListener('focusin', function (event) {
+    if (searchScanOpen && !event.target.closest('#search-scan-modal')) { goFocus(document.getElementById('search-scan-close')); return; }
     if (detailModalOpen && event.target.id !== 'detail-tab-episodes') detailFocusPending = false;
     if (accountKeypadOpen()) {
       if (!event.target.closest('#account-keypad-modal')) { goFocus(accountKeypadFocus()); return; }
@@ -3566,7 +3656,7 @@
     if (zone === 'controls' && event.target.closest('.playback-buttons')) lastPlaybackControl = event.target;
     if (zone === 'sidebar') clearTimeout(controlsTimer);
     else if (isPlaybackPage() && ['controls', 'timeline', 'actions', 'channels'].indexOf(zone) >= 0) revealControls();
-    if (!accountKeypadOpen() && !detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zone !== 'sidebar') {
+    if (!searchScanOpen && !accountKeypadOpen() && !detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zone !== 'sidebar') {
       lastContentFocus = event.target;
       lastPageFocus[pageMode()] = event.target;
     }
@@ -3583,6 +3673,10 @@
     item.addEventListener('click', function () {
       if (item.dataset.action === 'search-submit') {
         submitSearch();
+      } else if (item.dataset.action === 'search-scan') {
+        openSearchScan();
+      } else if (item.dataset.action === 'search-history-clear') {
+        confirmClearSearchHistory();
       } else if (item.dataset.action === 'search-browse') {
         beginBrowse();
       } else if (item.dataset.action === 'favorite' || item.dataset.action === 'like') {
@@ -3839,12 +3933,38 @@
       goFocus(next || (origin && !origin.disabled ? origin : firstContentFocus()));
     }
   });
-  accountNumberScan = window.HongguoNumberInput.create({
-    request: function (method, session, kind) {
+  function requestScanInput(method, session, kind) {
       var options = { method: method };
       if (method === 'POST') { options.headers = { 'Content-Type': 'application/json' }; options.body = JSON.stringify({ kind: kind }); }
       return fetchData('/api/v1/number-input' + (session ? '?session=' + encodeURIComponent(session) : ''), options);
+  }
+  searchHistory = window.HongguoSearchHistory.create({
+    request: function (method, query) {
+      var options = { method: method };
+      if (method === 'POST') { options.headers = { 'Content-Type': 'application/json' }; options.body = JSON.stringify({ query: query }); }
+      return fetchData('/api/v1/search-history', options);
     },
+    render: renderSearchHistory,
+    error: function (method) { if (method !== 'GET' && pageMode() === 'search') showNotice('最近搜索保存失败，请重试'); }
+  });
+  searchNumberScan = window.HongguoNumberInput.create({
+    request: requestScanInput,
+    render: function (state) {
+      var image = document.getElementById('search-scan-qr');
+      image.classList.toggle('is-hidden', state.state !== 'waiting');
+      if (state.state === 'waiting') image.src = state.qr; else image.removeAttribute('src');
+      document.getElementById('search-scan-status').textContent = state.state === 'creating' ? '正在生成二维码…' : state.state === 'waiting' ? '扫码后输入剧名，点击发送并搜索' : state.state === 'closed' ? '' : state.message;
+    },
+    complete: function (kind, value) {
+      if (kind !== 'search' || !searchScanOpen || pageMode() !== 'search' || applicationInBackground) return;
+      closeSearchScan(false); searchInput.value = value;
+      goFocus(firstVisible('.search-submit')); submitSearch();
+    }
+  });
+  document.getElementById('search-scan-close').addEventListener('click', function () { closeSearchScan(true); });
+  document.getElementById('search-scan-refresh').addEventListener('click', function () { if (searchScanOpen) searchNumberScan.start('search'); });
+  accountNumberScan = window.HongguoNumberInput.create({
+    request: requestScanInput,
     render: function (state) {
       var image = document.getElementById('account-number-qr');
       image.classList.toggle('is-hidden', state.state !== 'waiting');

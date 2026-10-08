@@ -5,6 +5,11 @@
   else root.HongguoNumberInput = api;
 }(typeof window !== 'undefined' ? window : this, function () {
   'use strict';
+  function validValue(kind, value) {
+    if (typeof value !== 'string') return false;
+    if (kind === 'search') return value.trim().length > 0 && value.length <= 100 && !/[\x00-\x1f\x7f-\x9f]/.test(value);
+    return kind === 'phone' ? /^1[3-9][0-9]{9}$/.test(value) : kind === 'code' && /^[0-9]{4,8}$/.test(value);
+  }
   function create(options) {
     var generation = 0, active = false, session = '', kind = '', timer = null, expires = 0;
     var schedule = options.schedule || setTimeout, unschedule = options.unschedule || clearTimeout, now = options.now || Date.now;
@@ -17,24 +22,26 @@
     function start(field) {
       stop(); active = true; kind = field;
       var current = generation, failures = 0;
+      var fallback = field === 'search' ? '扫码暂不可用，可继续使用搜索框' : '扫码暂不可用，可使用左侧数字键盘';
+      var expired = field === 'search' ? '二维码已失效，请刷新二维码或返回搜索框' : '二维码已失效，可重新打开输入框或使用左侧键盘';
       options.render({ state: 'creating' });
       function fail(message) {
         if (!active || current !== generation) return;
-        options.render({ state: 'unavailable', message: message || '扫码暂不可用，可使用左侧数字键盘' });
+        options.render({ state: 'unavailable', message: message || fallback });
         cancel(session); session = ''; active = false;
       }
       function poll() {
         if (!active || current !== generation) return;
-        if (now() >= expires) { fail('二维码已过期，可重新打开输入框或使用左侧键盘'); return; }
+        if (now() >= expires) { fail(expired); return; }
         options.request('GET', session).then(function (data) {
           if (!active || current !== generation) return;
           failures = 0;
           if (data.state === 'completed') {
-            if (data.kind !== kind || typeof data.value !== 'string' || !(kind === 'phone' ? /^1[3-9][0-9]{9}$/.test(data.value) : /^[0-9]{4,8}$/.test(data.value))) { fail(); return; }
+            if (data.kind !== kind || !validValue(kind, data.value)) { fail(); return; }
             var fieldKind = kind;
             stop(); options.complete(fieldKind, data.value); return;
           }
-          if (data.state !== 'waiting') { fail('二维码已失效，可重新打开输入框或使用左侧键盘'); return; }
+          if (data.state !== 'waiting') { fail(expired); return; }
           timer = schedule(poll, 900);
         }).catch(function () {
           if (!active || current !== generation) return;

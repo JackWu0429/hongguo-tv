@@ -12,6 +12,7 @@
   <svg class="icon-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
     <symbol id="icon-recommend" viewBox="0 0 24 24"><path d="M4 4h16v11H4z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m8 19 4-3 4 3M8 8h8M8 11h5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
     <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="5.8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m15 15 5 5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
+    <symbol id="icon-scan" viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M7 7h3v3H7zM14 7h3v3h-3zM7 15h3v3H7zM14 15h3v3h-3z" fill="currentColor"/></symbol>
     <symbol id="icon-rank" viewBox="0 0 24 24"><path d="M5 19V11M12 19V5M19 19v-8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"/><path d="M3 19h18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"/></symbol>
     <symbol id="icon-new" viewBox="0 0 24 24"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 3v-3H6.5A2.5 2.5 0 0 1 4 14.5z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 10h8M8 13h5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"/></symbol>
     <symbol id="icon-history" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7M4 5v5h5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
@@ -80,10 +81,15 @@
             <p>选择分类浏览，或输入剧名搜索</p>
           </div>
           <div class="search-box">
-            <input id="search-input" class="search-input" type="search" autocomplete="off" placeholder="输入剧名 / 关键词" aria-label="输入剧名或关键词">
+            <input id="search-input" class="search-input" type="search" maxlength="100" autocomplete="off" placeholder="输入剧名 / 关键词" aria-label="输入剧名或关键词">
             <button class="search-submit search-action" data-action="search-submit" data-focus="search-submit">搜索</button>
+            <button id="search-scan" class="search-browse search-action search-scan" data-action="search-scan" data-focus="search-scan" aria-haspopup="dialog" aria-controls="search-scan-modal"><svg aria-hidden="true"><use href="#icon-scan" xlink:href="#icon-scan"></use></svg><span>扫码输入</span></button>
             <button id="search-browse" class="search-browse search-action is-hidden" data-action="search-browse" data-focus="search-browse">按分类找剧</button>
           </div>
+        </div>
+        <div id="search-history" class="search-history is-hidden" aria-label="最近搜索">
+          <strong>最近搜索</strong><div id="search-history-items" class="search-history-items"></div>
+          <button class="search-history-action search-history-clear" data-action="search-history-clear" data-focus="search-history-clear">清空</button>
         </div>
         <div class="filter-panel" id="filter-panel" data-focus-zone="searchFilters">
           <div id="filter-rows"><div class="filter-status">正在读取筛选条件…</div></div>
@@ -277,6 +283,8 @@
   <script src="/updates.js"></script>
   <script src="/engagement.js"></script>
   <script src="/sms-verification.js"></script>
+  <section id="search-scan-modal" class="search-scan-modal is-hidden" aria-hidden="true"><div class="search-scan-dialog" role="dialog" aria-modal="true" aria-labelledby="search-scan-title"><h2 id="search-scan-title">手机扫码搜索</h2><p>手机输入或粘贴剧名，发送后在电视上搜索</p><div class="search-scan-qr-box"><img id="search-scan-qr" class="is-hidden" width="240" height="240" alt="扫码输入剧名"></div><p id="search-scan-status" role="status" aria-live="polite"></p><p class="search-scan-hint">手机和电视需在同一局域网<br>二维码5分钟有效，关闭后失效</p><div class="search-scan-actions"><button id="search-scan-refresh" class="search-scan-action" data-focus="search-scan-refresh">刷新二维码</button><button id="search-scan-close" class="search-scan-action" data-focus="search-scan-close">返回搜索</button></div></div></section>
+  <script src="/search-history.js"></script>
   <script src="/numeric-keypad.js"></script>
   <script src="/number-input.js"></script>
   <script src="/app.js"></script>
