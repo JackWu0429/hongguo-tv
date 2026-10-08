@@ -2002,24 +2002,27 @@
     else image.onerror();
   }
 
-  function setBackdrop(backdrop, item) {
+  function setBackdrop(backdrop, item, poster) {
     var source = item.cover_fallback || item.cover || '';
     if (backdrop.__coverSource === source) return;
     backdrop.__coverSource = source;
+    var layers = poster ? [backdrop, poster] : [backdrop];
     var loader = new Image();
     backdrop.__coverLoader = loader;
-    backdrop.classList.add('is-cover-pending');
-    backdrop.style.backgroundImage = 'none';
+    layers.forEach(function (layer) {
+      layer.classList.add('is-cover-pending');
+      layer.style.backgroundImage = 'none';
+    });
     loader.onload = function () {
       if (backdrop.__coverLoader !== loader) return;
-      // Background cover preserves the intrinsic ratio even on old WebViews;
-      // the loading poster is never painted as a stretched full-size img.
-      backdrop.style.backgroundImage = 'url(' + JSON.stringify(loader.src) + ')';
+      // Decode once and reveal both layers together. contain keeps the complete
+      // poster; cover fills the sides, including on old Android WebViews.
+      layers.forEach(function (layer) { layer.style.backgroundImage = 'url(' + JSON.stringify(loader.src) + ')'; });
       requestAnimationFrame(function () {
-        if (backdrop.__coverLoader === loader) backdrop.classList.remove('is-cover-pending');
+        if (backdrop.__coverLoader === loader) layers.forEach(function (layer) { layer.classList.remove('is-cover-pending'); });
       });
     };
-    loader.onerror = function () { if (backdrop.__coverLoader === loader) backdrop.style.backgroundImage = 'none'; };
+    loader.onerror = function () { if (backdrop.__coverLoader === loader) layers.forEach(function (layer) { layer.style.backgroundImage = 'none'; }); };
     if (source) loader.src = source;
   }
 
@@ -2035,7 +2038,7 @@
     var placeholderTitle = document.getElementById('hero-placeholder-title');
     var placeholderSummary = document.getElementById('hero-placeholder-summary');
     if (backdrop) {
-      setBackdrop(backdrop, item);
+      setBackdrop(backdrop, item, document.getElementById('hero-loading-poster'));
     }
     if (title) title.textContent = item.title || '红果短剧';
     if (episode) episode.textContent = waitingForProgress ? item.episode_count ? '全' + item.episode_count + '集' : '' : '第' + (item.start_episode || 1) + '集' + (item.episode_count ? ' · 全' + item.episode_count + '集' : '');

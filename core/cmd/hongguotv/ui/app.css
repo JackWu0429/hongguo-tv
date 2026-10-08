@@ -57,12 +57,15 @@ button:focus { outline: none; }
 .hero-transition { position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 2; background: #000; visibility: hidden; pointer-events: none; }
 .hero.is-preparing-video .hero-transition { visibility: visible; }
 .hero-backdrop { position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 0; width: 100%; height: 100%; background-size: cover; background-position: center; background-repeat: no-repeat; opacity: .52; filter: saturate(.82); transition: opacity .2s ease; }
+/* Keep the full cover in the centre; the darker cover layer fills the sides.
+   CSS backgrounds preserve the image ratio on Android 6 without object-fit. */
+.hero-loading-poster { position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 1; width: 100%; height: 100%; background-size: contain; background-position: center; background-repeat: no-repeat; opacity: 1; filter: brightness(.7); transition: opacity .2s ease; }
 .is-cover-pending { opacity: 0 !important; }
 .hero.is-feed { background: #000; }
 .hero.is-feed .hero-media { background: #000; }
-.hero.is-feed .hero-backdrop { visibility: hidden; }
-.hero.is-preparing-video .hero-backdrop { visibility: visible; }
-.hero.is-preparing-video.is-episode-transition .hero-backdrop { visibility: hidden; }
+.hero.is-feed .hero-backdrop, .hero.is-feed .hero-loading-poster { visibility: hidden; }
+.hero.is-preparing-video .hero-backdrop, .hero.is-preparing-video .hero-loading-poster { visibility: visible; }
+.hero.is-preparing-video.is-episode-transition .hero-backdrop, .hero.is-preparing-video.is-episode-transition .hero-loading-poster { visibility: hidden; }
 .hero.is-preparing-video:not(.is-starting-video) .hero-video { visibility: hidden !important; opacity: 0 !important; }
 .hero-video { position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 1; width: 100%; height: 100%; object-fit: contain; visibility: hidden; opacity: 0; background: #000; }
 .hero-video.has-source { visibility: visible; opacity: 1; }
@@ -85,7 +88,7 @@ button:focus { outline: none; }
 .hero.is-catalog-loading .hero-summary, .hero.is-catalog-loading .catalog-ribbon,
 .hero.is-catalog-loading .right-actions, .hero.is-catalog-loading .bottom-controls,
 .hero.is-catalog-loading .hero-feed-focus, .hero.is-catalog-loading .player-status { display: none; }
-.hero.is-catalog-loading .hero-backdrop, .hero.is-catalog-loading .hero-video { visibility: hidden; }
+.hero.is-catalog-loading .hero-backdrop, .hero.is-catalog-loading .hero-loading-poster, .hero.is-catalog-loading .hero-video { visibility: hidden; }
 .app-shell[data-mode="recommend"] .hero-media { touch-action: pan-x; }
 .primary-action { min-height: 48px; padding: 0 24px; color: #1a1013; background: #fff; border-radius: 9px; font-weight: 700; }
 .primary-action.is-focused, .primary-action:focus { box-shadow: 0 0 0 4px #f35d7b; transform: scale(1.05); }

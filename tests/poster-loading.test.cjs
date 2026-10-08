@@ -35,11 +35,16 @@ test('a failed cover does not display a broken or stretched image and recovers o
   c.setCover(c.image,{cover:'good.jpg'});c.image.onload();c.paint();
   assert.equal(c.image.names.includes('is-empty'),false);assert.equal(c.image.names.includes('is-cover-pending'),false);
 });
-test('loading backdrop uses the decoded current source and rejects late previous images', () => {
-  const c=posters();vm.runInContext(`backdrop=node();setBackdrop(backdrop,{cover:'first.jpg'});first=backdrop.__coverLoader;setBackdrop(backdrop,{cover:'second.jpg'});second=backdrop.__coverLoader`,c);
-  c.first.onload();c.paint();assert.equal(c.backdrop.style.backgroundImage,'none');
+test('loading poster layers reveal the decoded current source together and reject late previous images', () => {
+  const c=posters();vm.runInContext(`backdrop=node();poster=node();setBackdrop(backdrop,{cover:'first.jpg'},poster);first=backdrop.__coverLoader;setBackdrop(backdrop,{cover:'second.jpg'},poster);second=backdrop.__coverLoader`,c);
+  c.first.onload();c.paint();assert.equal(c.backdrop.style.backgroundImage,'none');assert.equal(c.poster.style.backgroundImage,'none');
   c.second.onload();assert.equal(c.backdrop.names.includes('is-cover-pending'),true);
+  assert.equal(c.poster.names.includes('is-cover-pending'),true);
   c.paint();assert.equal(c.backdrop.style.backgroundImage,'url("second.jpg")');
+  assert.equal(c.poster.style.backgroundImage,'url("second.jpg")');
   assert.equal(c.backdrop.names.includes('is-cover-pending'),false);
-  const count=c.images.length;c.setBackdrop(c.backdrop,{cover:'second.jpg'});assert.equal(c.images.length,count);
+  assert.equal(c.poster.names.includes('is-cover-pending'),false);
+  const count=c.images.length;c.setBackdrop(c.backdrop,{cover:'second.jpg'},c.poster);assert.equal(c.images.length,count);
+  c.setBackdrop(c.backdrop,{cover:'bad.jpg'},c.poster);c.backdrop.__coverLoader.onerror();
+  assert.equal(c.backdrop.style.backgroundImage,'none');assert.equal(c.poster.style.backgroundImage,'none');
 });
