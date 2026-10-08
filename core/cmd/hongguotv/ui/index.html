@@ -148,6 +148,11 @@
             <button class="library-toolbar-button" id="library-clear" data-focus="library-clear">清空</button>
           </div>
         </div>
+        <div class="history-filters is-hidden" id="history-filters" role="group" aria-label="观看状态筛选">
+          <button class="history-filter is-active" data-history-filter="all" data-focus="history-all" aria-pressed="true">全部</button>
+          <button class="history-filter" data-history-filter="unfinished" data-focus="history-unfinished" aria-pressed="false">未看完</button>
+          <button class="history-filter" data-history-filter="finished" data-focus="history-finished" aria-pressed="false">已看完</button>
+        </div>
         <div id="library-count" class="library-count"></div>
         <div id="library-grid" class="library-grid" aria-live="polite"></div>
         <div id="library-pagination" class="list-status" role="status"></div>

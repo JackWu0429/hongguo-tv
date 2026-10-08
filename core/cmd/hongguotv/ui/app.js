@@ -32,6 +32,7 @@
     calendarItems: '.calendar-row',
     reservationTabs: '.reservation-tab',
     libraryActions: '.library-toolbar-button',
+    historyFilters: '.history-filter',
     libraryItems: '.library-card',
     libraryRemovals: '.library-remove',
     accountInputs: '.account-input',
@@ -156,6 +157,7 @@
   var libraryLoaded = false;
   var libraryError = '';
   var libraryEditing = false;
+  var historyFilter = 'all';
   var libraryQueue = Promise.resolve();
   var libraryReady;
   var confirmOpen = false;
@@ -643,6 +645,7 @@
     if (element.classList.contains('calendar-row')) return 'calendarItems';
     if (element.classList.contains('reservation-tab')) return 'reservationTabs';
     if (element.classList.contains('library-toolbar-button')) return 'libraryActions';
+    if (element.classList.contains('history-filter')) return 'historyFilters';
     if (element.classList.contains('library-card')) return 'libraryItems';
     if (element.classList.contains('library-remove')) return 'libraryRemovals';
     if (element.classList.contains('account-input')) return 'accountInputs';
@@ -682,7 +685,7 @@
     if (pageMode() === 'search') return searchInput || document.querySelector('.search-submit');
     if (pageMode() === 'account') return firstVisible('.account-input') || firstVisible('.account-action');
     if (pageMode() === 'support') return firstVisible('.support-card');
-    if (isLibraryPage()) return firstVisible('.library-card') || firstVisible('[data-action="library-discover"]') || firstVisible('.library-toolbar-button');
+    if (isLibraryPage()) return firstVisible('.library-card') || firstVisible('.history-filter.is-active') || firstVisible('[data-action="library-discover"]') || firstVisible('.library-toolbar-button');
     if (pageMode() === 'rank') return firstVisible('.rank-tab.is-active') || firstRankTab();
     if (pageMode() === 'new') return firstVisible('.new-tab.is-active') || firstNewTab();
     if (pageMode() === 'reservations') return firstVisible('.reservation-tab.is-active');
@@ -964,9 +967,16 @@
       return null;
     }
     if (zone === 'libraryActions') {
+      if (current.dataset.action === 'library-discover' && direction === 'up') return firstVisible('.history-filter.is-active') || activeSidebar();
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'down') return firstVisible('.history-filter.is-active') || firstVisible('.library-card') || firstVisible('[data-action="library-discover"]');
+      if (direction === 'up') return firstVisible('.history-filter.is-active') || firstVisible('.library-card') || activeSidebar();
+      return null;
+    }
+    if (zone === 'historyFilters') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : firstVisible('#library-manage'));
+      if (direction === 'up') return firstVisible('#library-manage') || activeSidebar();
       if (direction === 'down') return firstVisible('.library-card') || firstVisible('[data-action="library-discover"]');
-      if (direction === 'up') return firstVisible('.library-card') || activeSidebar();
       return null;
     }
     if (zone === 'appUpdates') {
@@ -998,7 +1008,7 @@
     }
     if (zone === 'libraryItems') {
       if (direction === 'left' || direction === 'right') return moveGrid('.library-card', current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return moveGrid('.library-card', current, direction) || firstVisible('.library-toolbar-button');
+      if (direction === 'up') return moveGrid('.library-card', current, direction) || firstVisible('.history-filter.is-active') || firstVisible('.library-toolbar-button');
       if (direction === 'down') return libraryEditing ? current.parentElement.querySelector('.library-remove') : moveGrid('.library-card', current, direction) || listBoundary(libraryPager, current, direction);
       return null;
     }
@@ -1594,23 +1604,54 @@
       }
     });
   }
+  function libraryFinished(entry) {
+    var total = Number(entry.drama && entry.drama.episode_count) || 0;
+    return !!(entry.last_played_at && total > 0 && Number(entry.episode) >= total && entry.completed);
+  }
+
+  function visibleLibraryEntries(kind, filter) {
+    var entries = libraryData.entries.filter(function (entry) {
+      if (libraryTime(entry, kind) <= 0) return false;
+      if (kind !== 'history' || filter === 'all') return true;
+      return libraryFinished(entry) === (filter === 'finished');
+    });
+    return entries.sort(function (a, b) { return libraryTime(b, kind) - libraryTime(a, kind); });
+  }
+
+  function selectHistoryFilter(value) {
+    if (pageMode() !== 'history' || ['all', 'unfinished', 'finished'].indexOf(value) < 0) return;
+    var changed = historyFilter !== value;
+    historyFilter = value;
+    renderLibrary(!changed);
+    if (changed) libraryPage.scrollTop = 0;
+    goFocus(firstVisible('.history-filter.is-active'));
+    queueTailCheck();
+  }
+
   function renderLibrary(restoring) {
     var kind = pageMode();
     if (!isLibraryPage()) return;
     var label = ({ history: '历史', favorites: '收藏', likes: '点赞' })[kind];
-    document.getElementById('library-title').textContent = label;
+    document.getElementById('library-title').textContent = kind === 'history' ? '观看历史' : label;
     var storageLabel = libraryData.owner_id ? '当前账号 · 云同步' : '保存在本机';
     document.getElementById('library-hint').textContent = storageLabel + (kind === 'history' ? ' · 自动记住集数和进度' : '');
+    var filter = kind === 'history' ? historyFilter : 'all';
+    document.getElementById('history-filters').classList.toggle('is-hidden', kind !== 'history');
+    document.querySelectorAll('.history-filter').forEach(function (button) {
+      var selected = button.dataset.historyFilter === filter;
+      button.classList.toggle('is-active', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    });
     var grid = document.getElementById('library-grid');
-    var entries = libraryData.entries.filter(function (entry) { return libraryTime(entry, kind) > 0; });
-    entries.sort(function (a, b) { return libraryTime(b, kind) - libraryTime(a, kind); });
+    var entries = visibleLibraryEntries(kind, filter);
     var existing = {};
     Array.prototype.forEach.call(grid.children, function (tile, index) { existing[tile.dataset.seriesId] = { tile: tile, index: index }; });
     if (restoring) entries.sort(function (a, b) { return (existing[a.drama.series_id] ? existing[a.drama.series_id].index : 10000) - (existing[b.drama.series_id] ? existing[b.drama.series_id].index : 10000); });
     var totalEntries = entries.length;
-    var count = libraryPager.params.kind === kind ? Math.max(20, libraryPager.items.length) : 20;
-    if (libraryPager.params.kind !== kind) libraryPager.cancel();
-    libraryPager.params.kind = kind;
+    var sameView = libraryPager.params.kind === kind && libraryPager.params.filter === filter;
+    var count = sameView ? Math.max(20, libraryPager.items.length) : 20;
+    if (!sameView) libraryPager.cancel();
+    libraryPager.params.kind = kind; libraryPager.params.filter = filter;
     libraryPager.local(entries.map(function (entry) { return entry.drama; }), count);
     entries = entries.slice(0, count);
     var current = document.activeElement;
@@ -1654,7 +1695,7 @@
       if (card.querySelector('img').alt !== entry.drama.title) setCover(card.querySelector('img'), entry.drama);
       updatePosterSeason(card.querySelector('.drama-poster'), entry.drama);
       card.querySelector('.library-card-title').textContent = entry.drama.title;
-      card.querySelector('.library-card-meta').textContent = entry.last_played_at ? entry.completed && entry.drama.episode_count && entry.episode >= entry.drama.episode_count ? '已看完 · 全' + entry.episode + '集' : '继续第' + resumeEpisode(entry, entry.drama) + '集' + (!entry.completed && entry.position ? ' · ' + clockText(entry.position) : '') : entry.drama.episode_count ? '全' + entry.drama.episode_count + '集' : '从第一集播放';
+      card.querySelector('.library-card-meta').textContent = entry.last_played_at ? libraryFinished(entry) ? '已看完 · 全' + entry.episode + '集' : '继续第' + resumeEpisode(entry, entry.drama) + '集' + (!entry.completed && entry.position ? ' · ' + clockText(entry.position) : '') : entry.drama.episode_count ? '全' + entry.drama.episode_count + '集' : '从第一集播放';
       card.querySelector('.library-card-time').textContent = new Date(libraryTime(entry, kind)).toLocaleDateString();
       card.querySelector('.library-progress').classList.toggle('is-hidden', !entry.last_played_at || !entry.duration);
       card.querySelector('.library-progress > span').style.width = Math.min(100, entry.duration ? entry.position / entry.duration * 100 : 0) + '%';
@@ -1667,11 +1708,11 @@
     document.getElementById('library-manage').disabled = !libraryError && !entries.length;
     document.getElementById('library-clear').disabled = !entries.length;
     document.getElementById('library-empty').classList.toggle('is-hidden', entries.length > 0);
-    document.getElementById('library-empty-title').textContent = libraryError ? '读取本机记录失败' : !libraryLoaded ? '正在读取本机记录…' : kind === 'history' ? '还没有观看记录' : '还没有' + label + '的短剧';
-    document.getElementById('library-empty-copy').textContent = libraryError || (kind === 'history' ? '开始播放后，会自动保存集数和进度' : '在播放页点' + label + '，以后可从这里继续观看');
+    document.getElementById('library-empty-title').textContent = libraryError ? '读取本机记录失败' : !libraryLoaded ? '正在读取本机记录…' : kind === 'history' ? filter === 'finished' ? '还没有已看完的短剧' : filter === 'unfinished' ? '没有未看完的短剧' : '还没有观看记录' : '还没有' + label + '的短剧';
+    document.getElementById('library-empty-copy').textContent = libraryError || (kind === 'history' ? filter === 'finished' ? '最后一集播放结束后会显示在这里。云端旧记录缺少结束标记时归入未看完。' : filter === 'unfinished' ? '可以切换到“全部”查看观看记录' : '开始播放后，会自动保存集数和进度' : '在播放页点' + label + '，以后可从这里继续观看');
     if (currentTile && !document.contains(current)) {
       var cards = focusables('.library-card');
-      goFocus(cards[Math.min(priorIndex, cards.length - 1)] || firstVisible('[data-action="library-discover"]'));
+      goFocus(cards[Math.min(priorIndex, cards.length - 1)] || firstVisible('.history-filter.is-active') || firstVisible('[data-action="library-discover"]'));
     } else if (currentTile && document.activeElement !== current) {
       goFocus(current);
     }
@@ -1737,6 +1778,7 @@
       else if (pageMode() === 'rank') loadRank();
       else if (pageMode() === 'search') { if (searchKind === 'keyword') submitSearch(); else loadBrowse(false, !filterRows.length); }
       else if (pageMode() === 'recommend') loadCatalog(activeChannel().textContent);
+      historyFilter = 'all';
       libraryData = { entries: [], owner_id: owner };
       libraryLoaded = false;
       libraryReady = libraryQueue.catch(function () {}).then(loadLibrary);
@@ -3632,6 +3674,9 @@
   document.getElementById('discussion-send').addEventListener('click', sendDiscussion);
   document.getElementById('discussion-cancel-reply').addEventListener('click', function () { selectDiscussionReply(null); goFocus(document.getElementById('discussion-input')); });
   document.getElementById('player-compose-send').addEventListener('click', sendDanmaku);
+  document.querySelectorAll('.history-filter').forEach(function (button) {
+    button.addEventListener('click', function () { selectHistoryFilter(button.dataset.historyFilter); });
+  });
   document.getElementById('library-manage').addEventListener('click', function () {
     if (libraryError) { libraryReady = loadLibrary(); return; }
     libraryEditing = !libraryEditing;
