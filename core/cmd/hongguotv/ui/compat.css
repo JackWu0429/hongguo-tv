@@ -68,8 +68,6 @@
 .legacy-flex-gap .calendar-day + .calendar-day { margin-left: 10px; }
 .legacy-flex-gap .publication-row + .publication-row { margin-top: 14px; }
 .legacy-flex-gap .reservation-tab + .reservation-tab { margin-left: 12px; }
-.legacy-flex-gap .detail-cover { margin-right: 24px; }
-.legacy-flex-gap .detail-action-row > * + * { margin-left: 12px; }
 .legacy-flex-gap .detail-tab + .detail-tab { margin-left: 16px; }
 .legacy-flex-gap .detail-episode { margin: 4px; }
 .legacy-flex-gap .detail-episodes { padding: 8px 20px 18px; }

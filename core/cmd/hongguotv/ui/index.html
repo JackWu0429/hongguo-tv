@@ -219,9 +219,9 @@
         </div>
 
         <div class="right-actions" data-focus-zone="actions" aria-label="视频操作">
-          <button class="round-action" data-action="like" data-focus="hero-like" aria-pressed="false"><svg><use href="#icon-like" xlink:href="#icon-like"></use></svg><strong class="action-count" id="hero-like-count">—</strong><small>点赞</small></button>
-          <button class="round-action" data-action="favorite" data-focus="hero-favorite" aria-pressed="false"><svg><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><strong class="action-count" id="hero-favorite-count">—</strong><small>收藏</small></button>
-          <button class="round-action" data-action="comment" data-focus="hero-comment"><svg><use href="#icon-comment" xlink:href="#icon-comment"></use></svg><strong class="action-count" id="hero-comment-count">—</strong><small>评论</small></button>
+          <button class="round-action" data-action="like" data-focus="hero-like" aria-label="点赞" aria-pressed="false"><svg aria-hidden="true" focusable="false"><use href="#icon-like" xlink:href="#icon-like"></use></svg><strong class="action-count" id="hero-like-count">—</strong></button>
+          <button class="round-action" data-action="favorite" data-focus="hero-favorite" aria-label="收藏" aria-pressed="false"><svg aria-hidden="true" focusable="false"><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><strong class="action-count" id="hero-favorite-count">—</strong></button>
+          <button class="round-action" data-action="comment" data-focus="hero-comment" aria-label="评论"><svg aria-hidden="true" focusable="false"><use href="#icon-comment" xlink:href="#icon-comment"></use></svg><strong class="action-count" id="hero-comment-count">—</strong></button>
           <button class="round-action" data-action="danmaku" data-focus="hero-danmaku" aria-pressed="false"><svg><use href="#icon-danmaku" xlink:href="#icon-danmaku"></use></svg><small>弹幕关</small></button>
         </div>
 
@@ -245,23 +245,16 @@
         <section class="player-options is-hidden" id="player-options" role="dialog" aria-modal="true" aria-labelledby="player-options-title"><div class="player-options-heading"><strong id="player-options-title"></strong><button class="player-option" id="player-options-close" data-focus="player-options-close" aria-label="关闭">×</button></div><div id="player-options-list"></div><div id="player-compose" class="is-hidden"><label id="player-compose-label" for="player-compose-input">说点什么…</label><textarea id="player-compose-input" class="player-text-input" data-focus="player-compose-input" rows="3" maxlength="200" placeholder="发一条弹幕…"></textarea><button id="player-compose-send" class="player-option" data-focus="player-compose-send">发送</button></div><p id="player-options-message" class="player-form-message" role="status" aria-live="polite"></p></section>
       </section>
 
-      <section class="detail-modal is-hidden" id="detail-modal" aria-hidden="true" aria-label="短剧详情">
-        <div class="detail-dialog" role="dialog" aria-modal="true">
+      <section class="detail-modal is-hidden" id="detail-modal" aria-hidden="true" aria-label="选集与系列剧">
+        <div class="detail-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-title">
           <div class="detail-header">
-            <span id="detail-title">短剧详情</span>
+            <span id="detail-title">选集</span>
             <button class="detail-close modal-action" id="detail-close" data-focus="detail-close" aria-label="关闭">×</button>
           </div>
           <div class="detail-tabs" role="tablist" aria-label="选集与系列剧"><button class="detail-tab is-active" id="detail-tab-episodes" data-focus="detail-tab-episodes" role="tab" aria-selected="true" aria-controls="detail-episode-panel">选集</button><button class="detail-tab" id="detail-tab-series" data-focus="detail-tab-series" role="tab" aria-selected="false" aria-controls="detail-series-panel">系列剧<span id="detail-series-count"></span></button></div>
           <div id="detail-episode-panel" role="tabpanel" aria-labelledby="detail-tab-episodes">
-          <div class="detail-main">
-            <img class="detail-cover" id="detail-cover" alt="">
-            <div class="detail-copy">
-              <h2 id="detail-name">正在加载…</h2>
-              <div class="detail-meta" id="detail-meta"></div>
-              <p id="detail-intro">正在读取详情…</p>
-              <div class="detail-action-row"><button class="detail-play modal-action" id="detail-play" data-focus="detail-play">播放第一集</button><button class="detail-save modal-action" id="detail-save" data-focus="detail-save" aria-pressed="false">收藏</button></div>
-            </div>
-          </div>
+          <div class="detail-progress" id="detail-progress" role="status" aria-live="polite">正在读取集数…</div>
+          <button class="detail-retry modal-action is-hidden" id="detail-retry" data-focus="detail-retry">重试</button>
           <div class="detail-episodes" id="detail-episodes" data-focus-zone="episodes" aria-label="集数列表"></div>
           </div>
           <div id="detail-series-panel" class="detail-series-panel is-hidden" role="tabpanel" aria-labelledby="detail-tab-series"><div id="detail-series-list" class="detail-series-list"></div><div class="detail-series-message" id="detail-series-message" role="status" aria-live="polite"></div><button class="series-retry is-hidden" id="detail-series-retry" data-focus="detail-series-retry">重试</button></div>
