@@ -1257,13 +1257,12 @@
     var preparing = hero.classList.contains('is-preparing-video') || activePlayback && (activePlayback.continuationPending || !activePlayback.started);
     var transition = !!(message && !failed && preparing);
     hero.classList.toggle('is-transition-loading', transition);
-    // Same-drama transitions need only the target episode. Keep the incoming
-    // title with the spinner for a first start or a different drama, never in
-    // the corner as a second, independently appearing loading label.
+    panel.classList.toggle('is-loading', !!(message && !failed));
+    // The complete poster provides the title. All normal starts and switches
+    // keep only the spinner and target episode over it, without a panel.
     var title = document.getElementById('player-status-title');
-    var name = transition && hero.classList.contains('is-preparing-video') && !hero.classList.contains('is-episode-transition') && featuredItem && featuredItem.title || '';
-    title.textContent = name;
-    title.classList.toggle('is-hidden', !name);
+    title.textContent = '';
+    title.classList.add('is-hidden');
     panel.classList.toggle('is-hidden', !message);
     // The ellipsis keeps loading active while the target episode is unknown.
     // Its spinner already conveys loading; do not invent an episode number.

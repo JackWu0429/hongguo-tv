@@ -14,12 +14,13 @@ function fixture() {
   vm.runInContext('function revealControls(){reveals++}function goFocus(node){focused=node}'+functions,c);
   return {c,hero,title,text,spinner,retry,panel};
 }
-test('first start keeps the new title and unknown/resolved episode together without replacing the spinner',()=>{
+test('first start shows only the spinner until the real target episode resolves, without a title or loading panel',()=>{
   const f=fixture(),spinner=f.spinner;
   f.c.setPlayerStatus(f.c.episodeLoadingText(0));
-  assert.equal(f.title.textContent,'新剧名称');assert.equal(f.title.classList.contains('is-hidden'),false);
+  assert.equal(f.title.textContent,'');assert.equal(f.title.classList.contains('is-hidden'),true);
   assert.equal(f.text.textContent,'');assert.equal(f.text.classList.contains('is-hidden'),true);
   assert.equal(f.hero.classList.contains('is-transition-loading'),true);assert.equal(f.panel.classList.contains('is-hidden'),false);
+  assert.equal(f.panel.classList.contains('is-loading'),true);
   f.c.setPlayerStatus(f.c.episodeLoadingText(7));
   assert.equal(f.text.textContent,'第 7 集');assert.equal(f.text.classList.contains('is-hidden'),false);assert.equal(f.panel.querySelector('.player-spinner'),spinner);
   assert.equal(f.c.reveals,0);
@@ -37,14 +38,16 @@ test('natural continuation hides scattered copy even while the next episode deta
   assert.equal(f.title.classList.contains('is-hidden'),true);assert.equal(f.title.textContent,'');
   assert.equal(f.text.textContent,'第 4 集');
 });
-test('switching to another drama replaces old copy and clearing loading restores normal visibility ownership',()=>{
+test('switching to another drama retains episode-only loading and clearing it restores normal visibility ownership',()=>{
   const f=fixture();f.hero.classList.add('is-episode-transition');f.c.setPlayerStatus(f.c.episodeLoadingText(2));
   f.hero.classList.remove('is-episode-transition');f.c.featuredItem={title:'另一部剧 · 更新后的标题'};
   f.c.setPlayerStatus(f.c.episodeLoadingText(9));
-  assert.equal(f.title.textContent,'另一部剧 · 更新后的标题');assert.equal(f.title.classList.contains('is-hidden'),false);
+  assert.equal(f.title.textContent,'');assert.equal(f.title.classList.contains('is-hidden'),true);
+  assert.equal(f.text.textContent,'第 9 集');assert.equal(f.panel.classList.contains('is-loading'),true);
   f.hero.classList.remove('is-preparing-video');f.c.setPlayerStatus('');
   assert.equal(f.hero.classList.contains('is-transition-loading'),false);
   assert.equal(f.title.textContent,'');assert.equal(f.panel.classList.contains('is-hidden'),true);assert.equal(f.text.classList.contains('is-hidden'),true);
+  assert.equal(f.panel.classList.contains('is-loading'),false);
   assert.equal(f.c.reveals,0);
 });
 test('ordinary buffering and failure do not retain a stale incoming title or transition copy suppression',()=>{
@@ -54,9 +57,11 @@ test('ordinary buffering and failure do not retain a stale incoming title or tra
   assert.equal(f.hero.classList.contains('is-transition-loading'),false);assert.equal(f.title.textContent,'');
   assert.equal(f.text.textContent,'正在缓冲…');assert.equal(f.text.classList.contains('is-hidden'),false);
   assert.equal(f.spinner.classList.contains('is-hidden'),false);
+  assert.equal(f.panel.classList.contains('is-loading'),true);
   f.hero.classList.add('is-preparing-video');f.c.setPlayerStatus('暂时无法播放这集',true);
   assert.equal(f.hero.classList.contains('is-transition-loading'),false);assert.equal(f.title.classList.contains('is-hidden'),true);
   assert.equal(f.spinner.classList.contains('is-hidden'),true);assert.equal(f.retry.classList.contains('is-hidden'),false);
   assert.equal(f.text.textContent,'暂时无法播放这集');assert.equal(f.text.classList.contains('is-hidden'),false);
+  assert.equal(f.panel.classList.contains('is-loading'),false);
   assert.equal(f.c.reveals,1);assert.equal(f.c.focused,f.retry);
 });
