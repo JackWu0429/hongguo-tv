@@ -207,10 +207,10 @@ button:focus { outline: none; }
 .search-heading-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 22px; }
 .search-heading-row h1 { margin: 0 0 7px; font-size: 32px; font-size: clamp(28px, 3vw, 42px); letter-spacing: .02em; }
 .search-heading-row p { margin: 0; color: #a9a9b3; font-size: 14px; }
-.search-box { display: flex; flex: 0 1 750px; flex-wrap: wrap; align-items: stretch; }
+.search-box { display: flex; flex: 0 1 auto; max-width: 100%; flex-wrap: wrap; align-items: stretch; }
 .search-box > * { margin-bottom: 10px; }
 .search-box > * + * { margin-left: 10px; }
-.search-input { flex: 1 1 180px; min-width: 160px; height: 48px; padding: 0 16px; color: #fff; background: #191a21; border: 1px solid #464754; border-radius: 10px; font: inherit; }
+.search-input { flex: 0 1 260px; width: 260px; max-width: 100%; min-width: 160px; height: 48px; padding: 0 16px; color: #fff; background: #191a21; border: 1px solid #464754; border-radius: 10px; font: inherit; }
 .search-input:focus, .search-input.is-focused { border-color: #f35d7b; box-shadow: 0 0 0 3px rgba(243,93,123,.3); outline: none; }
 .search-input::placeholder { color: #797b88; }
 .search-submit { min-width: 84px; padding: 0 20px; color: #1e1115; background: #f35d7b; border-radius: 10px; font-weight: 700; }
@@ -433,7 +433,7 @@ button:focus { outline: none; }
 @media (max-width: 1080px) {
   .search-page { padding-left: 22px; padding-right: 22px; }
   .search-heading-row { display: block; }
-  .search-box { margin-top: 16px; max-width: 680px; }
+  .search-box { margin-top: 16px; }
 }
 .account-page { padding: 1.5rem 2.3rem; overflow-y: auto; }
 .account-heading h1 { margin: 0 0 .6rem; font-size: 2rem; }
