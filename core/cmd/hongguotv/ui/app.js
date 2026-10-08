@@ -121,6 +121,7 @@
   var searchInput = document.getElementById('search-input');
   var searchPage = document.getElementById('search-page');
   var searchResults = document.getElementById('search-results');
+  document.querySelector('.search-submit').classList.toggle('is-hidden', androidShell);
 
   var filterRows = [];
   var searchPanelPending = false;
@@ -723,6 +724,10 @@
     return firstVisible('.search-filter');
   }
 
+  function firstSearchAction() {
+    return firstVisible('.search-submit') || firstVisible('#search-scan');
+  }
+
   function firstSearchResult() {
     return firstVisible('.search-result-card');
   }
@@ -756,7 +761,7 @@
     document.querySelectorAll('.filter-row[data-filter-group]').forEach(function (node) { rows.push(node); });
     var rowIndex = rows.indexOf(row);
     var targetRowIndex = rowIndex + (direction === 'up' ? -1 : 1);
-    if (targetRowIndex < 0) return firstVisible('.search-history-action') || firstVisible('.search-submit') || searchInput;
+    if (targetRowIndex < 0) return firstVisible('.search-history-action') || firstSearchAction() || searchInput;
     if (targetRowIndex >= rows.length) return firstSearchResult() || firstVisible('.search-more');
     var targetItems = focusables('.filter-row[data-filter-group="' + rows[targetRowIndex].dataset.filterGroup + '"] .search-filter');
     if (!targetItems.length) return null;
@@ -917,22 +922,21 @@
     }
     if (zone === 'searchInput') {
       if (direction === 'up') return activeSidebar();
-      // Left/right remain text-editing keys in this input. Down must reach the
-      // action row first so scan/search are accessible without a mouse or Tab.
-      if (direction === 'down') return firstVisible('.search-submit');
-      if (direction === 'right') return firstVisible('.search-submit');
+      // Left/right edit text; Down reaches scan on Android and Search on desktop.
+      if (direction === 'down') return firstSearchAction();
+      if (direction === 'right') return firstSearchAction();
       return null;
     }
     if (zone === 'searchActions') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? searchInput : null);
-      if (direction === 'up') return activeSidebar();
+      if (direction === 'up') return searchInput;
       if (direction === 'down') return firstVisible('.search-history-action') || firstSearchFilter() || firstSearchResult();
       return null;
     }
     if (zone === 'searchHistory') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstVisible('.search-submit') || searchInput;
-      if (direction === 'down') return firstSearchFilter() || firstSearchResult() || firstVisible('#search-page .list-retry') || firstVisible('.search-submit');
+      if (direction === 'up') return firstSearchAction() || searchInput;
+      if (direction === 'down') return firstSearchFilter() || firstSearchResult() || firstVisible('#search-page .list-retry') || firstSearchAction();
       return null;
     }
     if (zone === 'searchFilters') {
@@ -3087,7 +3091,7 @@
     var generation = searchPager.generation;
     result.then(function () {
       if (generation !== searchPager.generation || activeSearchQuery !== query || pageMode() !== 'search' || searchPager.error || !searchPager.loaded) return;
-      if (document.activeElement === returnTarget) goFocus(firstSearchResult() || firstVisible('.search-submit'));
+      if (document.activeElement === returnTarget) goFocus(firstSearchResult() || firstSearchAction());
     });
   }
 
@@ -3110,7 +3114,7 @@
     if (inHistory && !confirmOpen && pageMode() === 'search') {
       var target = null;
       container.querySelectorAll('button').forEach(function (button) { if (button.__searchQuery === wasKeyword) target = button; });
-      goFocus(target || firstVisible('.search-history-action') || firstVisible('.search-submit'));
+      goFocus(target || firstVisible('.search-history-action') || firstSearchAction());
     }
   }
 
@@ -3958,7 +3962,7 @@
     complete: function (kind, value) {
       if (kind !== 'search' || !searchScanOpen || pageMode() !== 'search' || applicationInBackground) return;
       closeSearchScan(false); searchInput.value = value;
-      goFocus(firstVisible('.search-submit')); submitSearch();
+      goFocus(firstSearchAction()); submitSearch();
     }
   });
   document.getElementById('search-scan-close').addEventListener('click', function () { closeSearchScan(true); });
