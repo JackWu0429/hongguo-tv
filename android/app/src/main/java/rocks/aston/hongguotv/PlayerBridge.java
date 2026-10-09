@@ -56,6 +56,8 @@ final class PlayerBridge {
     private ExoPlayer player;
     private Session session;
     private boolean destroyed, background;
+    private float requestedVolume = 1f;
+    private boolean requestedMuted = true;
     private float left, top, width, height;
     private int videoWidth, videoHeight;
     private float pixelRatio = 1;
@@ -168,7 +170,7 @@ final class PlayerBridge {
         ExoPlayer active=builder.build();
         player=active;if(surface!=null)active.setVideoSurfaceView(surface);else active.setVideoTextureView(texture);
         active.setPlaybackParameters(PlaybackParameters.DEFAULT);
-        active.setVolume(0); // Reveal and unmute together, after the first rendered frame.
+        active.setVolume(requestedMuted ? 0 : requestedVolume);
         active.addAnalyticsListener(new AnalyticsListener(){
             private void decoder(String field,String name){if(session==target&&player==active){try{diagnosticFields.put(field,name);}catch(Exception ignored){}updateDiagnostic(target,"preparing");saveDiagnostic();}}
             @Override public void onVideoDecoderInitialized(AnalyticsListener.EventTime time,String name,long timestamp,long duration){decoder("video_decoder",name);}
@@ -186,8 +188,14 @@ final class PlayerBridge {
                 if(!current())return;target.firstFrame=true;clearTimeout();
                 JSONObject frame = new JSONObject();
                 try { frame.put("width", videoWidth).put("height", videoHeight); } catch (Exception ignored) {}
-                active.setVolume(0); event(target,"frame", frame);
-                if(!target.wantsPlay)event(target,"paused");
+                // Keep audio held until the HTML cover has painted. If the
+                // device reports the first frame before STATE_READY or
+                // onIsPlayingChanged, emit playing here as well; otherwise
+                // the page can keep its loading cover while the clock moves.
+                active.setVolume(requestedMuted ? 0 : requestedVolume);
+                event(target,"frame", frame);
+                if(!target.wantsPlay) event(target,"paused");
+                else if(active.isPlaying()) event(target,"playing");
             }
             @Override public void onPlaybackStateChanged(int state){
                 if(!current())return;
@@ -235,7 +243,7 @@ final class PlayerBridge {
     @JavascriptInterface public void setVolume(double volume, boolean muted){
         if(Double.isNaN(volume)||Double.isInfinite(volume))return;
         final float value=(float)Math.max(0,Math.min(1,volume));
-        handler.post(()->{if(player!=null)player.setVolume(muted?0:value);});
+        handler.post(()->{requestedVolume=value;requestedMuted=muted;if(player!=null)player.setVolume(muted?0:value);});
     }
     @JavascriptInterface public void resume(){handler.post(()->{if(session!=null){session.wantsPlay=true;if(player!=null&&!background)player.play();if(session.firstFrame)event(session,"playing");}});}
     @JavascriptInterface public void seekBy(int seconds){handler.post(()->{if(player!=null&&session!=null&&!session.live&&session.firstFrame){long duration=player.getDuration();long position=player.getCurrentPosition()+Math.max(-60,Math.min(60,seconds))*1000L;player.seekTo(Math.max(0,duration>0?Math.min(duration,position):position));}});}
