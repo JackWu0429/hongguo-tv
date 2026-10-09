@@ -10,8 +10,8 @@ public class InputKeyPolicyTest {
         assertFalse(InputKeyPolicy.routeVerticalKey(true, true));
     }
 
-    @Test public void normalKeyboardStillOwnsItsDirectionalKeys() {
-        assertFalse(InputKeyPolicy.routeVerticalKey(false, true));
+    @Test public void appOwnedKeypadKeepsDirectionalKeysEvenIfWindowLooksResized() {
+        assertTrue(InputKeyPolicy.routeVerticalKey(false, true));
     }
 
     @Test public void completedEditingRestoresPageNavigation() {

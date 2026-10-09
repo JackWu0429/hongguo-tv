@@ -690,6 +690,12 @@
     if (previous && previous.tagName === 'INPUT' && element.tagName !== 'INPUT' && window.HongguoTVInput) window.HongguoTVInput.finishEditing();
     element.focus();
     markFocus(element);
+    // The account workspace is its own scroll container. Android 6 may move
+    // focus without scrolling that container, leaving the focused update
+    // button below the viewport and making it appear unreachable.
+    if (pageMode() === 'account' && element.closest && element.closest('#account-page')) {
+      try { element.scrollIntoView(false); } catch (ignored) {}
+    }
     if (!searchScanOpen && !accountKeypadOpen() && !detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zoneOf(element) !== 'sidebar') {
       lastContentFocus = element;
       lastPageFocus[pageMode()] = element;
@@ -4103,7 +4109,16 @@
       renderAccount();
       if (pageMode() !== 'account' || accountBusy || confirmOpen || supportModalOpen) return;
       var next = result.reason === 'back' ? origin : result.kind === 'code' ? firstVisible('#account-login') : firstVisible('#account-code') || firstVisible('#account-send-code');
-      goFocus(next || (origin && !origin.disabled ? origin : firstContentFocus()));
+      var target = next || (origin && !origin.disabled ? origin : firstContentFocus());
+      // The keypad close render hides its buttons synchronously, but Android
+      // 6 can restore the last hidden button on the next focus pass. Restore
+      // the intended page target on the next turn as well.
+      goFocus(target);
+      setTimeout(function () {
+        if (pageMode() === 'account' && !accountKeypadOpen() && !accountBusy && !confirmOpen && !supportModalOpen) {
+          goFocus(target && !target.disabled && target.getClientRects().length ? target : firstContentFocus());
+        }
+      }, 0);
     }
   });
   function requestScanInput(method, session, kind) {

@@ -329,8 +329,8 @@ public class MainActivity extends Activity {
                 return true;
             }
             // Old WebView can consume vertical keys as input caret movement.
-            // Use the same JS router as browser keys, while leaving the IME's
-            // own arrow navigation, text editing and startup controls native.
+            // The account page uses an app-owned HTML numeric keypad, so use
+            // the same JS router as browser keys after native editing ends.
             if (event.getAction() == KeyEvent.ACTION_DOWN && pageReady && webView.hasFocus() &&
                     InputKeyPolicy.routeVerticalKey(accountEditing, isKeyboardVisible())) {
                 routedVerticalKeys |= verticalBit;
