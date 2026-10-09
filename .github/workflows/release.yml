@@ -40,7 +40,18 @@ jobs:
       - name: Install Android SDK packages
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+          # The NDK archive occasionally arrives truncated from the Android
+          # repository. Retry after clearing only sdkmanager's temp download;
+          # a transient mirror failure must not consume the whole release.
+          for attempt in 1 2 3; do
+            if sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"; then
+              exit 0
+            fi
+            echo "Android SDK package install failed (attempt $attempt), retrying…" >&2
+            rm -rf "$ANDROID_HOME/.temp" "$ANDROID_HOME/ndk/27.2.12479018"
+            sleep $((attempt * 5))
+          done
+          exit 1
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:

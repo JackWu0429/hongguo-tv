@@ -2468,7 +2468,7 @@
     document.getElementById('hero-video').muted = muted;
   }
   function bindPlaybackPresentation(playback, source) {
-    playback.presentation = { source: source, position: Number(playback.position) || 0, epoch: 0, pending: false, waiting: false, failed: false };
+    playback.presentation = { source: source, position: Number(playback.position) || 0, epoch: 0, pending: false, waiting: false, rendered: false, failed: false };
   }
   function interruptPlaybackPresentation(playback) {
     if (!playback || !playback.presentation) return;
@@ -2484,7 +2484,12 @@
   }
   function playbackVideoReady(playback, presentation, video) {
     return !!(currentPlaybackPresentation(playback, presentation, video) && !presentation.waiting &&
-      playback.started && !video.paused && !video.ended && !video.seeking && video.readyState >= 2 &&
+      // Media3 can render and expose a real frame before Android delivers the
+      // `playing` callback to the WebView.  The native adapter marks that
+      // frame explicitly; it is enough to remove the opaque transition cover.
+      // `playback.started` remains the gate for history/progress writes. A
+      // generic canplay/loadeddata event alone must not reveal the cover.
+      (playback.started || presentation.rendered) && !video.paused && !video.ended && !video.seeking && video.readyState >= 2 &&
       video.videoWidth > 0 && video.videoHeight > 0);
   }
   function releasePresentedAudio(playback, presentation, video) {
@@ -4015,11 +4020,25 @@
     document.getElementById('danmaku-layer').classList.remove('is-paused'); tickDanmaku();
     markPlaybackStarted(activePlayback);
   });
+  media.addEventListener('nativeframe', function () {
+    // Media3 can report a rendered frame before WebView's `playing` callback.
+    // Reveal that real frame without treating the episode as started for
+    // history/progress purposes.
+    if (activePlayback && activePlayback.presentation) {
+      activePlayback.presentation.rendered = true;
+      if (!media.paused && !media.seeking && media.readyState >= 2) activePlayback.presentation.waiting = false;
+      finishPlaybackPreparation(activePlayback);
+    }
+  });
   function checkPlaybackData() {
     if (!activePlayback) return;
     var presentation = activePlayback.presentation;
     if (!currentPlaybackPresentation(activePlayback, presentation, media)) return;
-    if (activePlayback.started && !media.paused && !media.seeking && media.readyState >= 3) presentation.waiting = false;
+    // A native first frame is a valid presentation signal even when the
+    // WebView has not received `playing` yet.  Waiting for playback.started
+    // here leaves some Android 9 WebViews behind an endless black cover while
+    // Media3 is already advancing the clock.
+    if (!media.paused && !media.seeking && media.readyState >= 3) presentation.waiting = false;
     finishPlaybackPreparation(activePlayback);
   }
   media.addEventListener('loadeddata', checkPlaybackData);

@@ -179,6 +179,14 @@ test('advancing media can recover a missing playing event without recording the 
   assert.equal(f.c.activePlayback.started,true);assert.equal(f.c.playbackTiming.length,1);
   assert.equal(f.c.libraryData.entries[0].episode,2);
 });
+test('a native rendered frame can reveal before playing arrives without writing history early',async()=>{
+  const f=await prepared(),writesBefore=f.writes.length;assert.equal(f.c.activePlayback.started,false);
+  f.handlers.nativeframe();await present(f);
+  assert.equal(f.hero.classList.contains('is-preparing-video'),false);
+  assert.equal(f.video.muted,false);
+  assert.equal(f.c.activePlayback.started,false);
+  assert.equal(f.writes.length,writesBefore);
+});
 test('early canplay and audio-only/no-video data cannot remove the cover or restore sound',async()=>{
   const f=await prepared();f.handlers.canplay();await present(f);
   assert.equal(f.hero.classList.contains('is-preparing-video'),true);assert.equal(f.video.muted,true);
