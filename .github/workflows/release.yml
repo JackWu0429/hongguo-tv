@@ -50,6 +50,7 @@ jobs:
       - name: Check TV JavaScript and pagination
         run: |
           node --check core/cmd/hongguotv/ui/app.js
+          node --check core/cmd/hongguotv/ui/native-player.js
           node --check core/cmd/hongguotv/ui/playback-diagnostics.js
           node --check core/cmd/hongguotv/ui/compat.js
           node --check core/cmd/hongguotv/ui/episode-prefetch.js

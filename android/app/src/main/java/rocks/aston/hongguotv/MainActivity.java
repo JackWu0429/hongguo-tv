@@ -39,6 +39,7 @@ import org.json.JSONObject;
 public class MainActivity extends Activity {
     private String coreUrl;
     private WebView webView;
+    private PlayerBridge playerBridge;
     private boolean backPending;
     private boolean activityForeground;
     private AlertDialog exitDialog;
@@ -92,7 +93,9 @@ public class MainActivity extends Activity {
                 return super.onKeyPreIme(keyCode, event);
             }
         };
-        webView.setBackgroundColor(0xFF0C0D12);
+        // The native Media3 layer is placed behind the transparent WebView on API 24+.
+        // The HTML shell still paints its own surfaces, so API 23 keeps the original path.
+        webView.setBackgroundColor(Color.TRANSPARENT);
         webView.setFocusable(true);
         webView.setFocusableInTouchMode(true);
         WebSettings settings = webView.getSettings();
@@ -153,7 +156,12 @@ public class MainActivity extends Activity {
         });
         webView.setWebChromeClient(new WebChromeClient());
         FrameLayout content = new FrameLayout(this);
+        content.setBackgroundColor(Color.BLACK);
+        FrameLayout nativeVideoLayer = new FrameLayout(this);
+        content.addView(nativeVideoLayer, new FrameLayout.LayoutParams(-1, -1));
         content.addView(webView, new FrameLayout.LayoutParams(-1, -1));
+        playerBridge = new PlayerBridge(webView, nativeVideoLayer);
+        webView.addJavascriptInterface(playerBridge, "HongguoNativePlayer");
         startupPanel = new LinearLayout(this);
         startupPanel.setOrientation(LinearLayout.VERTICAL);
         startupPanel.setGravity(Gravity.CENTER);
@@ -431,6 +439,7 @@ public class MainActivity extends Activity {
         routedVerticalKeys = 0;
         completeAccountEditing();
         if (startupAnimation != null) startupAnimation.stop();
+        if (playerBridge != null) playerBridge.onPause();
         if (webView != null) {
             webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.pauseForBackground()", null);
             webView.onPause();
@@ -448,6 +457,7 @@ public class MainActivity extends Activity {
             webView.onResume();
             webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.resumeFromBackground()", null);
         }
+        if (playerBridge != null) playerBridge.onResume();
         if (appUpdater != null) appUpdater.resume();
     }
 
@@ -465,7 +475,12 @@ public class MainActivity extends Activity {
         if (decor.getViewTreeObserver().isAlive()) {
             decor.getViewTreeObserver().removeOnGlobalLayoutListener(keyboardLayoutListener);
         }
+        if (playerBridge != null) {
+            playerBridge.destroy();
+            playerBridge = null;
+        }
         if (webView != null) {
+            webView.removeJavascriptInterface("HongguoNativePlayer");
             webView.stopLoading();
             webView.destroy();
             webView = null;
