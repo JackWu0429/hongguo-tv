@@ -1,9 +1,10 @@
 (function () {
   'use strict';
 
-  // Android 9/12 devices use this adapter to keep the HTML control surface while
-  // Media3 owns the decoder and video surface. Android 6 has no native bridge
-  // enabled and continues to use the original HTMLMediaElement unchanged.
+  // Android 10+ uses this adapter to keep the HTML control surface while
+  // Media3 owns the decoder and video surface. Android 6-9 keep the original
+  // HTMLMediaElement path because some Android 9 TV Media3 surfaces stay black
+  // while audio and playback progress continue.
   var domVideo = document.getElementById('hero-video');
   var bridge = window.HongguoNativePlayer;
   var nativeEnabled = false;

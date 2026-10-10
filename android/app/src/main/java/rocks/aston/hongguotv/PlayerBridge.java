@@ -93,9 +93,10 @@ final class PlayerBridge {
         this.web=web;this.holder=holder;
         preferences=web.getContext().getSharedPreferences("doudou_playback",Context.MODE_PRIVATE);
         diagnostic=preferences.getString("last_diagnostics","{}");
-        // SurfaceView is the stable output path for the old TV WebViews and
-        // for HEVC on Android 7-9. TextureView can report a rendered frame and
-        // play audio while its compositor remains black on those devices.
+        // SurfaceView is the stable output path for the newer native playback
+        // path. Android 6-9 stay on the original HTML video/WebView path;
+        // several Android 9 TV firmwares report Media3 audio/progress while
+        // their HEVC video surface remains black.
         surface=new SurfaceView(web.getContext());texture=null;renderView=surface;
         renderView.setFocusable(false);holder.addView(renderView,new FrameLayout.LayoutParams(-1,-1));
         holder.setVisibility(View.GONE);handler.postDelayed(progress,500);
@@ -106,7 +107,10 @@ final class PlayerBridge {
         });
         web.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->applyBounds());
     }
-    @JavascriptInterface public boolean isAvailable() { return Build.VERSION.SDK_INT >= 24; }
+    static boolean nativePlaybackAvailable(int sdk) { return sdk >= 29; }
+
+    /** Media3 is opt-in from Android 10 (API 29); older versions use WebView. */
+    @JavascriptInterface public boolean isAvailable() { return nativePlaybackAvailable(Build.VERSION.SDK_INT); }
 
     @JavascriptInterface public void play(String loadId, String payload) {
         // Never accept arbitrary external URLs from a web page.

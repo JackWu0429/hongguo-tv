@@ -93,8 +93,8 @@ public class MainActivity extends Activity {
                 return super.onKeyPreIme(keyCode, event);
             }
         };
-        // The native Media3 layer is placed behind the transparent WebView on API 24+.
-        // The HTML shell still paints its own surfaces, so API 23 keeps the original path.
+        // The native Media3 layer is placed behind the transparent WebView on
+        // API 29+. Android 6-9 keep the original HTML video/WebView path.
         webView.setBackgroundColor(Color.TRANSPARENT);
         webView.setFocusable(true);
         webView.setFocusableInTouchMode(true);
