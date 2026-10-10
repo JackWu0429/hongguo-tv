@@ -1465,7 +1465,17 @@
     try { if (window.HongguoTVDiagnostics) device = JSON.parse(window.HongguoTVDiagnostics.readDevice()); } catch (ignored) {}
     var native = {};
     try { if (window.HongguoNativePlayer && window.HongguoNativePlayer.diagnostics) native = JSON.parse(window.HongguoNativePlayer.diagnostics()); } catch (ignoredNative) {}
-    var style = window.getComputedStyle(video), now = new Date();
+    // native-player.js replaces getElementById('hero-video') with a media
+    // proxy on Android. The proxy exposes media properties, but it is not a
+    // DOM Element and old WebViews throw when getComputedStyle receives it.
+    // Keep media reads on the proxy while reading visibility from the real
+    // video node, with a visible fallback so diagnostics always renders.
+    var style = { visibility: 'visible', display: 'block', opacity: '1' };
+    try {
+      var styleNode = document.querySelector('#hero-video');
+      if (styleNode && window.getComputedStyle) style = window.getComputedStyle(styleNode);
+    } catch (ignoredStyle) {}
+    var now = new Date();
     var presentation = activePlayback && activePlayback.presentation;
     var source = video.getAttribute('src') || '';
     var snapshot = {
