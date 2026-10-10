@@ -8,6 +8,7 @@ const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/native-
 function fixture() {
   const listeners = {};
   const classNames = new Set();
+  const rootClassNames = new Set();
   const domVideo = {
     src: '', currentSrc: '', currentTime: 0, duration: 0, paused: true, playbackRate: 1, volume: 1, muted: true,
     readyState: 0, videoWidth: 0, videoHeight: 0,
@@ -24,7 +25,11 @@ function fixture() {
     pause() { this.paused = true; }
   };
   const document = {
-    documentElement: { classList: { add() {}, remove() {} } },
+    documentElement: { classList: {
+      add(name) { rootClassNames.add(name); },
+      remove(name) { rootClassNames.delete(name); },
+      contains(name) { return rootClassNames.has(name); }
+    } },
     getElementById(id) { return id === 'hero-video' ? domVideo : null; },
     querySelector() { return { getBoundingClientRect() { return { left: 0, top: 0, width: 1280, height: 720 }; } }; }
   };
@@ -47,7 +52,7 @@ function fixture() {
     Promise
   });
   vm.runInContext(source, context);
-  return { context, document, domVideo, listeners, bridge };
+  return { context, document, domVideo, listeners, bridge, rootClassNames };
 }
 
 function activateNative(f) {
@@ -65,6 +70,7 @@ test('WebView remains the default until native fallback is requested', () => {
   proxy.play();
   assert.equal(proxy.src, '/media/test.mp4');
   assert.equal(f.bridge.lastId, null);
+  assert.equal(f.rootClassNames.has('native-playback'), false);
   proxy.pause();
 });
 
@@ -76,11 +82,22 @@ test('WebView media error switches to Media3 once and keeps the playback positio
   f.domVideo.currentTime = 12.5;
   f.listeners.error[0]({ type: 'error' });
   assert.ok(f.bridge.lastId);
+  assert.equal(f.rootClassNames.has('native-playback'), true);
   assert.equal(f.bridge.lastPayload.start_position, 12.5);
   assert.equal(proxy.currentTime, 12.5);
   const nativeId = f.bridge.lastId;
   f.listeners.error[0]({ type: 'error' });
   assert.equal(f.bridge.lastId, nativeId);
+});
+
+test('native playback failure restores the visible WebView video layer', () => {
+  const f = fixture();
+  const proxy = f.document.getElementById('hero-video');
+  const nativeId = activateNative(f);
+  assert.equal(f.rootClassNames.has('native-playback'), true);
+  f.context.window.HongguoNativePlayback.event(nativeId, 'error');
+  assert.equal(f.rootClassNames.has('native-playback'), false);
+  assert.equal(proxy.src, '/media/test.mp4');
 });
 
 test('a new source leaves a previous native fallback and starts with WebView again', () => {

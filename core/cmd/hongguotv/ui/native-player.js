@@ -261,7 +261,6 @@
   // unchanged while the native adapter supplies the media-like surface.
   var originalGetElementById = document.getElementById.bind(document);
   document.getElementById = function (id) { return id === 'hero-video' ? proxy : originalGetElementById(id); };
-  document.documentElement.classList.add('native-playback');
   window.addEventListener('resize', syncBounds);
   window.addEventListener('orientationchange', syncBounds);
 }());
