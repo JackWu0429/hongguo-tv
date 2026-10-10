@@ -12,6 +12,13 @@ final class PlaybackCodecPolicy {
         return value.startsWith("omx.google.") || value.startsWith("c2.android.")
             || value.startsWith("c2.google.");
     }
+    static boolean preferSoftware(String mime, int sdk) {
+        // Android 9 and earlier TV firmwares commonly expose an HEVC hardware
+        // decoder that advances audio/clock but presents black video frames.
+        // Prefer the platform software decoder there, while still allowing a
+        // hardware decoder when no software implementation is advertised.
+        return "video/hevc".equals(mime) && sdk >= 24 && sdk <= 28;
+    }
     static boolean allowsInMode(String mime, String name, boolean compatibility) {
         if (!allowsDecoder(mime)) return false;
         boolean affected = "video/avc".equals(mime) || "audio/mp4a-latm".equals(mime);

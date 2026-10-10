@@ -139,7 +139,14 @@
     },
     progress: function (id, position, duration) {
       if (id !== loadId) return;
-      state.currentTime = Math.max(0, Number(position) || 0); state.duration = Number(duration) > 0 ? Number(duration) / 1000 : NaN;
+      // PlayerBridge reports both values in milliseconds. Keep the adapter's
+      // HTMLMediaElement-compatible state in seconds; leaving position in ms
+      // makes the timeline clamp to 100% almost immediately on native playback.
+      var positionMs = Number(position);
+      var durationMs = Number(duration);
+      state.currentTime = isFinite(positionMs) && positionMs >= 0 ? positionMs / 1000 : 0;
+      state.duration = isFinite(durationMs) && durationMs > 0 ? durationMs / 1000 : NaN;
+      if (isFinite(state.duration) && state.currentTime > state.duration) state.currentTime = state.duration;
       if (state.seekPending) { state.seekPending = false; state.seeking = false; dispatch('seeked'); } else state.seeking = false; dispatch('timeupdate');
     }
   };

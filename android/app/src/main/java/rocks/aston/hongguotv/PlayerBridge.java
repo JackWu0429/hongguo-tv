@@ -93,8 +93,10 @@ final class PlayerBridge {
         this.web=web;this.holder=holder;
         preferences=web.getContext().getSharedPreferences("doudou_playback",Context.MODE_PRIVATE);
         diagnostic=preferences.getString("last_diagnostics","{}");
-        if(Build.VERSION.SDK_INT<=23){surface=new SurfaceView(web.getContext());texture=null;renderView=surface;}
-        else{texture=new TextureView(web.getContext());surface=null;renderView=texture;}
+        // SurfaceView is the stable output path for the old TV WebViews and
+        // for HEVC on Android 7-9. TextureView can report a rendered frame and
+        // play audio while its compositor remains black on those devices.
+        surface=new SurfaceView(web.getContext());texture=null;renderView=surface;
         renderView.setFocusable(false);holder.addView(renderView,new FrameLayout.LayoutParams(-1,-1));
         holder.setVisibility(View.GONE);handler.postDelayed(progress,500);
         holder.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{
@@ -154,8 +156,17 @@ final class PlayerBridge {
             .setMediaCodecSelector((mime,secure,tunnel)->{
                 if(!PlaybackCodecPolicy.allowsDecoder(mime))return Collections.emptyList();
                 List<MediaCodecInfo> choices=new ArrayList<>();
+                List<MediaCodecInfo> software=new ArrayList<>();
+                List<MediaCodecInfo> hardware=new ArrayList<>();
                 for(MediaCodecInfo info:MediaCodecSelector.DEFAULT.getDecoderInfos(mime,secure,tunnel))
-                    if(PlaybackCodecPolicy.allowsInMode(mime,info.name,target.compatibility||target.pcmAudio&&"audio/mp4a-latm".equals(mime)))choices.add(info);
+                    if(PlaybackCodecPolicy.allowsInMode(mime,info.name,target.compatibility||target.pcmAudio&&"audio/mp4a-latm".equals(mime))) {
+                        if(PlaybackCodecPolicy.platformSoftware(info.name)) software.add(info); else hardware.add(info);
+                    }
+                if(PlaybackCodecPolicy.preferSoftware(mime,Build.VERSION.SDK_INT)) {
+                    choices.addAll(software); choices.addAll(hardware);
+                } else {
+                    choices.addAll(hardware); choices.addAll(software);
+                }
                 return choices;
             });
         ExoPlayer.Builder builder=new ExoPlayer.Builder(web.getContext(),renderers)
