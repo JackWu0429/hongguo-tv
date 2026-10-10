@@ -1,10 +1,10 @@
 package rocks.aston.hongguotv;
 
-/** Old TV boxes must never silently fall back to HEVC or AV1 video. */
+/** Keep unsupported codecs out while allowing Android 7+ devices to use their native HEVC decoder. */
 final class PlaybackCodecPolicy {
     private PlaybackCodecPolicy() {}
     static boolean allowsDecoder(String mime) {
-        return mime != null && (!mime.startsWith("video/") || "video/avc".equals(mime));
+        return mime != null && (!mime.startsWith("video/") || "video/avc".equals(mime) || "video/hevc".equals(mime));
     }
     static boolean platformSoftware(String name) {
         if (name == null) return false;

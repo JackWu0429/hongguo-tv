@@ -1375,11 +1375,14 @@
     var epoch = diagnosticEpoch, video = document.getElementById('hero-video'), hero = document.getElementById('hero');
     var device = {};
     try { if (window.HongguoTVDiagnostics) device = JSON.parse(window.HongguoTVDiagnostics.readDevice()); } catch (ignored) {}
+    var native = {};
+    try { if (window.HongguoNativePlayer && window.HongguoNativePlayer.diagnostics) native = JSON.parse(window.HongguoNativePlayer.diagnostics()); } catch (ignoredNative) {}
     var style = window.getComputedStyle(video), now = new Date();
     var presentation = activePlayback && activePlayback.presentation;
     var source = video.getAttribute('src') || '';
     var snapshot = {
       device: device || {}, userAgent: navigator.userAgent,
+      native: native || {},
       capturedAt: ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2) + ':' + ('0' + now.getSeconds()).slice(-2),
       video: window.HongguoPlaybackDiagnostics.readVideo(video),
       episode: activePlayback && activePlayback.episode || playbackRequest && playbackRequest.episode || 0,

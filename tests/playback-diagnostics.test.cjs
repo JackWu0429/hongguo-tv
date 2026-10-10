@@ -36,3 +36,12 @@ test('shows current-source HTTP failures, buffer amount and audio protection wit
   assert.match(rows['播放时钟'],/0:08 \/ 1:30.*12 秒/);
   s.core={unavailable:true};assert.match(diagnostics.report(s).rows.find(x=>x.label==='本次请求').value,/诊断读取失败/);
 });
+test('reports native decoder failures and codec state without exposing media URLs',()=>{
+  const s=snapshot({native:{state:'error',surface:'TextureView',first_frame:false,video_mime:'video/hevc',error_kind:'decoder',error_code:4003}});
+  const report=diagnostics.report(s),rows=Object.fromEntries(report.rows.map(x=>[x.label,x.value]));
+  assert.match(report.summary,/Media3.*HEVC/);
+  assert.match(rows.Media3,/video\/hevc.*decoder 4003.*未出首帧/);
+  assert.match(rows['最近错误'],/Media3 decoder（4003）/);
+  s.native.url='https://media.invalid/a.mp4?key=secret';
+  assert.doesNotMatch(JSON.stringify(diagnostics.report(s)),/media\.invalid|secret/);
+});
