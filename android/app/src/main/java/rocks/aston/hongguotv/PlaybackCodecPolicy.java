@@ -1,6 +1,6 @@
 package rocks.aston.hongguotv;
 
-/** Keep unsupported codecs out while allowing Android 7+ devices to use their native HEVC decoder. */
+/** Keep unsupported codecs out while allowing the fallback to use device HEVC decoders. */
 final class PlaybackCodecPolicy {
     private PlaybackCodecPolicy() {}
     static boolean allowsDecoder(String mime) {

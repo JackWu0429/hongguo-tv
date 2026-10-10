@@ -1,14 +1,17 @@
 (function () {
   'use strict';
 
-  // Android 10+ uses this adapter to keep the HTML control surface while
-  // Media3 owns the decoder and video surface. Android 6-9 keep the original
-  // HTMLMediaElement path because some Android 9 TV Media3 surfaces stay black
-  // while audio and playback progress continue.
+  // WebView HTML video is the default on every supported Android version.
+  // Media3 is kept as a bounded fallback for devices whose WebView cannot
+  // load the media. The Android version alone does not prove which decoder or
+  // surface path is stable on a vendor TV build.
   var domVideo = document.getElementById('hero-video');
   var bridge = window.HongguoNativePlayer;
   var nativeEnabled = false;
-  var usingNative = true;
+  var usingNative = false;
+  var nativeAttempted = false;
+  var fallbackTimer = null;
+  var FALLBACK_DELAY = 15000;
   try { nativeEnabled = !!(bridge && bridge.isAvailable && bridge.isAvailable()); } catch (ignored) {}
   if (!domVideo || !nativeEnabled) {
     window.HongguoNativePlaybackAdapter = { enabled: false, video: function () { return domVideo; } };
@@ -22,6 +25,20 @@
     readyState: 0, videoWidth: 0, videoHeight: 0, seekPending: false, playbackRate: 1, volume: 1, muted: true, started: false };
 
   function isNative() { return nativeEnabled && usingNative; }
+  function domHasFrame() {
+    return Number(domVideo.videoWidth) > 0 && Number(domVideo.videoHeight) > 0 && Number(domVideo.readyState) >= 2;
+  }
+  function clearFallbackTimer() {
+    if (fallbackTimer !== null) { clearTimeout(fallbackTimer); fallbackTimer = null; }
+  }
+  function armNativeFallback() {
+    if (!nativeEnabled || nativeAttempted || usingNative || !state.source || state.paused) return;
+    clearFallbackTimer();
+    fallbackTimer = setTimeout(function () {
+      fallbackTimer = null;
+      if (!usingNative && !nativeAttempted && state.source && !state.paused && (!state.started || !domHasFrame())) startNativeFallback(false);
+    }, FALLBACK_DELAY);
+  }
   function dispatch(name, detail) {
     var list = (listeners[name] || []).slice();
     list.forEach(function (listener) { try { listener.call(proxy, detail || { type: name, target: proxy }); } catch (ignored) {} });
@@ -50,18 +67,64 @@
       paused: false, speed: state.playbackRate || 1 });
     try { bridge.play(loadId, payload); } catch (error) { dispatch('error', error); }
   }
+  function startNativeFallback(force) {
+    if (!nativeEnabled || usingNative || nativeAttempted || !state.source || !force && state.paused) return false;
+    nativeAttempted = true;
+    clearFallbackTimer();
+    var source = state.source || domVideo.currentSrc || domVideo.src;
+    var position = Number(domVideo.currentTime);
+    if (!isFinite(position) || position < 0) position = 0;
+    var paused = !!domVideo.paused;
+    state.source = source || state.source;
+    state.currentTime = position;
+    state.duration = Number(domVideo.duration) > 0 ? Number(domVideo.duration) : NaN;
+    state.paused = paused;
+    state.ended = false; state.seeking = false; state.readyState = 0;
+    state.videoWidth = 0; state.videoHeight = 0; state.seekPending = false; state.started = false;
+    try { domVideo.pause(); } catch (ignoredPause) {}
+    usingNative = true;
+    document.documentElement.classList.add('native-playback');
+    loadId = 'hongguo-' + (++sequence);
+    try { bridge.begin(loadId); } catch (ignoredBegin) {}
+    dispatch('emptied');
+    if (!paused) { state.paused = false; dispatch('waiting'); invokePlay(); }
+    return true;
+  }
   function fallbackToDom() {
     if (!isNative()) return;
+    clearFallbackTimer();
+    try { if (bridge.stop) bridge.stop(); } catch (ignoredStop) {}
+    var source = state.source;
+    var position = Number(state.currentTime) || 0;
+    var paused = !!state.paused;
     usingNative = false;
     document.documentElement.classList.remove('native-playback');
     try {
-      domVideo.src = state.source;
+      state.source = source;
+      state.currentTime = position; state.duration = NaN; state.readyState = 0;
+      state.videoWidth = 0; state.videoHeight = 0; state.ended = false; state.seeking = false; state.started = false;
+      domVideo.src = source;
       domVideo.playbackRate = state.playbackRate;
       domVideo.volume = state.volume;
       domVideo.muted = state.muted;
       domVideo.load();
-      if (!state.paused) Promise.resolve(domVideo.play()).catch(function () {});
+      state.paused = paused;
+      if (!paused) { Promise.resolve(domVideo.play()).catch(function () {}); armNativeFallback(); }
     } catch (ignored) {}
+  }
+  function resetToDomSource(next) {
+    if (isNative()) {
+      clearFallbackTimer();
+      try { if (bridge.stop) bridge.stop(); } catch (ignoredStop) {}
+      usingNative = false;
+      document.documentElement.classList.remove('native-playback');
+    }
+    nativeAttempted = false;
+    state.source = next;
+    state.currentTime = 0; state.duration = NaN; state.paused = true; state.ended = false;
+    state.seeking = false; state.readyState = 0; state.videoWidth = 0; state.videoHeight = 0;
+    state.seekPending = false; state.started = false;
+    domVideo.src = next;
   }
 
   function add(name, listener) {
@@ -81,7 +144,7 @@
     removeEventListener: remove,
     dispatchEvent: function (event) { if (event && event.type) dispatch(event.type, event); return true; },
     load: function () {
-      if (!isNative()) { domVideo.load(); return; }
+      if (!isNative()) { clearFallbackTimer(); domVideo.load(); return; }
       loadId = 'hongguo-' + (++sequence);
       state.currentTime = 0; state.duration = NaN; state.paused = true; state.ended = false; state.seeking = false;
       state.readyState = 0; state.videoWidth = 0; state.videoHeight = 0; state.seekPending = false; state.started = false;
@@ -89,14 +152,26 @@
       dispatch('emptied');
     },
     play: function () {
-      if (!isNative()) return domVideo.play();
+      if (!isNative()) {
+        state.paused = false; state.ended = false;
+        var result;
+        try { result = domVideo.play(); } catch (error) {
+          if (startNativeFallback(true)) return Promise.resolve();
+          throw error;
+        }
+        armNativeFallback();
+        return Promise.resolve(result).catch(function (error) {
+          if (startNativeFallback(true)) return Promise.resolve();
+          throw error;
+        });
+      }
       if (!state.source) return Promise.reject(new Error('没有播放地址'));
       state.paused = false; state.ended = false;
       if (state.started && bridge.resume) { try { bridge.resume(); } catch (ignored) {} }
       else invokePlay();
       return Promise.resolve();
     },
-    pause: function () { if (!isNative()) { domVideo.pause(); return; } state.paused = true; if (bridge.pause) try { bridge.pause(); } catch (ignored) {} dispatch('pause'); },
+    pause: function () { if (!isNative()) { state.paused = true; clearFallbackTimer(); domVideo.pause(); return; } state.paused = true; if (bridge.pause) try { bridge.pause(); } catch (ignored) {} dispatch('pause'); },
     classList: domVideo.classList,
     style: domVideo.style,
     error: null,
@@ -104,7 +179,15 @@
     buffered: { length: 0, start: function () { return 0; }, end: function () { return 0; } }
   };
   Object.defineProperties(proxy, {
-    src: { get: function () { return isNative() ? state.source : domVideo.src; }, set: function (value) { if (!isNative()) { domVideo.src = value == null ? '' : String(value); return; } state.source = value == null ? '' : String(value); proxy.networkState = state.source ? 2 : 0; if (!state.source) setClass('has-source', false); } },
+    src: { get: function () { return isNative() ? state.source : domVideo.src; }, set: function (value) {
+      var next = value == null ? '' : String(value);
+      if (!isNative()) {
+        clearFallbackTimer(); nativeAttempted = false; state.source = next; state.started = false;
+        domVideo.src = next; return;
+      }
+      if (next !== state.source) { resetToDomSource(next); return; }
+      state.source = next; proxy.networkState = state.source ? 2 : 0; if (!state.source) setClass('has-source', false);
+    } },
     currentTime: { get: function () { return isNative() ? state.currentTime : domVideo.currentTime; }, set: function (value) { if (!isNative()) { domVideo.currentTime = value; return; } var next = Number(value); if (!isFinite(next)) return; state.seeking = true; state.seekPending = true; state.currentTime = Math.max(0, next); dispatch('seeking'); if (bridge.seekTo) try { bridge.seekTo(state.currentTime); } catch (ignored) {} } },
     duration: { get: function () { return isNative() ? state.duration : domVideo.duration; } },
     paused: { get: function () { return isNative() ? state.paused : domVideo.paused; } },
@@ -152,9 +235,27 @@
     }
   };
   ['loadedmetadata', 'loadeddata', 'canplay', 'playing', 'pause', 'ended', 'timeupdate', 'waiting', 'seeking', 'seeked', 'ratechange', 'volumechange', 'emptied', 'error'].forEach(function (name) {
-    domVideo.addEventListener(name, function (event) { if (!isNative()) dispatch(name, event); });
+    domVideo.addEventListener(name, function (event) {
+      if (isNative()) return;
+      if (name === 'playing') {
+        state.started = true; state.paused = false;
+        if (domHasFrame()) clearFallbackTimer(); else armNativeFallback();
+      }
+      else if (name === 'pause') { state.paused = true; clearFallbackTimer(); }
+      else if (name === 'ended') { state.ended = true; state.paused = true; clearFallbackTimer(); }
+      else if (name === 'error') {
+        clearFallbackTimer();
+        if (startNativeFallback(true)) return;
+      }
+      dispatch(name, event);
+    });
   });
-  window.HongguoNativePlaybackAdapter = { enabled: true, video: function () { return proxy; }, syncBounds: syncBounds };
+  window.HongguoNativePlaybackAdapter = {
+    enabled: true,
+    video: function () { return proxy; },
+    syncBounds: syncBounds,
+    enableNative: function () { return startNativeFallback(true); }
+  };
   // app.js intentionally keeps its established DOM lookup contract. Redirect
   // only this media element so existing focus, history and test seams remain
   // unchanged while the native adapter supplies the media-like surface.
