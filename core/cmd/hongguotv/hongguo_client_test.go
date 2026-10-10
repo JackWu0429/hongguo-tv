@@ -74,8 +74,63 @@ func TestCategoryFiltersSelectorsAndPagination(t *testing.T) {
 	if result.NextOffset != 30 || !result.HasMore || result.SessionID != "session-2" {
 		t.Fatalf("incorrect cursor: %#v", result)
 	}
-	if len(result.Filters) != 2 || result.Filters[0].Label != "主题" || len(result.Filters[0].Options) != 1 || result.Filters[1].Type != "creation_status" {
+	if len(result.Filters) != 2 || result.Filters[0].Label != "主题" || len(result.Filters[0].Options) != 1 || result.Filters[1].Type != "creation_status" || len(result.Filters[1].Options) != 2 {
 		t.Fatalf("incorrect selector normalization: %#v", result.Filters)
+	}
+}
+
+func TestCategoryAlwaysExposesMacStatusFilter(t *testing.T) {
+	filters := normalizeCategoryFilters(nil)
+	if len(filters) != 1 || filters[0].Type != "creation_status" || filters[0].Label != "状态" {
+		t.Fatalf("missing status filter: %#v", filters)
+	}
+	if len(filters[0].Options) != 2 || filters[0].Options[0] != (CategoryFilterOption{ID: "creation_status_0", Label: "已完结"}) || filters[0].Options[1] != (CategoryFilterOption{ID: "creation_status_1", Label: "连载中"}) {
+		t.Fatalf("unexpected status options: %#v", filters[0].Options)
+	}
+
+	filters = normalizeCategoryFilters([]any{map[string]any{
+		"type":  "creation_status",
+		"items": []any{map[string]any{"selector_item_id": "creation_status_0", "show_name": "已完结"}},
+	}})
+	if len(filters) != 1 || len(filters[0].Options) != 2 || filters[0].Options[1].ID != "creation_status_1" {
+		t.Fatalf("partial upstream status options were not completed: %#v", filters)
+	}
+}
+
+func TestCategoryStatusSelectionUsesMacFilterIDs(t *testing.T) {
+	var selected []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode category body: %v", err)
+		}
+		items, _ := asMap(body["select_items"])
+		selected = asStringSlice(items["creation_status"])
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"video_data":[],"has_more":false}}`))
+	}))
+	defer server.Close()
+	client := newHongguoClient()
+	client.apiBase = server.URL
+
+	cases := []struct {
+		name     string
+		value    string
+		expected []string
+	}{
+		{name: "all", value: "", expected: []string{}},
+		{name: "ended", value: "creation_status_0", expected: []string{"creation_status_0"}},
+		{name: "ongoing", value: "creation_status_1", expected: []string{"creation_status_1"}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := client.Category(context.Background(), CategoryRequest{Path: "/category/real-drama", Filters: map[string]string{"creation_status": test.value}}); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Join(selected, ",") != strings.Join(test.expected, ",") {
+				t.Fatalf("creation_status selection = %#v, want %#v", selected, test.expected)
+			}
+		})
 	}
 }
 
@@ -98,7 +153,7 @@ func TestInvalidCategoryFilterDoesNotReachUpstream(t *testing.T) {
 }
 
 func TestSeriesDetailCreatesLockedEpisodes(t *testing.T) {
-	html := `<!doctype html><script>window._ROUTER_DATA = {"loaderData":{"detail_page":{"seriesDetail":{"series_id":"1234567890123456789","series_name":"分季测试","series_cover":"https://cover","series_intro":"简介","episode_cnt":5,"accessible_episode_cnt":3,"vid_list":["11","22","33","44","55"],"tags":["爱情"]}}}};</script>`
+	html := `<!doctype html><script>window._ROUTER_DATA = {"loaderData":{"detail_page":{"seriesDetail":{"series_id":"1234567890123456789","series_name":"分季测试","series_cover":"https://cover","series_intro":"简介","episode_cnt":5,"accessible_episode_cnt":3,"series_episode_info":{"series_status":0},"vid_list":["11","22","33","44","55"],"tags":["爱情"]}}}};</script>`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/detail") {
 			t.Fatalf("unexpected detail path: %s", r.URL.Path)
@@ -115,8 +170,40 @@ func TestSeriesDetailCreatesLockedEpisodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SeriesDetail failed: %v", err)
 	}
-	if len(result.Episodes) != 5 || !result.Episodes[3].Locked || result.Episodes[2].Locked {
+	if len(result.Episodes) != 5 || !result.Episodes[3].Locked || result.Episodes[2].Locked || result.SeriesStatus != "0" {
 		t.Fatalf("locked episode state was wrong: %#v", result.Episodes)
+	}
+}
+
+func TestNormalizeDramaReadsTopLevelAndNestedSeriesStatus(t *testing.T) {
+	ongoing, ok := normalizeDrama(map[string]any{
+		"series_id": "1234567890123456789", "series_title": "连载剧", "series_status": json.Number("0"),
+	})
+	if !ok || ongoing.SeriesStatus != "0" {
+		t.Fatalf("top-level series status was lost: %#v", ongoing)
+	}
+	ended, ok := normalizeDrama(map[string]any{
+		"series_id": "2234567890123456789", "series_title": "完结剧",
+		"series_episode_info": map[string]any{"series_status": json.Number("1")},
+	})
+	if !ok || ended.SeriesStatus != "1" {
+		t.Fatalf("nested series status was lost: %#v", ended)
+	}
+}
+
+func TestSeriesDetailParsesReviewsAndRelated(t *testing.T) {
+	html := `<!doctype html><script>window._ROUTER_DATA = {"loaderData":{"detail_page":{"seriesDetail":{"series_id":"1234567890123456789","series_name":"社交测试","episode_cnt":1,"vid_list":["9988776655443322110"]},"seriesSocialInfo":{"reviews":[{"review_id":"r1","user_name":"观众","content":"很好看","rating":9,"digg_count":3}]},"detail_page_more_related":[{"series_id":"2234567890123456789","series_title":"相关剧","series_cover":"https://cover","episode_cnt":4}]}}};</script>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(html))
+	}))
+	defer server.Close()
+	client := newHongguoClient()
+	client.webBase = server.URL
+	client.httpClient.Timeout = 2 * time.Second
+	result, err := client.SeriesDetail(context.Background(), "1234567890123456789")
+	if err != nil || len(result.Reviews) != 1 || result.Reviews[0].Content != "很好看" || len(result.Related) != 1 || result.Related[0].SeriesID != "2234567890123456789" {
+		t.Fatalf("unexpected social detail: %#v err=%v", result, err)
 	}
 }
 

@@ -8,6 +8,12 @@ test('captures a frozen media snapshot without requiring frame APIs on old WebVi
   assert.equal(s.position,8);assert.equal(s.muted,true);assert.equal(s.buffered,12);assert.equal(s.decoded,null);
   assert.doesNotThrow(()=>diagnostics.readVideo(video({buffered:{get length(){throw Error('unavailable')}},getVideoPlaybackQuality(){throw Error('unavailable')}})));
 });
+test('keeps a useful report when an old WebView has no video snapshot yet',()=>{
+  const report=diagnostics.report({capturedAt:'12:34:56',episode:1,flags:{preparing:true}});
+  assert.match(report.summary,/加载层仍显示|尚未设置视频源/);
+  assert.ok(report.rows.length > 5);
+  assert.ok(report.rows.some(row=>row.label==='视频画面'));
+});
 test('distinguishes missing video dimensions from a still-active loading guard and a released guard',()=>{
   const missing=snapshot({video:diagnostics.readVideo(video({videoWidth:0,videoHeight:0}))});
   assert.match(diagnostics.report(missing).summary,/尚未报告有效画面尺寸/);

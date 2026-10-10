@@ -96,6 +96,7 @@ func main() {
 	mux.HandleFunc("/api/v1/series/seasons", s.seriesSeasons)
 	mux.HandleFunc("/api/v1/search", s.search)
 	mux.HandleFunc("/api/v1/lists/", s.lists)
+	mux.HandleFunc("/api/v1/follow", s.follow)
 	mux.HandleFunc("/api/v1/reservation", s.reservation)
 	mux.HandleFunc("/api/v1/comments", s.discussion)
 	mux.HandleFunc("/api/v1/danmaku", s.discussion)
@@ -129,7 +130,7 @@ func serveUI(root fs.FS) http.Handler {
 
 func (s *server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/v1/account") || r.URL.Path == "/api/v1/number-input" || strings.HasPrefix(r.URL.Path, "/api/v1/lists/") || strings.HasPrefix(r.URL.Path, "/api/v1/player/") || r.URL.Path == "/api/v1/series/seasons" || r.URL.Path == "/api/v1/replies" || r.URL.Path == "/api/v1/reservation" || r.URL.Path == "/api/v1/comments" || r.URL.Path == "/api/v1/danmaku" || r.URL.Path == "/api/v1/library" {
+		if strings.HasPrefix(r.URL.Path, "/api/v1/account") || r.URL.Path == "/api/v1/number-input" || strings.HasPrefix(r.URL.Path, "/api/v1/lists/") || r.URL.Path == "/api/v1/follow" || strings.HasPrefix(r.URL.Path, "/api/v1/player/") || r.URL.Path == "/api/v1/series/seasons" || r.URL.Path == "/api/v1/replies" || r.URL.Path == "/api/v1/reservation" || r.URL.Path == "/api/v1/comments" || r.URL.Path == "/api/v1/danmaku" || r.URL.Path == "/api/v1/library" {
 			if !privateLocalRequest(r) {
 				writeError(w, http.StatusForbidden, "只允许应用本身访问账号和记录")
 				return
@@ -210,7 +211,7 @@ func (s *server) status(w http.ResponseWriter, r *http.Request) {
 		InstanceID:     s.instanceID,
 		Implementation: "go-api-adapter+embedded-playback",
 		StartedAt:      s.startedAt.Format(time.RFC3339),
-		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "search", "series-detail", "play-info", "embedded-playback", "cenc-mp4", "range-media", "local-history", "local-favorites", "local-likes", "resume-playback", "next-episode", "next-season", "account-login", "account-mfa", "cloud-library", "new-series", "release-calendar", "reservations", "recommend-feed", "comments", "danmaku", "infinite-scroll"},
+		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "search", "series-detail", "series-reviews", "related-series", "follow-updates", "play-info", "embedded-playback", "cenc-mp4", "range-media", "local-history", "local-favorites", "local-likes", "resume-playback", "next-episode", "next-season", "account-login", "account-mfa", "cloud-library", "new-series", "release-calendar", "reservations", "recommend-feed", "comments", "danmaku", "infinite-scroll"},
 	})
 }
 
@@ -282,6 +283,59 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": result})
+}
+
+func (s *server) follow(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		q, err := listQuery(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		client, generation, err := s.accounts.listClient(true)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, err.Error())
+			return
+		}
+		result, err := client.FollowUpdates(r.Context(), q)
+		if !s.accounts.sameGeneration(generation) {
+			writeError(w, http.StatusConflict, errAccountChanged.Error())
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": result})
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var body struct {
+		SeriesID string `json:"series_id"`
+		Enabled  *bool  `json:"enabled"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&body); err != nil || body.Enabled == nil {
+		writeError(w, http.StatusBadRequest, "追更参数无效")
+		return
+	}
+	client, generation, err := s.accounts.listClient(true)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	err = client.SetFollowUpdate(r.Context(), body.SeriesID, *body.Enabled)
+	if !s.accounts.sameGeneration(generation) {
+		writeError(w, http.StatusConflict, errAccountChanged.Error())
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "following_update": *body.Enabled})
 }
 
 func (s *server) playInfo(w http.ResponseWriter, r *http.Request) {

@@ -53,6 +53,16 @@ type Drama struct {
 	PublishText          string    `json:"publish_text,omitempty"`
 	ActorID              string    `json:"actor_id,omitempty"`
 	MetadataPending      bool      `json:"metadata_pending,omitempty"`
+	ContentType          string    `json:"content_type,omitempty"`
+	VideoCategoryType    string    `json:"video_category_type,omitempty"`
+	FollowingUpdate      bool      `json:"following_update,omitempty"`
+	Followed             bool      `json:"followed,omitempty"`
+	FollowCount          int64     `json:"follow_count,omitempty"`
+	ShowUpdateFrequency  string    `json:"show_update_frequency,omitempty"`
+	FollowUpdateTime     int64     `json:"follow_update_time,omitempty"`
+	LatestWatchedEpisode int       `json:"latest_watched_episode,omitempty"`
+	HasWatchedLatest     bool      `json:"has_watched_latest_episode,omitempty"`
+	SeriesStatus         string    `json:"series_status,omitempty"`
 }
 
 type Episode struct {
@@ -92,7 +102,19 @@ type CategoryResult struct {
 
 type SeriesDetailResult struct {
 	Drama
-	Related []Drama `json:"related,omitempty"`
+	Reviews []SeriesReview `json:"reviews,omitempty"`
+	Related []Drama        `json:"related,omitempty"`
+}
+
+type SeriesReview struct {
+	ID         string `json:"id,omitempty"`
+	UserName   string `json:"user_name,omitempty"`
+	Avatar     string `json:"avatar,omitempty"`
+	Content    string `json:"content,omitempty"`
+	Rating     int    `json:"rating,omitempty"`
+	DiggCount  int64  `json:"digg_count,omitempty"`
+	ReplyCount int64  `json:"reply_count,omitempty"`
+	CreateTime int64  `json:"create_time,omitempty"`
 }
 
 type SearchResult struct {
@@ -234,7 +256,9 @@ func (c *hongguoClient) Category(ctx context.Context, request CategoryRequest) (
 		NextOffset: asInt(data["next_offset"]),
 		SessionID:  asString(data["session_id"]),
 		Items:      make([]Drama, 0, len(rows)),
-		Filters:    normalizeCategoryFilters(data["selector_rows"]),
+	}
+	if request.Selectors {
+		result.Filters = normalizeCategoryFilters(data["selector_rows"])
 	}
 	for _, row := range rows {
 		if drama, ok := normalizeDrama(row); ok {
@@ -300,7 +324,8 @@ func categorySelection(request CategoryRequest) (map[string][]string, error) {
 
 func normalizeCategoryFilters(raw any) []CategoryFilterRow {
 	rows, _ := raw.([]any)
-	result := make([]CategoryFilterRow, 0, len(rows))
+	result := make([]CategoryFilterRow, 0, len(rows)+1)
+	statusIndex := -1
 	for _, value := range rows {
 		row, ok := asMap(value)
 		kind := asString(row["type"])
@@ -321,8 +346,39 @@ func normalizeCategoryFilters(raw any) []CategoryFilterRow {
 			filter.Options = append(filter.Options, CategoryFilterOption{ID: id, Label: name})
 		}
 		if len(filter.Options) > 0 {
+			if kind == "creation_status" {
+				statusIndex = len(result)
+			}
 			result = append(result, filter)
 		}
+	}
+	// Some category scenes omit the status selector entirely, and some return
+	// only one of the two values. The Mac client always exposes the same
+	// three-way choice (全部 / 已完结 / 连载中), so keep that contract stable
+	// instead of making the TV UI depend on a scene-specific response shape.
+	status := CategoryFilterRow{
+		Type:  "creation_status",
+		Label: "状态",
+		Options: []CategoryFilterOption{
+			{ID: "creation_status_0", Label: "已完结"},
+			{ID: "creation_status_1", Label: "连载中"},
+		},
+	}
+	if statusIndex < 0 {
+		// Keep the same rhythm as the Mac filter panel: status sits before
+		// the optional "时间" row when that row is present.
+		statusIndex = len(result)
+		for index, row := range result {
+			if row.Type == "online_time" {
+				statusIndex = index
+				break
+			}
+		}
+		result = append(result, CategoryFilterRow{})
+		copy(result[statusIndex+1:], result[statusIndex:])
+		result[statusIndex] = status
+	} else {
+		result[statusIndex] = status
 	}
 	return result
 }
@@ -398,7 +454,81 @@ func (c *hongguoClient) SeriesDetail(ctx context.Context, seriesID string) (Seri
 			Locked: index >= drama.AccessibleEpisodeCnt,
 		})
 	}
-	return SeriesDetailResult{Drama: drama}, nil
+	routerMap, _ := asMap(router)
+	return SeriesDetailResult{Drama: drama, Reviews: normalizeSeriesReviews(routerMap), Related: normalizeRelatedDramas(routerMap, seriesID)}, nil
+}
+
+func normalizeSeriesReviews(router map[string]any) []SeriesReview {
+	rows, ok := findArrayByKey(router, "reviews")
+	if !ok {
+		rows, ok = findArrayByKey(router, "review_list")
+	}
+	if !ok {
+		return []SeriesReview{}
+	}
+	out := make([]SeriesReview, 0, len(rows))
+	for _, raw := range rows {
+		m, ok := asMap(raw)
+		if !ok {
+			continue
+		}
+		if nested, exists := m["review"]; exists {
+			if nestedMap, nestedOK := asMap(nested); nestedOK {
+				m = nestedMap
+			}
+		}
+		content := firstNonEmpty(asString(m["content"]), asString(m["text"]))
+		if content == "" {
+			if common, ok := asMap(m["common"]); ok {
+				if c, ok := asMap(common["content"]); ok {
+					content = asString(c["text"])
+				}
+			}
+		}
+		if content == "" {
+			continue
+		}
+		out = append(out, SeriesReview{
+			ID:         firstNonEmpty(asString(m["review_id"]), asString(m["comment_id"]), asString(m["id"])),
+			UserName:   firstNonEmpty(asString(m["user_name"]), asString(m["username"]), asString(m["name"])),
+			Avatar:     firstNonEmpty(asString(m["avatar"]), asString(m["user_avatar"])),
+			Content:    content,
+			Rating:     asInt(m["rating"]),
+			DiggCount:  firstPositive64(asInt64(m["digg_count"]), asInt64(m["like_count"])),
+			ReplyCount: asInt64(m["reply_count"]),
+			CreateTime: firstPositive64(asInt64(m["create_time"]), asInt64(m["create_timestamp"])),
+		})
+	}
+	return out
+}
+
+func normalizeRelatedDramas(router map[string]any, currentID string) []Drama {
+	keys := []string{"related", "detail_page_more_related", "related_video", "rawRelatedVideo"}
+	var rows []any
+	for _, key := range keys {
+		if found, ok := findArrayByKey(router, key); ok {
+			rows = found
+			break
+		}
+	}
+	out := make([]Drama, 0, len(rows))
+	seen := map[string]bool{}
+	for _, raw := range rows {
+		if nested, ok := asMap(raw); ok {
+			if value, exists := nested["model"]; exists {
+				if model, modelOK := asMap(value); modelOK {
+					raw = model
+				}
+			}
+		}
+		d, ok := normalizeDrama(raw)
+		if !ok || d.SeriesID == currentID || seen[d.SeriesID] {
+			continue
+		}
+		seen[d.SeriesID] = true
+		out = append(out, d)
+	}
+	return out
 }
 
 func (c *hongguoClient) Search(ctx context.Context, query string) (SearchResult, error) {
@@ -661,6 +791,15 @@ func normalizeDrama(value any) (Drama, bool) {
 	if id == "" {
 		return Drama{}, false
 	}
+	// Detail pages keep series_status inside series_episode_info, while list
+	// and search responses commonly put it on the video object. Normalize both
+	// shapes so the TV UI can distinguish an ongoing series from a completed
+	// one before offering the follow action.
+	episodeInfo, _ := asMap(object["series_episode_info"])
+	seriesStatus := firstNonEmpty(object["series_status"], object["status"])
+	if seriesStatus == "" && episodeInfo != nil {
+		seriesStatus = firstNonEmpty(episodeInfo["series_status"], episodeInfo["status"])
+	}
 	drama := Drama{
 		SeriesID:             id,
 		Title:                title,
@@ -680,6 +819,16 @@ func normalizeDrama(value any) (Drama, bool) {
 		StatusTags:           asStringSlice(object["statusTags"]),
 		SeasonIndex:          asInt(object["season_index"]),
 		MultiSeason:          asBool(object["is_multi_season"]),
+		ContentType:          firstNonEmpty(asString(object["content_type"]), asString(object["contentType"])),
+		VideoCategoryType:    firstNonEmpty(asString(object["video_category_type"]), asString(object["videoCategoryType"])),
+		FollowingUpdate:      asBool(object["followingUpdate"]) || asBool(object["following_update"]),
+		Followed:             asBool(object["followed"]) || asBool(object["is_subscribed"]) || asBool(object["has_subscribed"]),
+		FollowCount:          firstPositive64(asInt64(object["followCount"]), asInt64(object["follow_count"])),
+		ShowUpdateFrequency:  firstNonEmpty(asString(object["show_update_frequency"]), asString(object["showUpdateFrequency"])),
+		FollowUpdateTime:     firstPositive64(asInt64(object["follow_update_time_stamp"]), asInt64(object["follow_update_time"])),
+		LatestWatchedEpisode: firstPositive(asInt(object["latest_watched_index"]), asInt(object["latest_watched_vid_index"])),
+		HasWatchedLatest:     asBool(object["has_watched_latest_episode"]),
+		SeriesStatus:         seriesStatus,
 	}
 	if drama.VidList == nil {
 		drama.VidList = asStringSlice(object["episodeVids"])
@@ -695,8 +844,8 @@ func normalizeDrama(value any) (Drama, bool) {
 	}
 	drama.CoverFallback = browserCoverFallback(drama.Cover)
 	if drama.EpisodeCount == 0 {
-		if info, ok := asMap(object["series_episode_info"]); ok {
-			drama.EpisodeCount = firstPositive(asInt(info["episode_cnt"]), asInt(info["episode_total_cnt"]))
+		if episodeInfo != nil {
+			drama.EpisodeCount = firstPositive(asInt(episodeInfo["episode_cnt"]), asInt(episodeInfo["episode_total_cnt"]))
 		}
 	}
 	return drama, true
@@ -793,6 +942,15 @@ func firstNonEmpty(values ...any) string {
 }
 
 func firstPositive(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func firstPositive64(values ...int64) int64 {
 	for _, value := range values {
 		if value > 0 {
 			return value

@@ -17,6 +17,7 @@ type ListResult struct {
 	CategoryResult
 	SearchID        string          `json:"search_id,omitempty"`
 	Passback        string          `json:"passback,omitempty"`
+	NextCursor      string          `json:"next_cursor,omitempty"`
 	Calendar        *CalendarSchema `json:"calendar,omitempty"`
 	Ranks           []RankOption    `json:"ranks,omitempty"`
 	Source          string          `json:"source,omitempty"`
@@ -78,6 +79,9 @@ func listQuery(r *http.Request) (url.Values, error) {
 		if len(q.Get(k)) > 12000 {
 			return nil, errors.New("分页参数过长")
 		}
+	}
+	if len(q.Get("cursor")) > 4000 {
+		return nil, errors.New("追更游标过长")
 	}
 	return q, nil
 }

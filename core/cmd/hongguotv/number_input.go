@@ -12,8 +12,12 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -23,6 +27,8 @@ const numberInputTTL = 5 * time.Minute
 var numberPhoneRE = regexp.MustCompile(`^1[3-9][0-9]{9}$`)
 var numberCodeRE = regexp.MustCompile(`^[0-9]{4,8}$`)
 var numberPage = template.Must(template.New("number-input").ParseFS(uiFiles, "ui/number-input.html"))
+
+const numberTextLimit = 100
 
 // This listener only serves a single short-lived input form. The account,
 // library and media core continues to listen exclusively on loopback.
@@ -92,7 +98,27 @@ func validNumberInput(kind, value string) bool {
 		_, valid := normalizeSearchQuery(value)
 		return valid
 	}
+	if kind == "danmaku" {
+		_, valid := normalizeDanmakuInput(value)
+		return valid
+	}
 	return kind == "phone" && numberPhoneRE.MatchString(value) || kind == "code" && numberCodeRE.MatchString(value)
+}
+
+func normalizeDanmakuInput(value string) (string, bool) {
+	if !utf8.ValidString(value) {
+		return "", false
+	}
+	value = strings.TrimSpace(value)
+	if value == "" || len(utf16.Encode([]rune(value))) > numberTextLimit {
+		return "", false
+	}
+	for _, char := range value {
+		if unicode.IsControl(char) {
+			return "", false
+		}
+	}
+	return value, true
 }
 
 func (m *numberInputManager) stopLocked() {
@@ -115,7 +141,7 @@ func (m *numberInputManager) close() {
 func (m *numberInputManager) start(kind string) (numberInputResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed || kind != "phone" && kind != "code" && kind != "search" {
+	if m.closed || kind != "phone" && kind != "code" && kind != "search" && kind != "danmaku" {
 		return numberInputResult{}, errors.New("输入会话不可用")
 	}
 	m.stopLocked()
@@ -124,6 +150,9 @@ func (m *numberInputManager) start(kind string) (numberInputResult, error) {
 		if kind == "search" {
 			return numberInputResult{}, errors.New("未找到局域网连接，可继续使用搜索框")
 		}
+		if kind == "danmaku" {
+			return numberInputResult{}, errors.New("未找到局域网连接，可继续使用弹幕输入框")
+		}
 		return numberInputResult{}, err
 	}
 	// Bind only the chosen LAN address, rather than all host interfaces.
@@ -131,6 +160,9 @@ func (m *numberInputManager) start(kind string) (numberInputResult, error) {
 	if err != nil {
 		if kind == "search" {
 			return numberInputResult{}, errors.New("扫码输入暂不可用，可继续使用搜索框")
+		}
+		if kind == "danmaku" {
+			return numberInputResult{}, errors.New("扫码输入暂不可用，可继续使用弹幕输入框")
 		}
 		return numberInputResult{}, errors.New("扫码输入暂不可用，可继续使用数字键盘")
 	}
@@ -209,11 +241,11 @@ func (m *numberInputManager) mobile(session *numberInputSession, w http.Response
 		renderNumberPage(w, http.StatusGone, map[string]any{"Expired": true})
 		return
 	}
-	data := map[string]any{"Phone": session.kind == "phone", "Search": session.kind == "search", "Action": r.URL.Path, "FormKey": session.formKey}
+	data := map[string]any{"Phone": session.kind == "phone", "Search": session.kind == "search", "Danmaku": session.kind == "danmaku", "Action": r.URL.Path, "FormKey": session.formKey}
 	status := http.StatusOK
 	if r.Method == http.MethodPost {
 		limit := int64(1024)
-		if session.kind == "search" {
+		if session.kind == "search" || session.kind == "danmaku" {
 			limit = 4096
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
@@ -226,11 +258,15 @@ func (m *numberInputManager) mobile(session *numberInputSession, w http.Response
 			data["Error"] = "请填写正确的数字后重试"
 			if session.kind == "search" {
 				data["Error"] = "请输入不超过100字的剧名或关键词"
+			} else if session.kind == "danmaku" {
+				data["Error"] = "请输入不超过100字的弹幕"
 			}
 		} else {
 			session.value = r.PostForm.Get("value")
 			if session.kind == "search" {
 				session.value, _ = normalizeSearchQuery(session.value)
+			} else if session.kind == "danmaku" {
+				session.value, _ = normalizeDanmakuInput(session.value)
 			}
 			session.completed = true
 			data["Complete"] = true
@@ -268,8 +304,8 @@ func (s *server) numberInput(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 1024)
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&request); err != nil || request.Kind != "phone" && request.Kind != "code" && request.Kind != "search" {
-			writeError(w, http.StatusBadRequest, "只支持手机号、验证码或搜索输入")
+		if err := decoder.Decode(&request); err != nil || request.Kind != "phone" && request.Kind != "code" && request.Kind != "search" && request.Kind != "danmaku" {
+			writeError(w, http.StatusBadRequest, "只支持手机号、验证码、搜索或弹幕输入")
 			return
 		}
 		result, err := s.numberInputs.start(request.Kind)

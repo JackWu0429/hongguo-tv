@@ -43,7 +43,7 @@ func postInput(t *testing.T, m *numberInputManager, address, value string) (int,
 }
 
 func TestNumberInputMobileRoundTripAndOneTimeConsumption(t *testing.T) {
-	for _, item := range []struct{ kind, value string }{{"phone", "13800000000"}, {"code", "012345"}} {
+	for _, item := range []struct{ kind, value string }{{"phone", "13800000000"}, {"code", "012345"}, {"danmaku", "测试弹幕"}} {
 		t.Run(item.kind, func(t *testing.T) {
 			m, result, address := inputFixture(t, item.kind)
 			if result.ExpiresIn != 300 || len(result.Session) != 64 {

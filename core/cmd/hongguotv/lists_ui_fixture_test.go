@@ -504,6 +504,7 @@ func TestListsBrowserFixture(t *testing.T) {
 		if browseFixture {
 			out.Filters[1].Options = append(out.Filters[1].Options, CategoryFilterOption{ID: "hot_collect", Label: "最高收藏"})
 			out.Filters = append(out.Filters, CategoryFilterRow{Type: "category_dim_theme", Label: "主题", Options: []CategoryFilterOption{{ID: "cate_165", Label: "悬疑"}}})
+			out.Filters = append(out.Filters, CategoryFilterRow{Type: "creation_status", Label: "状态", Options: []CategoryFilterOption{{ID: "creation_status_0", Label: "已完结"}, {ID: "creation_status_1", Label: "连载中"}}})
 			if q.Get("selectors") != "1" {
 				out.Filters = nil
 			}

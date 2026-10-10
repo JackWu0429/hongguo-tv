@@ -33,7 +33,8 @@
     return result;
   }
   function report(snapshot) {
-    var device = snapshot.device || {}, core = snapshot.core || {}, video = snapshot.video, native = snapshot.native || {}, flags = snapshot.flags || {};
+    snapshot = snapshot || {};
+    var device = snapshot.device || {}, core = snapshot.core || {}, video = snapshot.video || { position: 0, duration: 0, width: 0, height: 0, ready: 0, network: 0, paused: true, ended: false, seeking: false, muted: true, volume: 0, buffered: 0, error: 0, decoded: null }, native = snapshot.native || {}, flags = snapshot.flags || {};
     var engine = /(?:Chrome|Chromium)\/([\d.]+)/.exec(snapshot.userAgent || '');
     var android = /HongguoTV-Android/.test(snapshot.userAgent || '');
     var bits = device.process_bits === 32 || device.process_bits === 64 ? device.process_bits + ' 位' : '位数未知';

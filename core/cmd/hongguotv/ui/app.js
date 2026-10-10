@@ -48,6 +48,9 @@
     episodes: '.detail-episode',
     detailTabs: '.detail-tab',
     seriesRows: '.series-row'
+    ,followItems: '.follow-card'
+    ,libraryTypeFilters: '.library-type-filter'
+    ,rankModal: '.rank-filter-option, .rank-filter-close, .rank-filter-apply'
   };
   var status = document.getElementById('core-status');
   var notice = document.getElementById('action-notice');
@@ -56,8 +59,11 @@
   var numericKeypad;
   var accountNumberScan;
   var searchNumberScan;
+  var danmakuNumberScan;
   var searchScanOpen = false;
+  var danmakuScanOpen = false;
   var searchScanReturnFocus = null;
+  var danmakuScanReturnFocus = null;
   var searchHistory;
   var searchHistoryEpoch = 0;
   var accountKeypadReturnFocus = null;
@@ -144,6 +150,8 @@
   var calendarSchema = null;
   var rankOptions = [];
   var rankSelection = { rank: 'all', rank_sub: 'ranklist_hot_play_sc', rank_panel: '' };
+  var rankFilterOpen = false;
+  var rankDraftSelection = null;
   var reservationMode = 'online';
   var reservationCounts = { online: null, upcoming: null };
   var activeSearchQuery = '';
@@ -167,6 +175,9 @@
   var libraryError = '';
   var libraryEditing = false;
   var historyFilter = 'all';
+  var libraryTypeFilter = 'all';
+  var followPage = document.getElementById('follow-page');
+  var followGrid = document.getElementById('follow-grid');
   var libraryQueue = Promise.resolve();
   var libraryReady;
   var confirmOpen = false;
@@ -273,14 +284,14 @@
   }
   function createListPager(endpoint, container, selector, id, render, metadata) {
     var pager = HongguoPagination.create({
-      request: function (params, signal) { return fetchData((pager.endpoint || endpoint) + '?' + new URLSearchParams(params).toString(), signal ? { signal: signal } : {}); },
+      request: function (params, signal) { var requestParams = Object.assign({}, params); if (endpoint === '/api/v1/follow') delete requestParams.shown; return fetchData((pager.endpoint || endpoint) + '?' + new URLSearchParams(requestParams).toString(), signal ? { signal: signal } : {}); },
       clear: function () { if (container) renderMessage(container, 'list-empty', '正在加载…'); },
       render: function (items, append, p) {
         if (items.length && container) container.querySelectorAll('.list-empty, .calendar-empty, .search-result-empty, .rank-empty').forEach(function (node) { node.remove(); });
         render(items, append, p);
       },
       metadata: metadata,
-      cursor: endpoint === '/api/v1/lists/calendar' ? calendarCursor : endpoint === '/api/v1/lists/recommend' ? function (data, old) { return { offset: Number(data.next_offset) || 0, session_id: data.session_id || old.session_id || '', feed_cell: data.feed_cell || old.feed_cell || '', feed_plan: data.feed_plan || old.feed_plan || '' }; } : null,
+      cursor: endpoint === '/api/v1/lists/calendar' ? calendarCursor : endpoint === '/api/v1/lists/recommend' ? function (data, old) { return { offset: Number(data.next_offset) || 0, session_id: data.session_id || old.session_id || '', feed_cell: data.feed_cell || old.feed_cell || '', feed_plan: data.feed_plan || old.feed_plan || '' }; } : endpoint === '/api/v1/follow' ? function (data) { return data.next_cursor ? { cursor: data.next_cursor } : {}; } : null,
       status: function (p) { listStatus(p, id); },
       after: queueTailCheck
     });
@@ -329,7 +340,8 @@
     status: function (p) { listStatus(p, 'discussion-pagination'); }, after: queueTailCheck
   });
   discussionPager.container = document.getElementById('discussion-list'); discussionPager.selector = '.discussion-item'; discussionPager.statusID = 'discussion-pagination';
-  var allPagers = [searchPager, rankPager, newPager, calendarPager, reservationPager, libraryPager, feedPager, discussionPager];
+  var followPager = createListPager('/api/v1/follow', followGrid, '.follow-card', 'follow-pagination', renderFollow);
+  var allPagers = [searchPager, rankPager, newPager, calendarPager, reservationPager, libraryPager, feedPager, followPager, discussionPager];
 
   function visiblePager() {
     if (discussionOpen) {
@@ -342,6 +354,7 @@
     if (pageMode() === 'rank') return rankPager;
     if (pageMode() === 'new') return newMode === 'calendar' ? calendarPager : newPager;
     if (pageMode() === 'reservations') return reservationPager;
+    if (pageMode() === 'follows') return followPager;
     if (isLibraryPage()) return libraryPager;
     return null;
   }
@@ -601,15 +614,18 @@
     return shell && shell.dataset.mode ? shell.dataset.mode : 'recommend';
   }
 
+  function scanModalOpen() { return searchScanOpen || danmakuScanOpen; }
+
   function focusables(selector) {
     var result = [];
     var query = selector || Object.keys(zoneSelectors).map(function (zone) { return zoneSelectors[zone]; }).join(',');
     Array.prototype.forEach.call(document.querySelectorAll(query), function (element) {
       var style = window.getComputedStyle(element);
       var insideModal = element.closest && element.closest('#detail-modal');
-      if (searchScanOpen) { if (!element.closest('#search-scan-modal')) return; }
+      if (scanModalOpen()) { if (!element.closest('#search-scan-modal')) return; }
       else if (accountKeypadOpen()) { if (!element.closest('#account-keypad-modal')) return; }
       else if (supportModalOpen) { if (!element.closest('#support-modal')) return; }
+      else if (rankFilterOpen) { if (!element.closest('#rank-filter-modal')) return; }
       else if (confirmOpen) { if (!element.closest('#confirm-modal')) return; }
       else if (playerOptionsOpen) { if (!element.closest('#player-options')) return; }
       else if (discussionOpen) { if (!element.closest('#discussion-panel')) return; }
@@ -653,6 +669,7 @@
     if (element.classList.contains('reservation-row')) return 'reservationItems';
     if (element.classList.contains('publication-action')) return 'publicationActions';
     if (element.classList.contains('rank-tab')) return 'rankTabs';
+    if (element.classList.contains('rank-filter-open')) return 'rankTabs';
     if (element.classList.contains('rank-subtab')) return 'rankSubnav';
     if (element.classList.contains('rank-row')) return 'rankItems';
     if (element.classList.contains('rank-row-play') || element.classList.contains('rank-row-detail')) return 'rankActions';
@@ -673,6 +690,11 @@
     if (element.classList.contains('player-option') || element.id === 'player-compose-input') return 'playerOptions';
     if (element.closest('#discussion-panel')) return 'discussion';
     if (element.classList.contains('detail-tab')) return 'detailTabs';
+    if (element.classList.contains('review-card')) return 'detailReviews';
+    if (element.classList.contains('related-card')) return 'detailRelated';
+    if (element.classList.contains('rank-filter-option') || element.classList.contains('rank-filter-close') || element.classList.contains('rank-filter-apply')) return 'rankModal';
+    if (element.classList.contains('follow-card')) return 'followItems';
+    if (element.classList.contains('library-type-filter')) return 'libraryTypeFilters';
     if (element.classList.contains('series-row') || element.classList.contains('series-retry')) return 'seriesRows';
     if (element.classList.contains('detail-episode')) return 'episodes';
     if (element.classList.contains('modal-action')) return 'modalActions';
@@ -696,7 +718,7 @@
     if (pageMode() === 'account' && element.closest && element.closest('#account-page')) {
       try { element.scrollIntoView(false); } catch (ignored) {}
     }
-    if (!searchScanOpen && !accountKeypadOpen() && !detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zoneOf(element) !== 'sidebar') {
+    if (!scanModalOpen() && !accountKeypadOpen() && !detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zoneOf(element) !== 'sidebar') {
       lastContentFocus = element;
       lastPageFocus[pageMode()] = element;
     }
@@ -716,6 +738,7 @@
     if (pageMode() === 'rank') return firstVisible('.rank-tab.is-active') || firstRankTab();
     if (pageMode() === 'new') return firstVisible('.new-tab.is-active') || firstNewTab();
     if (pageMode() === 'reservations') return firstVisible('.reservation-tab.is-active');
+    if (pageMode() === 'follows') return firstVisible('.follow-card') || firstVisible('#follow-refresh');
     return document.querySelector('.page-placeholder-action');
   }
 
@@ -753,7 +776,7 @@
   function firstCalendarRow() { return firstVisible('.calendar-row'); }
 
   function hideWorkspacePages() {
-    [rankPage, newPage, reservationPage, libraryPage, accountPage, supportPage].forEach(function (page) {
+    [rankPage, newPage, reservationPage, followPage, libraryPage, accountPage, supportPage].forEach(function (page) {
       if (page) page.classList.add('is-hidden');
     });
   }
@@ -825,16 +848,29 @@
 
   function moveModalFrom(current, direction) {
     var zone = zoneOf(current);
+    if (zone === 'rankModal') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone('rankModal', current, direction);
+      if (direction === 'up' || direction === 'down') return moveWithinZone('rankModal', current, direction);
+      return null;
+    }
     if (zone === 'detailTabs') {
       if (direction === 'left' || direction === 'right') return moveWithinZone('detailTabs', current, direction);
       if (direction === 'up') return document.getElementById('detail-close');
-      if (direction === 'down') return detailTab === 'series' ? currentSeriesRow() || firstVisible('.series-row') || firstVisible('.series-retry') : currentDetailEpisode() || firstVisible('#detail-retry');
+      if (direction === 'down') return detailTab === 'series' ? currentSeriesRow() || firstVisible('.series-row') || firstVisible('.series-retry') : detailTab === 'reviews' ? firstVisible('.review-card') : detailTab === 'related' ? firstVisible('.related-card') : currentDetailEpisode() || firstVisible('#detail-retry');
       return null;
     }
     if (zone === 'seriesRows') {
       if (direction === 'up') return moveWithinZone('seriesRows', current, direction) || document.getElementById('detail-tab-series');
       if (direction === 'down') return moveWithinZone('seriesRows', current, direction);
       if (direction === 'left') return document.getElementById('detail-tab-series');
+      return null;
+    }
+    if (zone === 'detailReviews' || zone === 'detailRelated') {
+      var socialSelector = zone === 'detailReviews' ? '.review-card' : '.related-card';
+      var socialTab = zone === 'detailReviews' ? 'reviews' : 'related';
+      if (direction === 'left' || direction === 'right') return moveGrid(socialSelector, current, direction) || (direction === 'left' ? document.getElementById('detail-tab-' + socialTab) : null);
+      if (direction === 'up') return moveGrid(socialSelector, current, direction) || document.getElementById('detail-tab-' + socialTab);
+      if (direction === 'down') return moveGrid(socialSelector, current, direction);
       return null;
     }
     if (zone === 'modalActions') {
@@ -855,15 +891,17 @@
   }
 
   function moveFrom(current, direction) {
-    if (searchScanOpen) return direction === 'left' || direction === 'right' ? moveWithinZone('searchScan', current, direction) : null;
+    if (scanModalOpen()) return direction === 'left' || direction === 'right' ? moveWithinZone('searchScan', current, direction) : null;
     if (supportModalOpen) return document.getElementById('support-close');
     if (confirmOpen) return direction === 'left' || direction === 'right' ? moveWithinZone('confirmation', current, direction) : null;
+    if (rankFilterOpen) return moveModalFrom(current, direction);
     if (playerOptionsOpen) {
       if (document.getElementById('player-options').classList.contains('is-diagnostics')) {
         return direction === 'left' || direction === 'right' ? moveGrid('.diagnostic-action', current, direction) : null;
       }
-      if (current.id === 'player-compose-input') return direction === 'down' ? document.getElementById('player-compose-send') : direction === 'up' ? document.getElementById('player-options-close') : null;
-      if (current.id === 'player-compose-send') return direction === 'up' ? document.getElementById('player-compose-input') : null;
+      if (current.id === 'player-compose-input') return direction === 'down' ? firstVisible('#player-compose-scan') || document.getElementById('player-compose-send') : direction === 'up' ? document.getElementById('player-options-close') : direction === 'right' ? document.getElementById('player-compose-send') : null;
+      if (current.id === 'player-compose-scan') return direction === 'up' || direction === 'left' ? document.getElementById('player-compose-input') : direction === 'right' || direction === 'down' ? document.getElementById('player-compose-send') : null;
+      if (current.id === 'player-compose-send') return direction === 'up' ? firstVisible('#player-compose-scan') || document.getElementById('player-compose-input') : direction === 'left' ? firstVisible('#player-compose-scan') || document.getElementById('player-compose-input') : null;
       if (current.id === 'player-options-close') return direction === 'down' ? firstVisible('#player-compose-input') || document.querySelector('.player-option.is-selected') || firstVisible('#player-options-list .player-option') : null;
       return moveGrid('#player-options-list .player-option', current, direction) || (direction === 'up' ? document.getElementById('player-options-close') : null);
     }
@@ -1018,6 +1056,18 @@
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : firstVisible('#library-manage'));
       if (direction === 'up') return firstVisible('#library-manage') || activeSidebar();
       if (direction === 'down') return firstVisible('.library-card') || firstVisible('[data-action="library-discover"]');
+      return null;
+    }
+    if (zone === 'libraryTypeFilters') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'up') return firstVisible('#library-manage') || activeSidebar();
+      if (direction === 'down') return firstVisible('.library-card') || firstVisible('[data-action="library-discover"]');
+      return null;
+    }
+    if (zone === 'followItems') {
+      if (direction === 'left' || direction === 'right') return moveGrid('.follow-card', current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'up') return moveGrid('.follow-card', current, direction) || firstVisible('#follow-refresh') || activeSidebar();
+      if (direction === 'down') return moveGrid('.follow-card', current, direction) || listBoundary(followPager, current, direction);
       return null;
     }
     if (zone === 'appUpdates') {
@@ -1357,8 +1407,46 @@
     if (diagnosticRequest) diagnosticRequest.abort();
     diagnosticRequest = null;
   }
+  function diagnosticNumber(value) { return typeof value === 'number' && isFinite(value) ? Math.max(0, value) : 0; }
+  function readDiagnosticVideo(video) {
+    var api = window.HongguoPlaybackDiagnostics;
+    if (api && typeof api.readVideo === 'function') {
+      try { return api.readVideo(video); } catch (ignored) {}
+    }
+    var result = { position: diagnosticNumber(video.currentTime), duration: diagnosticNumber(video.duration), width: diagnosticNumber(video.videoWidth), height: diagnosticNumber(video.videoHeight), ready: diagnosticNumber(video.readyState), network: diagnosticNumber(video.networkState), paused: !!video.paused, ended: !!video.ended, seeking: !!video.seeking, muted: !!video.muted, volume: diagnosticNumber(video.volume), buffered: 0, error: video.error ? diagnosticNumber(video.error.code) : 0, decoded: null };
+    try {
+      for (var i = 0; i < video.buffered.length; i++) {
+        if (video.buffered.start(i) <= result.position && video.buffered.end(i) >= result.position) { result.buffered = video.buffered.end(i) - result.position; break; }
+      }
+    } catch (ignoredBuffer) {}
+    return result;
+  }
+  function diagnosticFallbackReport(snapshot, reason) {
+    var video = snapshot.video || {}, flags = snapshot.flags || {}, device = snapshot.device || {};
+    var current = snapshot.episode > 0 ? '第 ' + diagnosticNumber(snapshot.episode) + ' 集' : '集数尚未确定';
+    var state = video.ended ? '已结束' : video.paused ? '暂停' : '播放中';
+    if (flags.preparing) state += ' · 准备中';
+    if (flags.failed) state = '播放准备失败';
+    var size = diagnosticNumber(video.width) + ' × ' + diagnosticNumber(video.height);
+    var deviceName = (typeof device.manufacturer === 'string' ? device.manufacturer : '') + ' ' + (typeof device.model === 'string' ? device.model : '');
+    return { summary: reason ? '基础诊断已显示；完整诊断组件未加载' : '基础播放状态', rows: [
+      { label: '当前视频', value: current },
+      { label: '设备型号', value: deviceName.replace(/^\s+|\s+$/g, '') || '设备信息未取得' },
+      { label: '视频画面', value: size },
+      { label: '播放时钟', value: Math.floor(diagnosticNumber(video.position)) + ' 秒 / ' + (video.duration ? Math.floor(diagnosticNumber(video.duration)) + ' 秒' : '未知时长') },
+      { label: '播放状态', value: state },
+      { label: '诊断状态', value: reason ? '请更新应用后重试' : '已读取' }
+    ], capturedAt: snapshot.capturedAt || '—' };
+  }
   function renderPlaybackDiagnostics(snapshot) {
-    var report = window.HongguoPlaybackDiagnostics.report(snapshot);
+    var report, api = window.HongguoPlaybackDiagnostics;
+    try {
+      if (!api || typeof api.report !== 'function') throw new Error('diagnostic component unavailable');
+      report = api.report(snapshot);
+      if (!report || !report.rows || !report.rows.length) throw new Error('diagnostic report empty');
+    } catch (error) {
+      report = diagnosticFallbackReport(snapshot, error);
+    }
     document.getElementById('player-diagnostics-summary').textContent = report.summary;
     var rows = document.getElementById('player-diagnostics-rows'); rows.innerHTML = '';
     report.rows.forEach(function (item) {
@@ -1384,7 +1472,7 @@
       device: device || {}, userAgent: navigator.userAgent,
       native: native || {},
       capturedAt: ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2) + ':' + ('0' + now.getSeconds()).slice(-2),
-      video: window.HongguoPlaybackDiagnostics.readVideo(video),
+      video: readDiagnosticVideo(video),
       episode: activePlayback && activePlayback.episode || playbackRequest && playbackRequest.episode || 0,
       quality: playbackQuality,
       flags: { preparing: hero.classList.contains('is-preparing-video'), resolving: !!playbackInfoRequest,
@@ -1414,6 +1502,7 @@
     request.send();
   }
   function closePlayerOptions(restoring) {
+    if (typeof danmakuScanOpen !== 'undefined' && danmakuScanOpen) closeDanmakuScan(false);
     cancelDiagnosticRead();
     document.getElementById('player-options').classList.remove('is-diagnostics');
     document.getElementById('player-diagnostics').classList.add('is-hidden');
@@ -1566,8 +1655,10 @@
   }
   function handleBack() {
     if (searchScanOpen) { closeSearchScan(true); return true; }
+    if (typeof danmakuScanOpen !== 'undefined' && danmakuScanOpen) { closeDanmakuScan(true); return true; }
     if (accountKeypadOpen()) { numericKeypad.close('back'); return true; }
     if (supportModalOpen) { closeSupportQR(); return true; }
+    if (rankFilterOpen) { closeRankFilter(true); return true; }
     if (confirmOpen) closeConfirmation();
     else if (playerOptionsOpen) closePlayerOptions();
     else if (detailModalOpen) closeDetail();
@@ -1594,6 +1685,7 @@
   }
   function pauseForBackground() {
     if (searchScanOpen) closeSearchScan(true);
+    if (typeof danmakuScanOpen !== 'undefined' && danmakuScanOpen) closeDanmakuScan(false);
     if (accountKeypadOpen()) numericKeypad.close('background');
     if (smsVerification) smsVerification.stop();
     var video = document.getElementById('hero-video');
@@ -1639,10 +1731,56 @@
     return item.episode_count && entry.episode >= item.episode_count ? 1 : entry.episode + 1;
   }
   function clockText(value) { value = Math.max(0, Math.floor(value || 0)); return Math.floor(value / 60) + ':' + ('0' + value % 60).slice(-2); }
+  function likedEpisodeSummary(entry, drama) {
+    var seen = {};
+    var episodes = (entry && entry.liked_videos || []).map(function (liked) { return Number(liked && liked.episode) || 0; }).filter(function (episode) {
+      if (episode < 1 || seen[episode]) return false;
+      seen[episode] = true;
+      return true;
+    }).sort(function (a, b) { return a - b; });
+    if (!episodes.length) return '已点赞';
+    var shown = episodes.length > 4 ? episodes.slice(0, 3).join('、') + '等' + episodes.length + '集' : episodes.join('、') + '集';
+    var total = drama && drama.episode_count ? '/共' + drama.episode_count + '集' : '';
+    return '赞了第' + shown + total;
+  }
   function basicDrama(item) {
     var result = {};
-    ['series_id', 'title', 'cover', 'cover_fallback', 'intro', 'score', 'episode_count', 'tags', 'season_index', 'is_multi_season'].forEach(function (key) { if (item[key] !== undefined) result[key] = item[key]; });
+    ['series_id', 'title', 'cover', 'cover_fallback', 'intro', 'score', 'episode_count', 'tags', 'season_index', 'is_multi_season', 'content_type', 'video_category_type', 'following_update', 'followed', 'follow_count', 'show_update_frequency', 'latest_watched_episode', 'has_watched_latest_episode', 'series_status'].forEach(function (key) { if (item[key] !== undefined) result[key] = item[key]; });
     return result;
+  }
+  function followState(item) {
+    var status = String(item && item.series_status !== undefined ? item.series_status : '').trim().toLowerCase();
+    // The official model uses 0 for updating and 1 for completed. Text
+    // values are accepted as a forward-compatible fallback for web payloads.
+    if (status === '1' || /ended|finished|complete|completed|已完结|完结|已结束/.test(status)) return 'ended';
+    if (status === '0' || /ongoing|serial|updating|连载|更新中/.test(status)) return 'ongoing';
+    return 'unknown';
+  }
+  function followIsActive(item) {
+    return !!(item && (item.following_update || item.followed));
+  }
+  function updateFollowButton() {
+    var button = document.querySelector('.round-action[data-action="follow"]');
+    if (!button) return;
+    var active = followIsActive(featuredItem);
+    var ended = followState(featuredItem) === 'ended';
+    var wasFocused = document.activeElement === button;
+    // A completed drama has no future episodes to follow. Hide the action
+    // entirely so it does not consume space or remain in the TV focus chain.
+    button.classList.toggle('is-hidden', ended);
+    button.disabled = false;
+    button.classList.toggle('is-disabled', false);
+    button.setAttribute('aria-disabled', 'false');
+    button.setAttribute('aria-hidden', String(ended));
+    button.setAttribute('aria-pressed', String(active));
+    button.setAttribute('aria-label', ended ? '已完结' : active ? '已追更' : '追更');
+    var copy = button.querySelector('small');
+    if (copy) copy.textContent = active ? '已追更' : '追更';
+    if (ended && wasFocused) {
+      var fallback = button.nextElementSibling || button.previousElementSibling;
+      button.blur();
+      if (fallback && typeof goFocus === 'function' && !fallback.disabled && !fallback.classList.contains('is-hidden')) goFocus(fallback);
+    }
   }
   function updateSavedButtons() {
     var entry = featuredItem && libraryEntry(featuredItem.series_id);
@@ -1653,6 +1791,9 @@
       button.setAttribute('aria-pressed', String(saved));
       updateActionLabel(kind);
     });
+    var follow = document.querySelector('.round-action[data-action="follow"]');
+    if (follow) { var following = followIsActive(featuredItem); follow.classList.toggle('is-saved', following); }
+    updateFollowButton();
   }
   function updateActionLabel(kind) {
     var button = document.querySelector('.round-action[data-action="' + kind + '"]');
@@ -1730,6 +1871,18 @@
       }
     });
   }
+  function toggleFollow(item, button) {
+    if (!item || !item.series_id || !button || button.disabled) return;
+    if (!accountData || !accountData.logged_in) { showNotice('请先到“我的”登录红果账号'); return; }
+    if (followState(item) === 'ended' && !followIsActive(item)) { showNotice('这部剧已经完结，不能新增追更'); return; }
+    var enabled = button.getAttribute('aria-pressed') !== 'true';
+    button.disabled = true; button.setAttribute('aria-busy', 'true');
+    fetchData('/api/v1/follow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ series_id: item.series_id, enabled: enabled }) }).then(function () {
+      if (featuredItem && featuredItem.series_id === item.series_id) { featuredItem.following_update = enabled; featuredItem.followed = enabled; updateSavedButtons(); }
+      followPager.loaded = false; if (pageMode() === 'follows') followPager.reset({});
+      showNotice(enabled ? '已加入追更' : '已取消追更');
+    }).catch(function (error) { showNotice('追更操作未完成：' + error.message); }).then(function () { button.disabled = false; button.removeAttribute('aria-busy'); });
+  }
   function libraryFinished(entry) {
     var total = Number(entry.drama && entry.drama.episode_count) || 0;
     // Mac history marks a drama finished once its saved episode reaches the last one.
@@ -1738,8 +1891,10 @@
   }
 
   function visibleLibraryEntries(kind, filter) {
+    var activeTypeFilter = typeof libraryTypeFilter === 'undefined' ? 'all' : libraryTypeFilter;
     var entries = libraryData.entries.filter(function (entry) {
       if (libraryTime(entry, kind) <= 0) return false;
+      if (kind !== 'history' && activeTypeFilter !== 'all' && dramaType(entry.drama) !== activeTypeFilter) return false;
       if (kind !== 'history' || filter === 'all') return true;
       return libraryFinished(entry) === (filter === 'finished');
     });
@@ -1756,6 +1911,24 @@
     queueTailCheck();
   }
 
+  function dramaType(item) {
+    var value = String(item && (item.video_category_type || item.content_type) || '').toLowerCase();
+    if (value.indexOf('ai') >= 0) return 'ai';
+    if (value.indexOf('comic') >= 0 || value.indexOf('漫') >= 0) return 'comic';
+    if (value.indexOf('real') >= 0 || value.indexOf('真人') >= 0) return 'real';
+    return '';
+  }
+  function selectLibraryType(value) {
+    if (!isLibraryPage() || ['all', 'real', 'comic', 'ai'].indexOf(value) < 0) return;
+    libraryTypeFilter = value;
+    document.querySelectorAll('.library-type-filter').forEach(function (button) {
+      var selected = button.dataset.libraryType === value;
+      button.classList.toggle('is-active', selected); button.setAttribute('aria-pressed', String(selected));
+    });
+    renderLibrary(false);
+    goFocus(firstVisible('.library-type-filter.is-active'));
+  }
+
   function renderLibrary(restoring) {
     var kind = pageMode();
     if (!isLibraryPage()) return;
@@ -1765,11 +1938,13 @@
     document.getElementById('library-hint').textContent = storageLabel + (kind === 'history' ? ' · 自动记住集数和进度' : '');
     var filter = kind === 'history' ? historyFilter : 'all';
     document.getElementById('history-filters').classList.toggle('is-hidden', kind !== 'history');
+    document.getElementById('library-type-filters').classList.toggle('is-hidden', kind === 'history');
     document.querySelectorAll('.history-filter').forEach(function (button) {
       var selected = button.dataset.historyFilter === filter;
       button.classList.toggle('is-active', selected);
       button.setAttribute('aria-pressed', String(selected));
     });
+    document.querySelectorAll('.library-type-filter').forEach(function (button) { button.classList.toggle('is-active', button.dataset.libraryType === libraryTypeFilter); });
     var grid = document.getElementById('library-grid');
     var entries = visibleLibraryEntries(kind, filter);
     var existing = {};
@@ -1795,7 +1970,10 @@
         var card = document.createElement('button');
         card.className = 'library-card';
         card.dataset.focus = 'library-' + id;
-        var image = document.createElement('img'); image.loading = 'lazy'; card.appendChild(dramaPoster(image, entry.drama));
+        var image = document.createElement('img'); image.loading = 'lazy';
+        var poster = dramaPoster(image, entry.drama);
+        var likeBadge = document.createElement('span'); likeBadge.className = 'library-card-like-badge'; likeBadge.setAttribute('aria-hidden', 'true'); poster.appendChild(likeBadge);
+        card.appendChild(poster);
         ['title', 'meta', 'time'].forEach(function (name) { var span = document.createElement('span'); span.className = 'library-card-' + name; card.appendChild(span); });
         var progress = document.createElement('span'); progress.className = 'library-progress'; progress.appendChild(document.createElement('span')); card.appendChild(progress);
         card.addEventListener('click', function () { if (libraryEditing) goFocus(tile.querySelector('.library-remove')); else startPlayer(tile.__entry.drama, card); });
@@ -1822,6 +2000,9 @@
       var card = tile.querySelector('.library-card');
       if (card.querySelector('img').alt !== entry.drama.title) setCover(card.querySelector('img'), entry.drama);
       updatePosterSeason(card.querySelector('.drama-poster'), entry.drama);
+      var likeBadge = card.querySelector('.library-card-like-badge');
+      likeBadge.classList.toggle('is-hidden', kind !== 'likes');
+      if (kind === 'likes') likeBadge.textContent = likedEpisodeSummary(entry, entry.drama);
       card.querySelector('.library-card-title').textContent = entry.drama.title;
       card.querySelector('.library-card-meta').textContent = entry.last_played_at ? libraryFinished(entry) ? '已看完 · 全' + entry.drama.episode_count + '集' : '继续第' + resumeEpisode(entry, entry.drama) + '集' + (!entry.completed && entry.position ? ' · ' + clockText(entry.position) : '') : entry.drama.episode_count ? '全' + entry.drama.episode_count + '集' : '从第一集播放';
       card.querySelector('.library-card-time').textContent = new Date(libraryTime(entry, kind)).toLocaleDateString();
@@ -1970,8 +2151,8 @@
     document.getElementById('account-sync-state').textContent = syncLabel;
     document.getElementById('account-sync-detail').textContent = sync.error || (logged ? (sync.pending ? sync.pending + ' 项记录待同步。' : '收藏、点赞与观看进度会自动同步。') + (sync.last_sync ? ' 最近同步：' + new Date(sync.last_sync).toLocaleTimeString() : '') : '收藏、点赞、观看历史和播放进度会与红果账号同步。');
     document.getElementById('account-message').textContent = accountBusy ? '正在连接红果，请稍候…' : accountNotice || data.error || '';
-    document.querySelector('.side-item[data-page="account"] span:last-child').textContent = logged ? '我的账号' : '我的 / 登录';
-    if (pageMode() === 'account') document.getElementById('page-context').textContent = logged ? '我的账号' : '我的 / 登录';
+    document.querySelector('.side-item[data-page="account"] span:last-child').textContent = '我的';
+    if (pageMode() === 'account') document.getElementById('page-context').textContent = '我的';
     var current = document.activeElement;
     if (!accountKeypadOpen() && !accountBusy && pageMode() === 'account' && current && current.closest('#account-keypad-modal')) goFocus(firstContentFocus());
     if (!accountBusy && !confirmOpen && pageMode() === 'account' && current && /accountInputs|accountActions/.test(zoneOf(current)) && focusables().indexOf(current) < 0) goFocus(firstContentFocus());
@@ -3032,6 +3213,34 @@
     }
   }
 
+  function openRankFilter() {
+    if (!rankOptions.length) { showNotice('筛选条件还在读取，请稍候'); return; }
+    rankDraftSelection = Object.assign({}, rankSelection);
+    rankFilterOpen = true;
+    var root = document.getElementById('rank-filter-options'); root.innerHTML = '';
+    rankOptions.forEach(function (group) {
+      var heading = document.createElement('strong'); heading.className = 'rank-filter-group-title'; heading.textContent = group.label; root.appendChild(heading);
+      (group.children || []).forEach(function (option) {
+        var button = document.createElement('button'); button.className = 'rank-filter-option'; button.dataset.focus = 'rank-filter-' + option.id; button.textContent = option.label;
+        button.classList.toggle('is-selected', option.id === rankDraftSelection.rank_sub);
+        button.addEventListener('click', function () { rankDraftSelection.rank = group.id; rankDraftSelection.rank_sub = option.id; rankDraftSelection.rank_panel = ''; root.querySelectorAll('.rank-filter-option').forEach(function (node) { node.classList.remove('is-selected'); }); button.classList.add('is-selected'); });
+        root.appendChild(button);
+        (option.panels || []).forEach(function (panel) { (panel.options || []).forEach(function (panelOption) { var child = document.createElement('button'); child.className = 'rank-filter-option rank-filter-detail'; child.dataset.focus = 'rank-filter-' + panelOption.id; child.textContent = panel.label + '：' + panelOption.label; child.classList.toggle('is-selected', panelOption.id === rankDraftSelection.rank_panel); child.addEventListener('click', function () { rankDraftSelection.rank = group.id; rankDraftSelection.rank_sub = option.id; rankDraftSelection.rank_panel = panelOption.id; root.querySelectorAll('.rank-filter-option').forEach(function (node) { node.classList.remove('is-selected'); }); child.classList.add('is-selected'); }); root.appendChild(child); }); });
+      });
+    });
+    document.getElementById('rank-filter-modal').classList.remove('is-hidden'); document.getElementById('rank-filter-modal').setAttribute('aria-hidden', 'false');
+    goFocus(firstVisible('.rank-filter-option') || document.getElementById('rank-filter-cancel'));
+  }
+  function closeRankFilter(restore) {
+    rankFilterOpen = false; rankDraftSelection = null;
+    document.getElementById('rank-filter-modal').classList.add('is-hidden'); document.getElementById('rank-filter-modal').setAttribute('aria-hidden', 'true');
+    if (restore) goFocus(document.getElementById('rank-filter-open'));
+  }
+  function applyRankFilter() {
+    if (!rankDraftSelection) { closeRankFilter(true); return; }
+    rankSelection = Object.assign({}, rankDraftSelection); closeRankFilter(false); renderRankSelectors(rankOptions); loadRank(); goFocus(document.getElementById('rank-filter-open'));
+  }
+
   function renderRank(items, append) {
     if (!append) { rankItems = []; rankList.innerHTML = ''; }
     var start = rankItems.length;
@@ -3101,6 +3310,29 @@
     }
     (items || []).forEach(function (item) {
       newGrid.appendChild(publicationCard(item, 'new-item-'));
+    });
+  }
+
+  function renderFollow(items, append) {
+    if (!append) followGrid.innerHTML = '';
+    if (!followPager.items.length && !followPager.busy) {
+      renderMessage(followGrid, 'list-empty', accountData && accountData.logged_in ? '还没有追更中的短剧。' : '登录红果账号后查看追更。');
+      return;
+    }
+    (items || []).forEach(function (item) {
+      var card = document.createElement('button');
+      card.className = 'follow-card'; card.dataset.focus = 'follow-' + item.series_id;
+      var image = document.createElement('img'); image.className = 'follow-card-image'; setCover(image, item);
+      var copy = document.createElement('span'); copy.className = 'follow-card-copy';
+      var title = document.createElement('strong'); title.textContent = item.title || '未命名短剧';
+      var watched = item.latest_watched_episode || (libraryEntry(item.series_id) || {}).episode || 0;
+      var meta = document.createElement('span'); meta.textContent = watched ? '已看第' + watched + '集' : item.episode_count ? '全' + item.episode_count + '集' : '正在更新';
+      var status = document.createElement('span'); status.className = 'follow-card-status';
+      status.textContent = followState(item) === 'ended' ? '已完结' : item.has_watched_latest_episode ? '已追平' : item.show_update_frequency || '更新中';
+      copy.appendChild(title); copy.appendChild(meta); copy.appendChild(status); card.appendChild(dramaPoster(image, item)); card.appendChild(copy);
+      card.addEventListener('click', function () { startPlayer(item, card); });
+      card.addEventListener('focus', function () { card.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });
+      followGrid.appendChild(card);
     });
   }
 
@@ -3308,6 +3540,10 @@
     if (searchNumberScan) searchNumberScan.stop();
     document.getElementById('search-scan-modal').classList.add('is-hidden');
     document.getElementById('search-scan-modal').setAttribute('aria-hidden', 'true');
+    document.getElementById('search-scan-title').textContent = '手机扫码搜索';
+    document.getElementById('search-scan-copy').textContent = '手机输入或粘贴剧名，发送后在电视上搜索';
+    document.getElementById('search-scan-hint').innerHTML = '手机和电视需在同一局域网<br>二维码5分钟有效，关闭后失效';
+    document.getElementById('search-scan-close').textContent = '返回搜索';
     var target = searchScanReturnFocus; searchScanReturnFocus = null;
     if (restore && pageMode() === 'search') goFocus(focusables().indexOf(target) >= 0 ? target : firstVisible('#search-scan'));
   }
@@ -3316,10 +3552,41 @@
     if (pageMode() !== 'search' || searchScanOpen || applicationInBackground) return;
     searchScanReturnFocus = document.activeElement;
     searchScanOpen = true;
+    document.getElementById('search-scan-title').textContent = '手机扫码搜索';
+    document.getElementById('search-scan-copy').textContent = '手机输入或粘贴剧名，发送后在电视上搜索';
+    document.getElementById('search-scan-hint').innerHTML = '手机和电视需在同一局域网<br>二维码5分钟有效，关闭后失效';
+    document.getElementById('search-scan-close').textContent = '返回搜索';
     document.getElementById('search-scan-modal').classList.remove('is-hidden');
     document.getElementById('search-scan-modal').setAttribute('aria-hidden', 'false');
     goFocus(document.getElementById('search-scan-close'));
     searchNumberScan.start('search');
+  }
+
+  function closeDanmakuScan(restore) {
+    if (!danmakuScanOpen) return;
+    danmakuScanOpen = false;
+    if (danmakuNumberScan) danmakuNumberScan.stop();
+    document.getElementById('search-scan-modal').classList.add('is-hidden');
+    document.getElementById('search-scan-modal').setAttribute('aria-hidden', 'true');
+    document.getElementById('search-scan-title').textContent = '手机扫码搜索';
+    document.getElementById('search-scan-copy').textContent = '手机输入或粘贴剧名，发送后在电视上搜索';
+    document.getElementById('search-scan-hint').innerHTML = '手机和电视需在同一局域网<br>二维码5分钟有效，关闭后失效';
+    var target = danmakuScanReturnFocus; danmakuScanReturnFocus = null;
+    if (restore !== false && playerOptionsOpen) goFocus(target && focusables().indexOf(target) >= 0 ? target : document.getElementById('player-compose-input'));
+  }
+
+  function openDanmakuScan() {
+    if (!playerOptionsOpen || danmakuScanOpen || searchScanOpen || !composeSession || composeBusy || applicationInBackground) return;
+    danmakuScanReturnFocus = document.activeElement;
+    danmakuScanOpen = true;
+    document.getElementById('search-scan-title').textContent = '手机扫码发弹幕';
+    document.getElementById('search-scan-copy').textContent = '手机输入或粘贴弹幕，完成后回填到电视';
+    document.getElementById('search-scan-hint').innerHTML = '手机和电视需在同一局域网<br>二维码5分钟有效，关闭后失效';
+    document.getElementById('search-scan-close').textContent = '返回弹幕';
+    document.getElementById('search-scan-modal').classList.remove('is-hidden');
+    document.getElementById('search-scan-modal').setAttribute('aria-hidden', 'false');
+    goFocus(document.getElementById('search-scan-close'));
+    danmakuNumberScan.start('danmaku');
   }
 
   function loadCatalog(title) {
@@ -3503,11 +3770,42 @@
     });
     document.getElementById('detail-episode-panel').classList.toggle('is-hidden', tab !== 'episodes');
     document.getElementById('detail-series-panel').classList.toggle('is-hidden', tab !== 'series');
+    document.getElementById('detail-reviews-panel').classList.toggle('is-hidden', tab !== 'reviews');
+    document.getElementById('detail-related-panel').classList.toggle('is-hidden', tab !== 'related');
     goFocus(document.getElementById('detail-tab-' + tab));
     if (tab === 'series') {
       if (!seriesLoaded) loadSeriesSeasons();
       else { updateSeriesRows(); focusCurrentSeason(); }
     }
+    if (tab === 'reviews' || tab === 'related') renderDetailSocial(tab);
+  }
+
+  function renderDetailSocial(tab) {
+    if (!currentDetail) return;
+    var isReviews = tab === 'reviews';
+    var list = document.getElementById(isReviews ? 'detail-reviews-list' : 'detail-related-list');
+    var message = document.getElementById(isReviews ? 'detail-reviews-message' : 'detail-related-message');
+    list.innerHTML = '';
+    if (isReviews) {
+      (currentDetail.reviews || []).forEach(function (review) {
+        var card = document.createElement('article'); card.className = 'review-card'; card.tabIndex = 0; card.dataset.focus = 'review-' + (review.id || Math.random());
+        var author = document.createElement('strong'); author.textContent = review.user_name || '红果用户';
+        var copy = document.createElement('p'); copy.textContent = review.content;
+        var meta = document.createElement('small'); meta.textContent = [review.rating ? review.rating + '分' : '', review.digg_count ? '赞 ' + review.digg_count : ''].filter(Boolean).join(' · ');
+        card.appendChild(author); card.appendChild(copy); card.appendChild(meta); list.appendChild(card);
+      });
+      message.textContent = currentDetail.reviews && currentDetail.reviews.length ? '' : '暂无剧评。';
+    } else {
+      (currentDetail.related || []).forEach(function (item) {
+        var card = document.createElement('button'); card.className = 'related-card'; card.dataset.focus = 'related-' + item.series_id;
+        var image = document.createElement('img'); image.className = 'related-card-image'; setCover(image, item);
+        var title = document.createElement('strong'); title.textContent = item.title || '未命名短剧';
+        var meta = document.createElement('span'); meta.textContent = item.episode_count ? '全' + item.episode_count + '集' : '红果短剧';
+        card.appendChild(dramaPoster(image, item)); card.appendChild(title); card.appendChild(meta); card.addEventListener('click', function () { openDetail(item); }); list.appendChild(card);
+      });
+      message.textContent = currentDetail.related && currentDetail.related.length ? '' : '暂无相关推荐。';
+    }
+    if (tab === detailTab) goFocus(firstVisible(isReviews ? '.review-card' : '.related-card') || document.getElementById('detail-tab-' + tab));
   }
 
   function loadSeriesSeasons() {
@@ -3675,6 +3973,7 @@
       if (!detailModalOpen || generation !== detailGeneration) return;
       currentDetail = Object.assign({}, item, detail);
       renderDetail(currentDetail);
+      if (detailTab === 'reviews' || detailTab === 'related') renderDetailSocial(detailTab);
       focusLoadedDetailEpisode();
     }).catch(function (error) {
       if (!detailModalOpen || generation !== detailGeneration) return;
@@ -3750,6 +4049,7 @@
       return;
     }
     if (searchScanOpen) closeSearchScan(false);
+    if (typeof danmakuScanOpen !== 'undefined' && danmakuScanOpen) closeDanmakuScan(false);
     if (smsVerification) smsVerification.stop();
     if (supportModalOpen) closeSupportQR();
     if (accountKeypadOpen()) numericKeypad.close('page');
@@ -3798,6 +4098,11 @@
       reservationPage.classList.remove('is-hidden');
       var reservationTab = document.querySelector('.reservation-tab.is-active');
       renderReservations(reservationTab ? reservationTab.dataset.reservationMode : 'online', restoring);
+    } else if (item.dataset.page === 'follows') {
+      mainSurface.classList.add('has-workspace');
+      followPage.classList.remove('is-hidden');
+      if (!accountData || !accountData.logged_in) renderMessage(followGrid, 'list-empty', '登录红果账号后查看追更。');
+      else if (!followPager.loaded) followPager.reset({}); else queueTailCheck();
     } else if (['history', 'favorites', 'likes'].indexOf(item.dataset.page) >= 0) {
       mainSurface.classList.add('has-workspace');
       libraryPage.classList.remove('is-hidden');
@@ -3825,7 +4130,7 @@
   document.addEventListener('scroll', queueTailCheck, true);
   window.addEventListener('resize', queueTailCheck);
   document.addEventListener('focusin', function (event) {
-    if (searchScanOpen && !event.target.closest('#search-scan-modal')) { goFocus(document.getElementById('search-scan-close')); return; }
+    if (scanModalOpen() && !event.target.closest('#search-scan-modal')) { goFocus(document.getElementById('search-scan-close')); return; }
     if (detailModalOpen && event.target.id !== 'detail-tab-episodes') detailFocusPending = false;
     if (accountKeypadOpen()) {
       if (!event.target.closest('#account-keypad-modal')) { goFocus(accountKeypadFocus()); return; }
@@ -3839,7 +4144,7 @@
     if (zone === 'sidebar') clearTimeout(controlsTimer);
     else if (isPlaybackPage() && ['controls', 'timeline', 'actions', 'channels'].indexOf(zone) >= 0) revealControls();
     else if (isPlaybackPage() && zone === 'feed') scheduleControlsHide();
-    if (!searchScanOpen && !accountKeypadOpen() && !detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zone !== 'sidebar') {
+    if (!scanModalOpen() && !accountKeypadOpen() && !detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zone !== 'sidebar') {
       lastContentFocus = event.target;
       lastPageFocus[pageMode()] = event.target;
     }
@@ -3864,6 +4169,8 @@
         beginBrowse();
       } else if (item.dataset.action === 'favorite' || item.dataset.action === 'like') {
         toggleSaved(featuredItem, item.dataset.action, item);
+      } else if (item.dataset.action === 'follow') {
+        toggleFollow(featuredItem, item);
       } else if (item.dataset.action === 'library-discover') {
         activatePage(document.querySelector('.side-item[data-page="search"]'));
       } else if (item.dataset.action === 'comment') openDiscussion(item);
@@ -3879,6 +4186,7 @@
         if (featuredItem) openDetail(featuredItem);
         else showNotice('当前还没有可打开的短剧。');
       }
+      else if (item.dataset.action === 'danmaku-scan') openDanmakuScan();
       else if (['speed', 'volume', 'quality', 'send-danmaku'].indexOf(item.dataset.action) >= 0) openPlayerOptions(item.dataset.action, item);
       else if (item.dataset.action === 'diagnostics') openPlayerOptions('diagnostics', item);
       else if (item.dataset.action === 'fullscreen') toggleCinema();
@@ -3930,6 +4238,12 @@
   document.getElementById('detail-close').addEventListener('click', closeDetail);
   document.getElementById('detail-tab-episodes').addEventListener('click', function () { selectDetailTab('episodes'); });
   document.getElementById('detail-tab-series').addEventListener('click', function () { selectDetailTab('series'); });
+  document.getElementById('detail-tab-reviews').addEventListener('click', function () { selectDetailTab('reviews'); });
+  document.getElementById('detail-tab-related').addEventListener('click', function () { selectDetailTab('related'); });
+  document.getElementById('rank-filter-open').addEventListener('click', openRankFilter);
+  document.getElementById('rank-filter-close').addEventListener('click', function () { closeRankFilter(true); });
+  document.getElementById('rank-filter-cancel').addEventListener('click', function () { closeRankFilter(true); });
+  document.getElementById('rank-filter-apply').addEventListener('click', applyRankFilter);
   document.getElementById('detail-series-retry').addEventListener('click', loadSeriesSeasons);
   document.getElementById('account-send-code').addEventListener('click', accountSendCode);
   document.getElementById('account-login').addEventListener('click', accountLogin);
@@ -3958,6 +4272,10 @@
   document.querySelectorAll('.history-filter').forEach(function (button) {
     button.addEventListener('click', function () { selectHistoryFilter(button.dataset.historyFilter); });
   });
+  document.querySelectorAll('.library-type-filter').forEach(function (button) {
+    button.addEventListener('click', function () { selectLibraryType(button.dataset.libraryType); });
+  });
+  document.getElementById('follow-refresh').addEventListener('click', function () { followPager.reset({}); });
   document.getElementById('library-manage').addEventListener('click', function () {
     if (libraryError) { libraryReady = loadLibrary(); return; }
     libraryEditing = !libraryEditing;
@@ -4171,8 +4489,25 @@
       goFocus(firstSearchAction()); submitSearch();
     }
   });
-  document.getElementById('search-scan-close').addEventListener('click', function () { closeSearchScan(true); });
-  document.getElementById('search-scan-refresh').addEventListener('click', function () { if (searchScanOpen) searchNumberScan.start('search'); });
+  danmakuNumberScan = window.HongguoNumberInput.create({
+    request: requestScanInput,
+    render: function (state) {
+      var image = document.getElementById('search-scan-qr');
+      image.classList.toggle('is-hidden', state.state !== 'waiting');
+      if (state.state === 'waiting') image.src = state.qr; else image.removeAttribute('src');
+      document.getElementById('search-scan-status').textContent = state.state === 'creating' ? '正在生成二维码…' : state.state === 'waiting' ? '扫码后输入弹幕，回填电视后确认发送' : state.state === 'closed' ? '' : state.message;
+    },
+    complete: function (kind, value) {
+      if (kind !== 'danmaku' || !danmakuScanOpen || !playerOptionsOpen || applicationInBackground) return;
+      closeDanmakuScan(false);
+      var input = document.getElementById('player-compose-input');
+      input.value = value;
+      if (composeSession) storeDraft(danmakuDrafts, draftKey(composeSession), value);
+      goFocus(input);
+    }
+  });
+  document.getElementById('search-scan-close').addEventListener('click', function () { if (danmakuScanOpen) closeDanmakuScan(true); else closeSearchScan(true); });
+  document.getElementById('search-scan-refresh').addEventListener('click', function () { if (danmakuScanOpen) danmakuNumberScan.start('danmaku'); else if (searchScanOpen) searchNumberScan.start('search'); });
   accountNumberScan = window.HongguoNumberInput.create({
     request: requestScanInput,
     render: function (state) {

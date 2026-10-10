@@ -8,6 +8,7 @@
   function validValue(kind, value) {
     if (typeof value !== 'string') return false;
     if (kind === 'search') return value.trim().length > 0 && value.length <= 100 && !/[\x00-\x1f\x7f-\x9f]/.test(value);
+    if (kind === 'danmaku') return value.trim().length > 0 && value.length <= 100 && !/[\x00-\x1f\x7f-\x9f]/.test(value);
     return kind === 'phone' ? /^1[3-9][0-9]{9}$/.test(value) : kind === 'code' && /^[0-9]{4,8}$/.test(value);
   }
   function create(options) {
