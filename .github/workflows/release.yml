@@ -117,14 +117,6 @@ jobs:
           python3 scripts/generate_update.py --apk "$RUNNER_TEMP/hongguo-release/hongguo-tv-$APP_VERSION.apk" --version "$APP_VERSION" --code "$APP_VERSION_CODE" --min-sdk "$APP_MIN_SDK" --notes "docs/releases/v$APP_VERSION.md" --out "$RUNNER_TEMP/hongguo-release/update.json"
           cd "$RUNNER_TEMP/hongguo-release"
           sha256sum "hongguo-tv-$APP_VERSION.apk" > SHA256SUMS.txt
-      - name: Upload APK artifact
-        # GitHub's temporary artifact quota can lag after cleanup. The signed
-        # GitHub Release below remains the source of truth for distribution.
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: hongguo-tv-release-apk
-          path: ${{ runner.temp }}/hongguo-release/*
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
