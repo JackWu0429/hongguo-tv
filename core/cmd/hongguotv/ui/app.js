@@ -2610,22 +2610,28 @@
     ++confirmationGeneration; var generation = confirmationGeneration;
     confirmReturnFocus = document.activeElement; confirmOpen = true;
     document.getElementById('confirm-title').textContent = '预约下一季？';
-    document.getElementById('confirm-copy').textContent = '本季已播放完，' + item.title + '尚未上线。预约后可在“我的预约”查看。';
+    document.getElementById('confirm-copy').textContent = '本季已播放完，' + item.title + '尚未上线。确认后会在当前窗口提示预约结果。';
     var accept = document.getElementById('confirm-accept');
     accept.textContent = '预约' + label; accept.classList.add('confirm-reserve'); accept.classList.remove('confirm-danger');
     document.getElementById('confirm-cancel').textContent = '稍后';
     document.getElementById('confirm-modal').classList.remove('is-hidden');
     document.getElementById('confirm-modal').setAttribute('aria-hidden', 'false');
     confirmOperation = function () {
-      if (epoch !== accountEpoch || activePlayback !== playback || !isPlaybackPage()) return Promise.resolve(true);
+      if (epoch !== accountEpoch || activePlayback !== playback || !isPlaybackPage()) {
+        document.getElementById('confirm-copy').textContent = '预约未确认成功：播放状态已变化，请重新打开预约提示后重试。';
+        return Promise.resolve(false);
+      }
       return fetchData('/api/v1/reservation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: item.reservation_id, reserved: true }) }).then(function () {
-        if (epoch !== accountEpoch) return true;
+        if (epoch !== accountEpoch) {
+          document.getElementById('confirm-copy').textContent = '预约未确认成功：账号状态已变化，请重新打开预约提示后重试。';
+          return false;
+        }
         item.reserved = true; reservationPager.loaded = false; calendarPager.loaded = false;
         // Refetch exact counts next time; other pages may have changed remotely.
         reservationCounts.upcoming = null; updateReservationCounts({});
         updateSeasonReservation(item.reservation_id, true);
         updateSeriesRows();
-        showNotice('已预约' + label + '，上线后可在“我的预约”查看');
+        showNotice('已预约' + label);
         return true;
       }).catch(function (error) {
         if (epoch === accountEpoch && confirmOpen && generation === confirmationGeneration) document.getElementById('confirm-copy').textContent = '预约未确认成功：' + error.message + '。可以重试，或选择稍后。';
@@ -3503,7 +3509,7 @@
           row.remove(); if (focused) goFocus(next || firstVisible('.reservation-tab.is-active'));
           if (!reservationPager.items.length) renderPublications([], false, true);
         }
-        showNotice(reserve ? '已预约，上线后可在预约中查看' : '已取消预约');
+        showNotice(reserve ? '已预约' : '已取消预约');
       }).catch(function (error) { if (epoch === accountEpoch) showNotice(error.message); })
       .then(function () {
         if (epoch !== accountEpoch) return;
@@ -3956,7 +3962,7 @@
           var button = row.querySelector('.publication-action'); if (button) button.textContent = reserved ? '取消预约' : '预约';
         }
       });
-      seriesMessage(reserved ? '预约成功，上线后可在“预约”查看。' : '已取消预约。');
+      seriesMessage(reserved ? '预约成功。' : '已取消预约。');
     }).catch(function (error) {
       if (epoch === accountEpoch && generation === seriesGeneration && detailModalOpen && error.name !== 'AbortError') seriesMessage('预约未确认成功：' + error.message);
     }).then(function () {
