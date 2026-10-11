@@ -95,9 +95,10 @@
           <strong>最近搜索</strong><div id="search-history-items" class="search-history-items"></div>
           <button class="search-history-action search-history-clear" data-action="search-history-clear" data-focus="search-history-clear">清空</button>
         </div>
-        <div class="filter-panel" id="filter-panel" data-focus-zone="searchFilters">
+        <div class="filter-panel is-collapsed" id="filter-panel" data-focus-zone="searchFilters">
+          <div class="filter-panel-heading"><div class="filter-panel-summary"><span>筛选：</span><strong id="filter-state">全部短剧</strong></div><button class="filter-toggle" id="filter-toggle" data-action="toggle-search-filters" data-focus="filter-toggle" aria-expanded="false">展开筛选</button></div>
           <div id="filter-rows"><div class="filter-status">正在读取筛选条件…</div></div>
-          <div class="filter-row filter-row-note"><span>左右选择，上下切换筛选项</span><span id="filter-state">全部</span></div>
+          <div class="filter-row filter-row-note"><span>左右选择，上下切换筛选项</span></div>
         </div>
         <div class="search-result-head"><strong id="search-result-title">全部短剧</strong><span id="search-result-count"></span></div>
         <div class="search-results" id="search-results" data-focus-zone="searchResults" aria-live="polite"></div>
@@ -113,14 +114,16 @@
           <nav class="rank-subnav" id="rank-subnav" data-focus-zone="rankSubnav" aria-label="榜单类型"></nav>
           <div class="rank-main">
             <div class="rank-list-heading"><strong id="rank-list-title">热播榜</strong><span id="rank-list-update">红果热播榜</span></div>
-            <div id="rank-panels" class="rank-panels" data-focus-zone="rankPanels"></div>
+            <div class="rank-filter-panel is-collapsed" id="rank-filter-panel">
+              <div class="rank-filter-heading"><span>筛选：<strong id="rank-filter-state">全部 · 热播榜</strong></span><button class="rank-filter-toggle" id="rank-filter-toggle" data-action="toggle-rank-filters" data-focus="rank-filter-toggle" aria-expanded="false">展开筛选</button></div>
+              <div id="rank-panels" class="rank-panels" data-focus-zone="rankPanels"></div>
+            </div>
             <div class="rank-list" id="rank-list" data-focus-zone="rankItems" aria-live="polite"></div>
             <div id="rank-pagination" class="list-status" role="status"></div>
           </div>
         </div>
       </section>
       <section class="rank-filter-modal is-hidden" id="rank-filter-modal" aria-hidden="true"><div class="rank-filter-dialog" role="dialog" aria-modal="true" aria-labelledby="rank-filter-title"><div class="rank-filter-header"><h2 id="rank-filter-title">排行榜筛选</h2><button class="rank-filter-close" id="rank-filter-close" data-focus="rank-filter-close">关闭</button></div><div id="rank-filter-options" class="rank-filter-options"></div><div class="rank-filter-actions"><button class="rank-filter-close rank-filter-cancel" id="rank-filter-cancel" data-focus="rank-filter-cancel">取消</button><button class="rank-filter-apply" id="rank-filter-apply" data-focus="rank-filter-apply">应用筛选</button></div></div></section>
-
       <section class="new-page page-workspace is-hidden" id="new-page" aria-label="新剧">
         <div class="new-heading-row">
           <h1>新剧</h1>

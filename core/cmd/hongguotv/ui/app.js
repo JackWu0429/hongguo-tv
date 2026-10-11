@@ -16,10 +16,11 @@
     searchActions: '.search-action',
     searchHistory: '.search-history-action',
     searchScan: '.search-scan-action',
-    searchFilters: '.search-filter',
+    searchFilters: '.search-filter, .filter-toggle',
     searchResults: '.search-result-card',
     listRetry: '.list-retry',
     rankPanels: '.rank-panel',
+    rankFilters: '.rank-filter-toggle',
     discussion: '.discussion-item, .discussion-reply, .discussion-action, .discussion-close, #discussion-input',
     reservationItems: '.reservation-row',
     publicationActions: '.publication-action',
@@ -42,6 +43,7 @@
     accountActions: '.account-action',
     appUpdates: '.app-update-action',
     support: '.support-card, .support-close',
+    rankModal: '.rank-filter-option, .rank-filter-close, .rank-filter-apply',
     confirmation: '.confirm-button',
     playerOptions: '.player-option, #player-compose-input',
     modalActions: '.modal-action',
@@ -50,7 +52,6 @@
     seriesRows: '.series-row'
     ,followItems: '.follow-card'
     ,libraryTypeFilters: '.library-type-filter'
-    ,rankModal: '.rank-filter-option, .rank-filter-close, .rank-filter-apply'
   };
   var status = document.getElementById('core-status');
   var notice = document.getElementById('action-notice');
@@ -132,6 +133,7 @@
 
   var filterRows = [];
   var searchPanelPending = false;
+  var searchFiltersExpanded = false;
   var searchFilters = { genre: '', sort: 'hot_score' };
   var searchKind = 'browse';
   var searchItems = [];
@@ -662,10 +664,12 @@
     if (element.classList.contains('control-button')) return 'controls';
     if (element.id === 'search-input') return 'searchInput';
     if (element.classList.contains('search-action')) return 'searchActions';
+    if (element.classList.contains('filter-toggle')) return 'searchFilters';
     if (element.classList.contains('search-filter')) return 'searchFilters';
     if (element.classList.contains('search-result-card')) return 'searchResults';
     if (element.classList.contains('list-retry')) return 'listRetry';
     if (element.classList.contains('rank-panel')) return 'rankPanels';
+    if (element.classList.contains('rank-filter-toggle')) return 'rankFilters';
     if (element.classList.contains('reservation-row')) return 'reservationItems';
     if (element.classList.contains('publication-action')) return 'publicationActions';
     if (element.classList.contains('rank-tab')) return 'rankTabs';
@@ -755,7 +759,9 @@
   }
 
   function firstSearchFilter() {
-    return firstVisible('.search-filter');
+    var panel = document.getElementById('filter-panel');
+    if (!panel || panel.classList.contains('is-hidden')) return null;
+    return panel.classList.contains('is-collapsed') ? firstVisible('#filter-toggle') : firstVisible('.search-filter');
   }
 
   function firstSearchAction() {
@@ -768,6 +774,10 @@
 
   function firstRankTab() { return firstVisible('.rank-tab'); }
   function firstRankSubtab() { return firstVisible('.rank-subtab'); }
+  function firstRankFilterToggle() { return firstVisible('#rank-filter-toggle'); }
+  function firstRankFilterEntry() {
+    return firstVisible('.rank-panel') || firstRankFilterToggle() || firstVisible('.rank-subtab.is-active') || firstRankTab();
+  }
   function firstRankRow() { return firstVisible('.rank-row'); }
   function firstNewTab() { return firstVisible('.new-tab'); }
   function firstNewFilter() { return firstVisible('.new-filter'); }
@@ -782,6 +792,12 @@
   }
 
   function moveSearchFilter(current, direction) {
+    if (current && current.id === 'filter-toggle') {
+      if (direction === 'up') return firstSearchAction() || searchInput;
+      if (direction === 'down') return document.getElementById('filter-panel').classList.contains('is-collapsed') ? firstSearchResult() : firstVisible('.search-filter');
+      if (direction === 'left') return activeSidebar();
+      return null;
+    }
     var row = current && current.closest ? current.closest('.filter-row') : null;
     if (!row) return null;
     var items = focusables('.filter-row[data-filter-group="' + row.dataset.filterGroup + '"] .search-filter');
@@ -795,7 +811,7 @@
     document.querySelectorAll('.filter-row[data-filter-group]').forEach(function (node) { rows.push(node); });
     var rowIndex = rows.indexOf(row);
     var targetRowIndex = rowIndex + (direction === 'up' ? -1 : 1);
-    if (targetRowIndex < 0) return firstVisible('.search-history-action') || firstSearchAction() || searchInput;
+    if (targetRowIndex < 0) return firstVisible('#filter-toggle') || firstVisible('.search-history-action') || firstSearchAction() || searchInput;
     if (targetRowIndex >= rows.length) return firstSearchResult() || firstVisible('.search-more');
     var targetItems = focusables('.filter-row[data-filter-group="' + rows[targetRowIndex].dataset.filterGroup + '"] .search-filter');
     if (!targetItems.length) return null;
@@ -1013,8 +1029,8 @@
       var target = moveGrid('.rank-panel', current, direction);
       if (target) return target;
       if (direction === 'down') return firstRankRow();
-      if (direction === 'up') return firstVisible('.rank-tab.is-active');
-      if (direction === 'left') return firstVisible('.rank-subtab.is-active');
+      if (direction === 'up') return firstRankFilterToggle() || firstVisible('.rank-subtab.is-active') || firstVisible('.rank-tab.is-active');
+      if (direction === 'left') return firstRankFilterToggle() || firstVisible('.rank-subtab.is-active');
       return null;
     }
     if (zone === 'publicationActions') {
@@ -1115,15 +1131,22 @@
       if (direction === 'down') return firstVisible('.rank-subtab.is-active') || firstRankSubtab() || firstRankRow();
       return null;
     }
+    if (zone === 'rankFilters') {
+      if (direction === 'up') return firstVisible('.rank-subtab.is-active') || firstVisible('.rank-tab.is-active') || activeSidebar();
+      if (direction === 'down') return firstVisible('.rank-panel') || firstRankRow();
+      if (direction === 'right') return firstVisible('.rank-panel') || firstRankRow();
+      if (direction === 'left') return firstVisible('.rank-subtab.is-active') || activeSidebar();
+      return null;
+    }
     if (zone === 'rankSubnav') {
       if (direction === 'up') return moveWithinZone(zone, current, direction) || firstVisible('.rank-tab.is-active');
       if (direction === 'down') return moveWithinZone(zone, current, direction);
       if (direction === 'left') return activeSidebar();
-      if (direction === 'right') return firstVisible('.rank-panel.is-active') || firstVisible('.rank-panel') || firstRankRow();
+      if (direction === 'right') return firstRankFilterToggle() || firstVisible('.rank-panel.is-active') || firstVisible('.rank-panel') || firstRankRow();
       return moveWithinZone(zone, current, direction);
     }
     if (zone === 'rankItems') {
-      if (direction === 'up') return moveWithinZone(zone, current, direction) || firstVisible('.rank-panel.is-active') || firstVisible('.rank-panel') || firstVisible('.rank-tab.is-active');
+      if (direction === 'up') return moveWithinZone(zone, current, direction) || firstRankFilterEntry();
       if (direction === 'down') return moveWithinZone(zone, current, direction) || listBoundary(rankPager, current, direction);
       if (direction === 'left') return firstVisible('.rank-subtab.is-active');
       if (direction === 'right') return current.querySelector('.rank-row-play');
@@ -1134,7 +1157,7 @@
       if (direction === 'left') return row;
       if (direction === 'up' && current.classList.contains('rank-row-detail')) return row.querySelector('.rank-row-play');
       if (direction === 'down' && current.classList.contains('rank-row-play')) return row.querySelector('.rank-row-detail');
-      if (direction === 'up' || direction === 'down') return moveGrid('.rank-row', row, direction) || (direction === 'down' ? listBoundary(rankPager, row, direction, current) : firstVisible('.rank-panel.is-active') || firstVisible('.rank-tab.is-active'));
+      if (direction === 'up' || direction === 'down') return moveGrid('.rank-row', row, direction) || (direction === 'down' ? listBoundary(rankPager, row, direction, current) : firstRankFilterEntry());
       return null;
     }
     if (zone === 'newTabs') {
@@ -1750,8 +1773,7 @@
     }).sort(function (a, b) { return a - b; });
     if (!episodes.length) return '已点赞';
     var shown = episodes.length > 4 ? episodes.slice(0, 3).join('、') + '等' + episodes.length + '集' : episodes.join('、') + '集';
-    var total = drama && drama.episode_count ? '/共' + drama.episode_count + '集' : '';
-    return '赞了第' + shown + total;
+    return '赞了第' + shown;
   }
   function basicDrama(item) {
     var result = {};
@@ -3070,8 +3092,10 @@
 
   function lastSearchFilter() {
     var rows = document.querySelectorAll('.filter-row[data-filter-group]');
+    var panel = document.getElementById('filter-panel');
+    if (panel && panel.classList.contains('is-collapsed')) return firstVisible('#filter-toggle');
     var row = rows[rows.length - 1];
-    return row && !document.getElementById('filter-panel').classList.contains('is-hidden') ? row.querySelector('.is-active') || row.querySelector('button') : null;
+    return row && panel && !panel.classList.contains('is-hidden') ? row.querySelector('.is-active') || row.querySelector('button') : null;
   }
 
   function filterSummary() {
@@ -3081,6 +3105,18 @@
       row.options.forEach(function (option) { if (value === option.id) labels.push(option.label); });
     });
     return labels.join(' · ') || '全部短剧';
+  }
+
+  function toggleSearchFilters(focusAfter) {
+    var panel = document.getElementById('filter-panel');
+    var toggle = document.getElementById('filter-toggle');
+    if (!panel || !toggle || panel.classList.contains('is-hidden')) return;
+    searchFiltersExpanded = !panel.classList.contains('is-expanded');
+    panel.classList.toggle('is-expanded', searchFiltersExpanded);
+    panel.classList.toggle('is-collapsed', !searchFiltersExpanded);
+    toggle.textContent = searchFiltersExpanded ? '收起筛选' : '展开筛选';
+    toggle.setAttribute('aria-expanded', String(searchFiltersExpanded));
+    if (focusAfter !== false) goFocus(searchFiltersExpanded ? firstVisible('.search-filter') || toggle : toggle);
   }
 
   function selectSearchFilter(button) {
@@ -3171,6 +3207,50 @@
     return active ? active.textContent : '热播榜';
   }
 
+  function rankFilterSummary() {
+    var active = rankOptions.filter(function (option) { return option.id === rankSelection.rank; })[0];
+    var sub = active && (active.children || []).filter(function (option) { return option.id === rankSelection.rank_sub; })[0];
+    var labels = [];
+    if (active && active.label && active.label !== '全部') labels.push(active.label);
+    if (sub && sub.label) labels.push(sub.label);
+    if (sub && rankSelection.rank_panel) {
+      (sub.panels || []).some(function (group) {
+        var option = (group.options || []).filter(function (item) { return item.id === rankSelection.rank_panel; })[0];
+        if (option) { labels.push(option.label); return true; }
+        return false;
+      });
+    }
+    return labels.join(' · ') || '全部榜单';
+  }
+
+  function rankFiltersCanCollapse(sub) {
+    var label = sub && String(sub.label || '').trim();
+    return label === '推荐榜' || label === '热播榜';
+  }
+
+  function updateRankFilterPanel(sub) {
+    var panel = document.getElementById('rank-filter-panel');
+    var heading = panel && panel.querySelector('.rank-filter-heading');
+    if (!panel) return false;
+    var collapsible = rankFiltersCanCollapse(sub);
+    panel.classList.toggle('is-collapsible', collapsible);
+    panel.classList.toggle('is-direct', !collapsible);
+    if (heading) heading.classList.toggle('is-hidden', !collapsible);
+    return collapsible;
+  }
+
+  function toggleRankFilters(focusAfter) {
+    var panel = document.getElementById('rank-filter-panel');
+    var toggle = document.getElementById('rank-filter-toggle');
+    if (!panel || !toggle) return;
+    var expanded = !panel.classList.contains('is-expanded');
+    panel.classList.toggle('is-expanded', expanded);
+    panel.classList.toggle('is-collapsed', !expanded);
+    toggle.textContent = expanded ? '收起筛选' : '展开筛选';
+    toggle.setAttribute('aria-expanded', String(expanded));
+    if (focusAfter !== false) goFocus(expanded ? firstVisible('.rank-panel.is-active') || firstVisible('.rank-panel') || toggle : toggle);
+  }
+
   function renderMessage(container, className, message) {
     container.innerHTML = '';
     var empty = document.createElement('div');
@@ -3193,6 +3273,7 @@
     var children = active.children || [];
     var sub = children.filter(function (x) { return x.id === rankSelection.rank_sub; })[0] || children.filter(function (x) { return x.selected; })[0] || children[0];
     if (sub) rankSelection.rank_sub = sub.id;
+    var collapsibleFilters = updateRankFilterPanel(sub);
     function button(option, cls, selected, target, handler) {
       var node = document.createElement('button'); node.className = cls + (selected ? ' is-active' : '');
       node.dataset.focus = cls + '-' + (option.id || 'all'); node.textContent = option.label;
@@ -3217,9 +3298,13 @@
       group.options.forEach(function (option) { button(option, 'rank-panel', option.id === rankSelection.rank_panel, options, function () { rankSelection.rank_panel = option.id; renderRankSelectors(rankOptions); loadRank(); }); });
       panels.appendChild(line);
     });
-    if (['rankTabs', 'rankSubnav', 'rankPanels'].indexOf(priorZone) >= 0) {
+    var filterState = document.getElementById('rank-filter-state');
+    if (filterState) filterState.textContent = rankFilterSummary();
+    var rankFilterToggle = document.getElementById('rank-filter-toggle');
+    if (rankFilterToggle) rankFilterToggle.tabIndex = collapsibleFilters ? 0 : -1;
+    if (['rankTabs', 'rankFilters', 'rankSubnav', 'rankPanels'].indexOf(priorZone) >= 0) {
       var match = Array.prototype.filter.call(document.querySelectorAll('[data-focus]'), function (node) { return node.dataset.focus === key; })[0];
-      goFocus(match || firstVisible('.rank-tab.is-active'));
+      goFocus(match || firstVisible('.rank-tab.is-active') || firstRankFilterToggle());
     }
   }
 
@@ -4177,6 +4262,10 @@
         confirmClearSearchHistory();
       } else if (item.dataset.action === 'search-browse') {
         beginBrowse();
+      } else if (item.dataset.action === 'toggle-search-filters') {
+        toggleSearchFilters();
+      } else if (item.dataset.action === 'toggle-rank-filters') {
+        toggleRankFilters();
       } else if (item.dataset.action === 'favorite' || item.dataset.action === 'like') {
         toggleSaved(featuredItem, item.dataset.action, item);
       } else if (item.dataset.action === 'follow') {

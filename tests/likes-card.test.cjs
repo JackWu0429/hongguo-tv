@@ -11,7 +11,7 @@ const functions = source.slice(start, end);
 test('likes cards summarize the exact liked episodes', () => {
   const context = vm.createContext({});
   vm.runInContext(functions, context);
-  assert.equal(context.likedEpisodeSummary({liked_videos: [{episode: 18}, {episode: 18}, {episode: 22}]}, {episode_count: 29}), '赞了第18、22集/共29集');
-  assert.equal(context.likedEpisodeSummary({liked_videos: [{episode: 25}, {episode: 2}, {episode: 18}, {episode: 7}, {episode: 12}]}, {episode_count: 29}), '赞了第2、7、12等5集/共29集');
+  assert.equal(context.likedEpisodeSummary({liked_videos: [{episode: 18}, {episode: 18}, {episode: 22}]}, {episode_count: 29}), '赞了第18、22集');
+  assert.equal(context.likedEpisodeSummary({liked_videos: [{episode: 25}, {episode: 2}, {episode: 18}, {episode: 7}, {episode: 12}]}, {episode_count: 29}), '赞了第2、7、12等5集');
   assert.equal(context.likedEpisodeSummary({liked_videos: []}, {episode_count: 29}), '已点赞');
 });
