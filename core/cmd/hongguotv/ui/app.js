@@ -110,6 +110,11 @@
   var seasonCatalogCache = {};
   var seasonCatalogKeys = [];
   var seasonCatalogRequests = [];
+  // Reservation writes can become visible in the upstream list a little later
+  // than the mutation response. Keep a short, account-scoped confirmation so
+  // the series selector and reservation page do not contradict each other.
+  var reservationOverrides = Object.create(null);
+  var reservationOverrideTTL = 5 * 60 * 1000;
   var seasonControlID = '';
   var seasonControlState = '';
   var seasonControlGeneration = 0;
@@ -325,7 +330,7 @@
   var rankPager = createListPager('/api/v1/lists/rank', rankList, '.rank-row', 'rank-pagination', renderRank, function (data, pager) { if (!pager.loaded) renderRankSelectors(data.ranks); });
   var newPager = createListPager('/api/v1/lists/new', newGrid, '.new-card', 'new-pagination', renderNew);
   var calendarPager = createListPager('/api/v1/lists/calendar', calendarList, '.calendar-row', 'calendar-pagination', function (items, append) { renderPublications(items, append, false); }, function (data) { renderCalendarDays(data.calendar); });
-  var reservationPager = createListPager('/api/v1/lists/reservations', document.getElementById('reservation-list'), '.reservation-row', 'reservation-pagination', function (items, append) { renderPublications(items, append, true); }, updateReservationCounts);
+  var reservationPager = createListPager('/api/v1/lists/reservations', document.getElementById('reservation-list'), '.reservation-row', 'reservation-pagination', function (items, append) { renderPublications(items, append, true); }, reservationMetadata);
   var libraryPager = createListPager('', document.getElementById('library-grid'), '.library-card', 'library-pagination', function () { renderLibrary(true); });
   var feedPager = createListPager('/api/v1/lists/recommend', null, '.hero-feed-focus', '', function (items, append) {
     if (!append) renderFeed(items);
@@ -2106,6 +2111,7 @@
       cancelPlaybackPreparation();
       if (interruptedPlayback && pageMode() === 'player') { document.getElementById('hero-video').pause(); setPlayerStatus('账号已切换，请重试播放', true); }
       resetSeasonCatalog();
+      reservationOverrides = Object.create(null);
       reservationCounts = { online: null, upcoming: null }; updateReservationCounts({});
       resetSeriesPanel();
       if (detailModalOpen && detailTab === 'series') { loadSeriesSeasons(); goFocus(document.getElementById('detail-tab-series')); }
@@ -2604,8 +2610,12 @@
 
   function offerNextSeasonReservation(playback, item, epoch) {
     if (!canContinuePlayback(playback) || confirmOpen) return;
+    // A freshly confirmed reservation may not be reflected in the successor
+    // object yet. Reapply the short-lived account-scoped state before deciding
+    // whether a prompt is needed.
+    applyReservationOverride(item);
     var label = item.label || '第' + item.season_index + '季';
-    if (item.reserved) { showNotice('本季已播放完，' + label + '已预约，等待上线'); return; }
+    if (item.reserved) { showNotice('您已预约' + label + '，敬请期待'); return; }
     if (!accountData || !accountData.logged_in) { showNotice('本季已播放完，' + label + '待上线。登录后可在“选集 → 系列剧”预约'); return; }
     ++confirmationGeneration; var generation = confirmationGeneration;
     confirmReturnFocus = document.activeElement; confirmOpen = true;
@@ -2626,9 +2636,12 @@
           document.getElementById('confirm-copy').textContent = '预约未确认成功：账号状态已变化，请重新打开预约提示后重试。';
           return false;
         }
-        item.reserved = true; reservationPager.loaded = false; calendarPager.loaded = false;
-        // Refetch exact counts next time; other pages may have changed remotely.
-        reservationCounts.upcoming = null; updateReservationCounts({});
+        item.reserved = true; rememberReservationOverride(item, true); reservationPager.loaded = false; calendarPager.loaded = false;
+        // Keep a known count stable while the upstream subscription list
+        // catches up. If no count is known, the next response adds the one
+        // still-pending local confirmation instead of showing a false drop.
+        if (reservationCounts.upcoming !== null && item.upcoming) reservationCounts.upcoming += 1;
+        updateReservationCounts({});
         updateSeasonReservation(item.reservation_id, true);
         updateSeriesRows();
         showNotice('已预约' + label);
@@ -3455,9 +3468,58 @@
       return card;
   }
 
+  function rememberReservationOverride(item, reserved) {
+    var id = item && item.reservation_id;
+    if (!id) return;
+    if (!reserved) { delete reservationOverrides[id]; return; }
+    reservationOverrides[id] = {
+      item: Object.assign({}, item, { upcoming: true, reserved: true }),
+      reserved: true,
+      seen: false,
+      expires: Date.now() + reservationOverrideTTL
+    };
+  }
+  function applyReservationOverride(item) {
+    var id = item && item.reservation_id;
+    var local = id && reservationOverrides[id];
+    if (!local) return item;
+    if (local.expires <= Date.now()) { delete reservationOverrides[id]; return item; }
+    if (local.reserved) item.reserved = true;
+    return item;
+  }
+  function activeReservationOverrideCount() {
+    var count = 0; var now = Date.now();
+    Object.keys(reservationOverrides).forEach(function (id) {
+      var local = reservationOverrides[id];
+      if (!local || local.expires <= now) { delete reservationOverrides[id]; return; }
+      if (!local.seen && local.reserved) count++;
+    });
+    return count;
+  }
+  function resetReservationOverrideVisibility() {
+    Object.keys(reservationOverrides).forEach(function (id) {
+      var local = reservationOverrides[id];
+      if (local && local.expires > Date.now()) local.seen = false;
+      else delete reservationOverrides[id];
+    });
+  }
+  function reservationMetadata(data, pager) {
+    (data.items || []).forEach(function (item) {
+      var local = item && item.reservation_id && reservationOverrides[item.reservation_id];
+      if (local && local.expires > Date.now()) local.seen = true;
+      applyReservationOverride(item);
+    });
+    updateReservationCounts(data, pager);
+  }
   function updateReservationCounts(data) {
+    var pending = activeReservationOverrideCount() > 0;
     if (typeof data.online_total_count === 'number') reservationCounts.online = data.online_total_count;
-    if (typeof data.offline_total_count === 'number') reservationCounts.upcoming = data.offline_total_count;
+    if (typeof data.offline_total_count === 'number') {
+      var upcoming = data.offline_total_count;
+      if (pending && reservationCounts.upcoming === null) upcoming += pending;
+      if (pending && reservationCounts.upcoming !== null) upcoming = Math.max(upcoming, reservationCounts.upcoming);
+      reservationCounts.upcoming = upcoming;
+    }
     document.querySelectorAll('.reservation-tab').forEach(function (tab) {
       var mode = tab.dataset.reservationMode; var count = reservationCounts[mode];
       tab.textContent = (mode === 'online' ? '已上线' : '待上线') + (count === null ? '' : ' ' + count);
@@ -3499,6 +3561,7 @@
       .then(function () {
         if (epoch !== accountEpoch) return;
         item.reserved = reserve;
+        rememberReservationOverride(item, reserve);
         if (reservationCounts.upcoming !== null && item.upcoming) { reservationCounts.upcoming = Math.max(0, reservationCounts.upcoming + (reserve ? 1 : -1)); updateReservationCounts({}); }
         document.querySelectorAll('.publication-row').forEach(function (row) { if (row.__item && row.__item.reservation_id === item.reservation_id) { row.__item.reserved = reserve; var b = row.querySelector('.publication-action'); if (b) b.textContent = reserve ? '取消预约' : '预约'; } });
         if (!reserve && originPage === 'reservations' && pageMode() === 'reservations' && reservationMode === 'upcoming' && document.contains(button)) {
@@ -3517,16 +3580,39 @@
         if (hadFocus && pageMode() === originPage && document.contains(button) && document.activeElement === document.body) goFocus(button);
       });
   }
+  function prepareReservationItems(items, append, container) {
+    var result = (items || []).map(function (item) { return applyReservationOverride(item); });
+    var existing = {};
+    if (append && container) container.querySelectorAll('[data-reservation-id]').forEach(function (node) {
+      if (node.dataset.reservationId) existing[node.dataset.reservationId] = true;
+    });
+    result = result.filter(function (item) {
+      var id = item && item.reservation_id;
+      if (!id || !existing[id]) return true;
+      return false;
+    });
+    if (!append) {
+      var present = {};
+      result.forEach(function (item) { if (item && item.reservation_id) present[item.reservation_id] = true; });
+      Object.keys(reservationOverrides).forEach(function (id) {
+        var local = reservationOverrides[id];
+        if (!local || local.expires <= Date.now()) { delete reservationOverrides[id]; return; }
+        if (local.reserved && !local.seen && !present[id]) result.push(Object.assign({}, local.item));
+      });
+    }
+    return result;
+  }
   function renderPublications(items, append, reservations) {
     var container = reservations ? document.getElementById('reservation-list') : calendarList;
     if (!append) container.innerHTML = '';
+    if (reservations && reservationMode === 'upcoming') items = prepareReservationItems(items, append, container);
     if (!items.length && !container.children.length) renderMessage(container, 'calendar-empty', reservations ? '暂无' + (reservationMode === 'online' ? '已上线' : '待上线') + '的预约' : '这一天暂无上新安排');
     items.forEach(function (item) {
       if (reservations && reservationMode === 'online') {
-        var card = publicationCard(item, 'reservation-'); card.classList.add('reservation-row'); card.__item = item;
+        var card = publicationCard(item, 'reservation-'); card.classList.add('reservation-row'); card.dataset.reservationId = item.reservation_id || ''; card.__item = item;
         container.appendChild(card); return;
       }
-      var row = document.createElement('div'); row.className = 'publication-row ' + (reservations ? 'reservation-row' : 'calendar-row'); row.tabIndex = 0;
+      var row = document.createElement('div'); row.className = 'publication-row ' + (reservations ? 'reservation-row' : 'calendar-row'); row.tabIndex = 0; row.dataset.reservationId = item.reservation_id || '';
       row.dataset.focus = (reservations ? 'reservation-' : 'calendar-') + (item.reservation_id || item.series_id); row.__item = item;
       var image = document.createElement('img'); image.loading = 'lazy'; setCover(image, item); row.appendChild(image);
       var copy = document.createElement('div'); copy.className = 'publication-copy';
@@ -3580,6 +3666,7 @@
       var login = document.createElement('button'); login.className = 'publication-action'; login.dataset.focus = 'reservation-login'; login.textContent = '登录红果账号'; login.addEventListener('click', function () { activatePage(document.querySelector('.side-item[data-page="account"]')); });
       empty.appendChild(login); return;
     }
+    resetReservationOverrideVisibility();
     reservationPager.reset({ mode: reservationMode });
   }
 
@@ -3781,7 +3868,7 @@
       var seen = {};
       entry.items = result.items.filter(function (item) {
         if (!item || !/^[1-9][0-9]*$/.test(item.series_id || '') || seen[item.series_id]) return false;
-        seen[item.series_id] = true; return true;
+        seen[item.series_id] = true; applyReservationOverride(item); return true;
       });
       entry.pending = false; entry.expires = Date.now() + 120000;
       entry.items.forEach(function (item) { rememberSeasonCatalog(item.series_id, entry); });
@@ -3953,7 +4040,7 @@
     updateSeriesRows(); seriesMessage('');
     fetchData('/api/v1/reservation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: item.reservation_id, reserved: reserved }), signal: request.signal }).then(function () {
       if (epoch !== accountEpoch || generation !== seriesGeneration || !detailModalOpen) return;
-      item.reserved = reserved; updateSeasonReservation(item.reservation_id, reserved);
+      item.reserved = reserved; rememberReservationOverride(item, reserved); updateSeasonReservation(item.reservation_id, reserved);
       reservationPager.loaded = false; calendarPager.loaded = false;
       if (reservationCounts.upcoming !== null) { reservationCounts.upcoming = Math.max(0, reservationCounts.upcoming + (reserved ? 1 : -1)); updateReservationCounts({}); }
       document.querySelectorAll('.publication-row').forEach(function (row) {

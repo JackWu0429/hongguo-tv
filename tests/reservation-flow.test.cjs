@@ -7,7 +7,35 @@ const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'
 test('reservation page keeps its existing tab behavior; success is reported in the current window', () => {
   assert.equal(source.includes('hongguo-tv-reservation-mode'), false);
   assert.match(source, /showNotice\('已预约' \+ label\)/);
+  assert.match(source, /showNotice\('您已预约' \+ label \+ '，敬请期待'\)/);
   assert.match(source, /seriesMessage\(reserved \? '预约成功。'/);
+});
+
+test('reservation confirmation bridges eventual consistency without becoming permanent', () => {
+  const context = vm.createContext({
+    Date,
+    Object,
+    Array,
+    reservationOverrides: Object.create(null),
+    reservationOverrideTTL: 300000,
+    reservationCounts: { online: null, upcoming: 8 },
+    document: { querySelectorAll() { return []; } }
+  });
+  const start = source.indexOf('  function rememberReservationOverride(');
+  const end = source.indexOf('  function genderParam(', start);
+  vm.runInContext(source.slice(start, end), context);
+  const item = { reservation_id: 'season-2', series_id: 'series-2', title: '待上线剧', upcoming: true };
+  context.rememberReservationOverride(item, true);
+  assert.equal(context.applyReservationOverride({ reservation_id: 'season-2', reserved: false }).reserved, true);
+  assert.deepEqual(context.prepareReservationItems([], false, null)[0].title, '待上线剧');
+  context.updateReservationCounts({ offline_total_count: 7 });
+  assert.equal(context.reservationCounts.upcoming, 8);
+  context.reservationCounts.upcoming = null;
+  context.reservationOverrides['season-2'].seen = false;
+  context.updateReservationCounts({ offline_total_count: 7 });
+  assert.equal(context.reservationCounts.upcoming, 8);
+  context.reservationOverrides['season-2'].expires = Date.now() - 1;
+  assert.equal(context.prepareReservationItems([], false, null).length, 0);
 });
 
 function reservationConfirmationFixture({ fail = false } = {}) {
@@ -42,6 +70,8 @@ function reservationConfirmationFixture({ fail = false } = {}) {
     updateReservationCounts() {},
     updateSeasonReservation() {},
     updateSeriesRows() {},
+    rememberReservationOverride() {},
+    applyReservationOverride(item) { return item; },
     showNotice(message) { calls.push(['notice', message]); },
     goFocus() {},
     fetchData: async (url, options) => {
@@ -63,6 +93,16 @@ test('next-season reservation only reports success after the reservation endpoin
   assert.deepEqual(f.calls[0], ['request', '/api/v1/reservation', { item_id: 'season-2', reserved: true }]);
   assert.equal(f.item.reserved, true);
   assert.deepEqual(f.calls.slice(1), [['notice', '已预约第2季']]);
+});
+
+test('an already reserved next season reports the state without opening a second prompt', () => {
+  const f = reservationConfirmationFixture();
+  f.context.confirmOpen = false;
+  f.context.confirmOperation = null;
+  f.item.reserved = true;
+  f.context.offerNextSeasonReservation(f.playback, f.item, 7);
+  assert.deepEqual(f.calls, [['notice', '您已预约第2季，敬请期待']]);
+  assert.equal(f.context.confirmOperation, null);
 });
 
 test('a failed reservation keeps the season unreserved and leaves a retryable error', async () => {
