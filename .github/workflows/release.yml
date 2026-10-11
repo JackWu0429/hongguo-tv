@@ -118,6 +118,9 @@ jobs:
           cd "$RUNNER_TEMP/hongguo-release"
           sha256sum "hongguo-tv-$APP_VERSION.apk" > SHA256SUMS.txt
       - name: Upload APK artifact
+        # GitHub's temporary artifact quota can lag after cleanup. The signed
+        # GitHub Release below remains the source of truth for distribution.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: hongguo-tv-release-apk
