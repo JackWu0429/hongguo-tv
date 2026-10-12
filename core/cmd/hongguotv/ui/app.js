@@ -1448,6 +1448,21 @@
     diagnosticRequest = null;
   }
   function diagnosticNumber(value) { return typeof value === 'number' && isFinite(value) ? Math.max(0, value) : 0; }
+  function readDiagnosticEnvironment() {
+    var screen = window.screen || {};
+    var width = window.innerWidth, height = window.innerHeight, dpr = window.devicePixelRatio;
+    var userAgent = typeof navigator.userAgent === 'string' ? navigator.userAgent.replace(/[\x00-\x1f\x7f]/g, ' ') : '';
+    function valid(value) { return typeof value === 'number' && isFinite(value) && value > 0; }
+    function dimensions(w, h) { return valid(w) && valid(h) ? w + ' × ' + h : '未取得'; }
+    var pixels = valid(width) && valid(height) && valid(dpr) ? dimensions(Math.round(width * dpr), Math.round(height * dpr)) : '未取得';
+    return { userAgent: userAgent, rows: [
+      { label: '视口尺寸', value: dimensions(width, height) },
+      { label: '屏幕尺寸', value: dimensions(screen.width, screen.height) },
+      { label: 'DPR', value: valid(dpr) ? String(dpr) : '未取得' },
+      { label: '像素估算', value: pixels },
+      { label: 'User Agent', value: userAgent || '未取得', wide: true }
+    ] };
+  }
   function readDiagnosticVideo(video) {
     var api = window.HongguoPlaybackDiagnostics;
     if (api && typeof api.readVideo === 'function') {
@@ -1476,7 +1491,7 @@
       { label: '播放时钟', value: Math.floor(diagnosticNumber(video.position)) + ' 秒 / ' + (video.duration ? Math.floor(diagnosticNumber(video.duration)) + ' 秒' : '未知时长') },
       { label: '播放状态', value: state },
       { label: '诊断状态', value: reason ? '请更新应用后重试' : '已读取' }
-    ], capturedAt: snapshot.capturedAt || '—' };
+    ].concat(snapshot.environmentRows || []), capturedAt: snapshot.capturedAt || '—' };
   }
   function moveDiagnosticFocus(current, direction) {
     var scroll = document.getElementById('player-diagnostics-scroll');
@@ -1511,7 +1526,7 @@
     document.getElementById('player-diagnostics-summary').textContent = report.summary;
     var rows = document.getElementById('player-diagnostics-rows'); rows.innerHTML = '';
     report.rows.forEach(function (item) {
-      var row = document.createElement('div'); row.className = 'diagnostic-row';
+      var row = document.createElement('div'); row.className = 'diagnostic-row' + (item.wide ? ' diagnostic-row-wide' : '');
       var label = document.createElement('span'); label.className = 'diagnostic-label'; label.textContent = item.label;
       var value = document.createElement('span'); value.className = 'diagnostic-value'; value.textContent = item.value;
       row.appendChild(label); row.appendChild(value); rows.appendChild(row);
@@ -1540,10 +1555,11 @@
       if (styleNode && window.getComputedStyle) style = window.getComputedStyle(styleNode);
     } catch (ignoredStyle) {}
     var now = new Date();
+    var environment = readDiagnosticEnvironment();
     var presentation = activePlayback && activePlayback.presentation;
     var source = video.getAttribute('src') || '';
     var snapshot = {
-      device: device || {}, userAgent: navigator.userAgent,
+      device: device || {}, userAgent: environment.userAgent, environmentRows: environment.rows,
       native: native || {},
       capturedAt: ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2) + ':' + ('0' + now.getSeconds()).slice(-2),
       video: readDiagnosticVideo(video),
