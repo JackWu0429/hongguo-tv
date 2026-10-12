@@ -214,6 +214,12 @@
           <p id="app-update-state" role="status" aria-live="polite">启动后每天自动检查一次，播放时不打扰。</p>
           <div class="app-update-actions"><button class="app-update-action account-action" id="app-check-update" data-focus="app-check-update">检查更新</button><button class="app-update-action account-action is-hidden" id="app-open-licenses" data-focus="app-open-licenses">开源许可</button></div>
         </div>
+        <div class="account-card app-update-card is-hidden" id="mpv-playback-settings">
+          <h2>播放解码</h2>
+          <p>自动解码优先尝试硬件加速；画面异常时可选软件解码。设置在下次播放或切集时生效。</p>
+          <div class="app-update-actions"><button class="playback-mode-action account-action" id="mpv-decode-auto" data-mode="mpv_auto" data-focus="mpv-decode-auto" aria-pressed="false">自动解码</button><button class="playback-mode-action account-action" id="mpv-decode-software" data-mode="mpv_software" data-focus="mpv-decode-software" aria-pressed="false">软件解码</button></div>
+          <p id="mpv-decode-state" role="status" aria-live="polite"></p>
+        </div>
       </section>
 
       <section id="support-page" class="page-workspace support-page is-hidden" aria-labelledby="support-title">
@@ -314,6 +320,7 @@
   <script src="/number-input.js"></script>
   <script src="/playback-diagnostics.js"></script>
   <script src="/native-player.js"></script>
+  <script src="/playback-settings.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

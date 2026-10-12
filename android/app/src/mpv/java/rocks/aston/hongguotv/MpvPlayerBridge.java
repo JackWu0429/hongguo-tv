@@ -11,6 +11,8 @@ import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.app.AlertDialog;
+import android.content.Context;
+import android.content.SharedPreferences;
 import org.json.JSONObject;
 
 /** One libmpv instance per source: callbacks from a released source cannot own the new one. */
@@ -19,6 +21,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     private final WebView web;
     private final FrameLayout holder;
     private final SurfaceView surface;
+    private final SharedPreferences preferences;
     private Session session;
     private boolean destroyed, background;
     private double volume = 1, speed = 1;
@@ -29,6 +32,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     private static final class Session {
         final String id, source;
         final JSONObject data;
+        final MpvDecodeMode mode;
         final MpvOutputState output = new MpvOutputState();
         MPVLib player;
         boolean outputReady, wantsPlay, terminal, pendingSeek;
@@ -37,8 +41,9 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         String errorKind = "";
         int errorCode;
         Runnable timeout;
-        Session(String id, String source, JSONObject data) {
+        Session(String id, String source, JSONObject data, MpvDecodeMode mode) {
             this.id = id; this.source = source; this.data = data;
+            this.mode = mode;
             wantsPlay = !data.optBoolean("paused", false);
             position = PlaybackStart.positionMs(data.optDouble("start_position", 0), false);
         }
@@ -46,6 +51,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
 
     MpvPlayerBridge(WebView web, FrameLayout holder) {
         this.web = web; this.holder = holder;
+        preferences = web.getContext().getSharedPreferences("hongguo_mpv_playback", Context.MODE_PRIVATE);
         surface = new SurfaceView(web.getContext());
         surface.setFocusable(false);
         surface.getHolder().addCallback(this);
@@ -58,9 +64,12 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     @JavascriptInterface public boolean isAvailable() { return true; }
     @JavascriptInterface public String engine() { return "mpv"; }
     @JavascriptInterface public String diagnostics() { return diagnostic; }
-    @JavascriptInterface public String decoderMode() { return "mpv_software"; }
+    @JavascriptInterface public String decoderMode() { return MpvDecodeMode.stored(preferences.getString("mpv_decode_mode", null)).id; }
     @JavascriptInterface public boolean safeStart() { return false; }
-    @JavascriptInterface public void setDecoderMode(String ignored) { /* Fixed by APK flavor. */ }
+    @JavascriptInterface public void setDecoderMode(String value) {
+        MpvDecodeMode mode = MpvDecodeMode.requested(value);
+        if (mode != null) preferences.edit().putString("mpv_decode_mode", mode.id).apply();
+    }
 
     @JavascriptInterface public void showLicenses() {
         handler.post(() -> {
@@ -89,7 +98,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             handler.post(() -> {
                 if (destroyed) return;
                 release();
-                Session target = new Session(id, source, data); session = target;
+                Session target = new Session(id, source, data, MpvDecodeMode.stored(decoderMode())); session = target;
                 if (!MediaUrlPolicy.valid(source)) { fail(target, "source"); return; }
                 if (!applyBounds()) { fail(target, "display"); return; }
                 double rate = data.optDouble("speed", speed);
@@ -111,11 +120,15 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             MPVLib active = MPVLib.create(web.getContext());
             if (active == null) { fail(target, "initialization"); return; }
             target.player = active;
-            // Software HEVC is the purpose of this edition. It does not rely on
-            // the same vendor MediaCodec implementation that failed in Media3.
+            // Match media_kit's safe automatic Android path. Users can retain
+            // software decoding if their vendor decoder produces bad frames.
             option(active, "config", "no"); option(active, "terminal", "no");
             option(active, "vo", "gpu"); option(active, "gpu-context", "android");
-            option(active, "opengl-es", "yes"); option(active, "hwdec", "no");
+            option(active, "opengl-es", "yes"); option(active, "hwdec", target.mode.hwdec);
+            // Mobile rendering defaults used by media_kit; retain HDR policy.
+            option(active, "scale", "bilinear"); option(active, "dscale", "bilinear");
+            option(active, "dither", "no"); option(active, "correct-downscaling", "no");
+            option(active, "linear-downscaling", "no"); option(active, "sigmoid-upscaling", "no");
             // media_kit uses OpenSL ES on physical Android devices. Keep
             // AudioTrack as an initialization fallback with conservative PCM.
             option(active, "ao", "opensles,audiotrack");
@@ -260,7 +273,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     private void updateDiagnostic(Session target, JSONObject detail) {
         try {
             JSONObject fields = new JSONObject().put("engine", "mpv").put("state", target.state)
-                .put("surface", "SurfaceView").put("mode", "software").put("output_ready", target.outputReady)
+                .put("surface", "SurfaceView").put("mode", target.mode.id).put("hwdec_requested", target.mode.hwdec).put("output_ready", target.outputReady)
                 .put("frame_signal", "playback-restart").put("video_decoder", target.decoder)
                 .put("width", target.output.width).put("height", target.output.height).put("speed", speed)
                 .put("restart_seen", target.output.restarted).put("vo_configured", target.output.configured)
@@ -271,6 +284,13 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                 .put("output_messages", target.output.messages());
             if (target.player != null) {
                 MPVLib player = target.player;
+                target.decoder = property(player, "video-codec");
+                fields.put("video_decoder", target.decoder).put("hwdec_current", property(player, "hwdec-current"));
+                Integer decodedDrops = player.getPropertyInt("decoder-frame-drop-count"), outputDrops = player.getPropertyInt("frame-drop-count");
+                Double avsync = player.getPropertyDouble("avsync");
+                if (decodedDrops != null && decodedDrops >= 0) fields.put("decoder_frame_drop_count", decodedDrops);
+                if (outputDrops != null && outputDrops >= 0) fields.put("frame_drop_count", outputDrops);
+                if (avsync != null && finite(avsync)) fields.put("avsync", avsync);
                 fields.put("audio_output", property(player, "current-ao"))
                     .put("audio_codec", property(player, "audio-codec"))
                     .put("audio_format", property(player, "audio-out-params/format"));

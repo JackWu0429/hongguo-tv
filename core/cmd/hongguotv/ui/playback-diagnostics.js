@@ -8,6 +8,7 @@
   }
   function num(value) { return typeof value === 'number' && isFinite(value) ? Math.max(0, value) : 0; }
   function errorCode(value) { return typeof value === 'number' && isFinite(value) ? Math.round(value) : 0; }
+  function metric(value) { return typeof value === 'number' && isFinite(value) && value >= 0 ? Math.floor(value) : '未取得'; }
   function clock(value) {
     var seconds = Math.floor(num(value));
     return Math.floor(seconds / 60) + ':' + ('0' + seconds % 60).slice(-2);
@@ -83,7 +84,11 @@
         add('MPV 实际状态', (typeof native.actual_mute === 'boolean' ? (native.actual_mute ? '已静音' : '未静音') : '静音状态未取得') +
           (typeof native.actual_volume === 'number' ? ' · 音量 ' + Math.round(num(native.actual_volume)) + '%' : '') +
           (typeof native.actual_pause === 'boolean' ? (native.actual_pause ? ' · 暂停' : ' · 运行中') : ''));
-        add('MPV 解码', '软件解码 · 输出就绪不等同于实机画面可见');
+        var requested = native.mode === 'mpv_auto' ? '自动解码' : native.mode === 'mpv_software' || native.mode === 'software' ? '软件解码' : '模式未取得';
+        var actual = text(native.hwdec_current, 32);
+        add('MPV 解码', requested + ' · 实际：' + (actual === 'no' ? '软件解码' : actual ? actual : '未取得') + ' · 输出就绪不等同于实机画面可见');
+        add('MPV 掉帧', '解码 ' + metric(native.decoder_frame_drop_count) + ' · 渲染 ' + metric(native.frame_drop_count));
+        if (typeof native.avsync === 'number' && isFinite(native.avsync)) add('MPV 音画差值', Math.round(native.avsync * 1000) + ' ms');
         if (native.output_messages) add('MPV 输出提示', text(native.output_messages, 90));
       }
     }

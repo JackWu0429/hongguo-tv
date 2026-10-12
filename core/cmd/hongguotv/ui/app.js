@@ -42,6 +42,7 @@
     accountKeypad: '.account-keypad-key',
     accountActions: '.account-action',
     appUpdates: '.app-update-action',
+    playbackModes: '.playback-mode-action',
     support: '.support-card, .support-close',
     rankModal: '.rank-filter-option, .rank-filter-close, .rank-filter-apply',
     confirmation: '.confirm-button',
@@ -694,6 +695,7 @@
     if (element.classList.contains('library-remove')) return 'libraryRemovals';
     if (element.classList.contains('account-input')) return 'accountInputs';
     if (element.classList.contains('app-update-action')) return 'appUpdates';
+    if (element.classList.contains('playback-mode-action')) return 'playbackModes';
     if (element.classList.contains('account-action')) return 'accountActions';
     if (element.classList.contains('confirm-button')) return 'confirmation';
     if (element.classList.contains('player-option') || element.id === 'player-compose-input') return 'playerOptions';
@@ -725,7 +727,10 @@
     // focus without scrolling that container, leaving the focused update
     // button below the viewport and making it appear unreachable.
     if (pageMode() === 'account' && element.closest && element.closest('#account-page')) {
-      try { element.scrollIntoView(false); } catch (ignored) {}
+      // Keep both MPV choices and their status above the viewport edge,
+      // including old WebViews without scroll-margin support.
+      var scrollTarget = element.closest('#mpv-playback-settings') || element;
+      try { scrollTarget.scrollIntoView(false); } catch (ignored) {}
     }
     if (!scanModalOpen() && !accountKeypadOpen() && !detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zoneOf(element) !== 'sidebar') {
       lastContentFocus = element;
@@ -1094,6 +1099,12 @@
     if (zone === 'appUpdates') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
       if (direction === 'up') return firstVisible('#account-import-history') || firstVisible('#account-sync') || firstVisible('#account-profile .account-action') || firstVisible('#account-login-form .account-action');
+      if (direction === 'down') return firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
+      return null;
+    }
+    if (zone === 'playbackModes') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'up') return firstVisible('.app-update-action') || activeSidebar();
       return null;
     }
     if (zone === 'accountInputs' || zone === 'accountActions') {
@@ -2153,7 +2164,7 @@
     var phoneInput = document.getElementById('account-phone');
     document.querySelectorAll('.account-input').forEach(function (node) { node.disabled = accountBusy; renderAccountNumber(node); });
     phoneInput.disabled = accountBusy || data.phase === 'code' && /^1[3-9]\d{9}$/.test(phoneInput.value) && !(accountKeypadOpen() && numericKeypad.snapshot().kind === 'phone');
-    document.querySelectorAll('.account-action:not(.app-update-action)').forEach(function (node) { node.disabled = accountBusy; });
+    document.querySelectorAll('.account-action:not(.app-update-action):not(.playback-mode-action)').forEach(function (node) { node.disabled = accountBusy; });
     document.getElementById('account-cancel').disabled = false;
     document.getElementById('account-verify').disabled = accountBusy || mfaExpired || verification.state === 'waiting';
     document.getElementById('account-verify').textContent = verification.state === 'waiting' ? '等待确认…' : verification.state === 'timeout' ? '再次查询' : '我已发送';
@@ -4766,6 +4777,21 @@
     }
   });
   document.getElementById('app-check-update').addEventListener('click', appUpdates.check);
+  var playbackSettings = window.HongguoPlaybackSettings.create({
+    bridge: window.HongguoNativePlayer,
+    render: function (data) {
+      document.getElementById('mpv-playback-settings').classList.toggle('is-hidden', !data.supported);
+      document.querySelectorAll('.playback-mode-action').forEach(function (button) {
+        var selected = button.getAttribute('data-mode') === data.mode;
+        button.classList.toggle('account-primary', selected);
+        button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      });
+      document.getElementById('mpv-decode-state').textContent = data.message || '';
+    }
+  });
+  document.querySelectorAll('.playback-mode-action').forEach(function (button) {
+    button.addEventListener('click', function () { playbackSettings.choose(button.getAttribute('data-mode')); });
+  });
   var licenses = document.getElementById('app-open-licenses');
   if (window.HongguoNativePlayer && window.HongguoNativePlayer.showLicenses) {
     licenses.classList.remove('is-hidden');
