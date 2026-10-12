@@ -10,9 +10,12 @@
   var nativeEnabled = false;
   var usingNative = false;
   var nativeAttempted = false;
+  var nativeRequested = false;
   var fallbackTimer = null;
   var FALLBACK_DELAY = 15000;
+  var fixedNative = false;
   try { nativeEnabled = !!(bridge && bridge.isAvailable && bridge.isAvailable()); } catch (ignored) {}
+  try { fixedNative = !!(nativeEnabled && bridge.engine && bridge.engine() === 'mpv'); } catch (ignoredEngine) {}
   if (!domVideo || !nativeEnabled) {
     window.HongguoNativePlaybackAdapter = { enabled: false, video: function () { return domVideo; } };
     return;
@@ -23,6 +26,7 @@
   var loadId = 'hongguo-' + (++sequence);
   var state = { source: '', currentTime: 0, duration: NaN, paused: true, ended: false, seeking: false,
     readyState: 0, videoWidth: 0, videoHeight: 0, seekPending: false, playbackRate: 1, volume: 1, muted: true, started: false };
+  if (fixedNative) { usingNative = true; document.documentElement.classList.add('native-playback'); }
 
   function isNative() { return nativeEnabled && usingNative; }
   function domHasFrame() {
@@ -32,6 +36,7 @@
     if (fallbackTimer !== null) { clearTimeout(fallbackTimer); fallbackTimer = null; }
   }
   function armNativeFallback() {
+    if (fixedNative) return;
     if (!nativeEnabled || nativeAttempted || usingNative || !state.source || state.paused) return;
     clearFallbackTimer();
     fallbackTimer = setTimeout(function () {
@@ -65,7 +70,7 @@
     syncBounds();
     var payload = JSON.stringify({ source: localSource(state.source), start_position: state.currentTime || 0,
       paused: false, speed: state.playbackRate || 1 });
-    try { bridge.play(loadId, payload); } catch (error) { dispatch('error', error); }
+    try { nativeRequested = true; bridge.play(loadId, payload); } catch (error) { nativeRequested = false; dispatch('error', error); }
   }
   function startNativeFallback(force) {
     if (!nativeEnabled || usingNative || nativeAttempted || !state.source || !force && state.paused) return false;
@@ -79,18 +84,24 @@
     state.currentTime = position;
     state.duration = Number(domVideo.duration) > 0 ? Number(domVideo.duration) : NaN;
     state.paused = paused;
+    state.playbackRate = Number(domVideo.playbackRate) || 1;
+    state.volume = Number(domVideo.volume);
+    state.muted = !!domVideo.muted;
     state.ended = false; state.seeking = false; state.readyState = 0;
     state.videoWidth = 0; state.videoHeight = 0; state.seekPending = false; state.started = false;
     try { domVideo.pause(); } catch (ignoredPause) {}
     usingNative = true;
     document.documentElement.classList.add('native-playback');
     loadId = 'hongguo-' + (++sequence);
+    nativeRequested = false;
     try { bridge.begin(loadId); } catch (ignoredBegin) {}
+    try { if (bridge.setVolume) bridge.setVolume(state.volume, state.muted); } catch (ignoredVolume) {}
     dispatch('emptied');
     if (!paused) { state.paused = false; dispatch('waiting'); invokePlay(); }
     return true;
   }
   function fallbackToDom() {
+    if (fixedNative) return;
     if (!isNative()) return;
     clearFallbackTimer();
     try { if (bridge.stop) bridge.stop(); } catch (ignoredStop) {}
@@ -98,6 +109,8 @@
     var position = Number(state.currentTime) || 0;
     var paused = !!state.paused;
     usingNative = false;
+    nativeRequested = false;
+    loadId = 'hongguo-' + (++sequence);
     document.documentElement.classList.remove('native-playback');
     try {
       state.source = source;
@@ -113,18 +126,27 @@
     } catch (ignored) {}
   }
   function resetToDomSource(next) {
+    clearFallbackTimer();
+    nativeRequested = false;
+    loadId = 'hongguo-' + (++sequence);
     if (isNative()) {
       clearFallbackTimer();
       try { if (bridge.stop) bridge.stop(); } catch (ignoredStop) {}
-      usingNative = false;
-      document.documentElement.classList.remove('native-playback');
+      usingNative = fixedNative;
+      if (!fixedNative) document.documentElement.classList.remove('native-playback');
     }
     nativeAttempted = false;
     state.source = next;
     state.currentTime = 0; state.duration = NaN; state.paused = true; state.ended = false;
     state.seeking = false; state.readyState = 0; state.videoWidth = 0; state.videoHeight = 0;
     state.seekPending = false; state.started = false;
-    domVideo.src = next;
+    // The MPV edition never loads media into WebView, including between episodes.
+    if (!fixedNative) domVideo.src = next;
+    else {
+      proxy.error = null;
+      proxy.networkState = next ? 2 : 0;
+      dispatch('emptied');
+    }
   }
 
   function add(name, listener) {
@@ -146,6 +168,8 @@
     load: function () {
       if (!isNative()) { clearFallbackTimer(); domVideo.load(); return; }
       loadId = 'hongguo-' + (++sequence);
+      nativeRequested = false;
+      proxy.error = null;
       state.currentTime = 0; state.duration = NaN; state.paused = true; state.ended = false; state.seeking = false;
       state.readyState = 0; state.videoWidth = 0; state.videoHeight = 0; state.seekPending = false; state.started = false;
       try { bridge.begin(loadId); } catch (ignored) {}
@@ -167,7 +191,7 @@
       }
       if (!state.source) return Promise.reject(new Error('没有播放地址'));
       state.paused = false; state.ended = false;
-      if (state.started && bridge.resume) { try { bridge.resume(); } catch (ignored) {} }
+      if (nativeRequested && bridge.resume) { try { bridge.resume(); } catch (ignored) {} }
       else invokePlay();
       return Promise.resolve();
     },
@@ -182,8 +206,7 @@
     src: { get: function () { return isNative() ? state.source : domVideo.src; }, set: function (value) {
       var next = value == null ? '' : String(value);
       if (!isNative()) {
-        clearFallbackTimer(); nativeAttempted = false; state.source = next; state.started = false;
-        domVideo.src = next; return;
+        resetToDomSource(next); return;
       }
       if (next !== state.source) { resetToDomSource(next); return; }
       state.source = next; proxy.networkState = state.source ? 2 : 0; if (!state.source) setClass('has-source', false);
@@ -204,7 +227,7 @@
 
   window.HongguoNativePlayback = {
     event: function (id, name, detail) {
-      if (id !== loadId) return;
+      if (!isNative() || id !== loadId) return;
       detail = detail || {};
       if (name === 'buffering' || name === 'waiting') { state.readyState = 1; state.seeking = false; dispatch('waiting', detail); return; }
       if (name === 'frame') {
@@ -219,10 +242,18 @@
       if (name === 'playing') { state.started = true; state.paused = false; state.ended = false; state.seeking = false; state.readyState = Math.max(3, state.readyState); dispatch('playing', detail); return; }
       if (name === 'paused') { state.paused = true; dispatch('pause', detail); return; }
       if (name === 'ended') { state.ended = true; state.paused = true; state.seeking = false; dispatch('ended', detail); return; }
-      if (name === 'error') { fallbackToDom(); }
+      if (name === 'error') {
+        if (fixedNative) {
+          state.paused = true; state.started = false; state.readyState = 0;
+          nativeRequested = false;
+          loadId = 'hongguo-' + (++sequence);
+          proxy.error = { code: 3, message: detail.kind || 'MPV 播放失败' };
+          dispatch('error', { type: 'error', target: proxy, detail: detail });
+        } else fallbackToDom();
+      }
     },
     progress: function (id, position, duration) {
-      if (id !== loadId) return;
+      if (!isNative() || id !== loadId) return;
       // PlayerBridge reports both values in milliseconds. Keep the adapter's
       // HTMLMediaElement-compatible state in seconds; leaving position in ms
       // makes the timeline clamp to 100% almost immediately on native playback.
@@ -252,6 +283,7 @@
   });
   window.HongguoNativePlaybackAdapter = {
     enabled: true,
+    engine: fixedNative ? 'mpv' : 'webview_media3',
     video: function () { return proxy; },
     syncBounds: syncBounds,
     enableNative: function () { return startNativeFallback(true); }

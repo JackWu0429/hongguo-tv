@@ -4755,7 +4755,7 @@
     canPrompt: canShowAppUpdate,
     render: function (data) {
       var current = document.getElementById('app-current-version');
-      if (data.current_version) current.textContent = data.current_version;
+      if (data.current_version) current.textContent = data.current_version + (data.edition ? ' · ' + data.edition : '');
       else if (data.state === 'browser') current.textContent = '网页预览';
       document.getElementById('app-update-state').textContent = data.message || '启动后每天自动检查一次，播放时不打扰。';
       var check = document.getElementById('app-check-update');
@@ -4766,6 +4766,11 @@
     }
   });
   document.getElementById('app-check-update').addEventListener('click', appUpdates.check);
+  var licenses = document.getElementById('app-open-licenses');
+  if (window.HongguoNativePlayer && window.HongguoNativePlayer.showLicenses) {
+    licenses.classList.remove('is-hidden');
+    licenses.addEventListener('click', function () { window.HongguoNativePlayer.showLicenses(); });
+  }
   appUpdates.refresh();
   setInterval(appUpdates.refresh, 1000);
   goFocus(document.querySelector('.side-item.is-active'));

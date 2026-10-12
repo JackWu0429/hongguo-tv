@@ -149,7 +149,7 @@ class ReleaseUpdateTests(unittest.TestCase):
         with patch.object(publish, 'api', fake_api), patch.object(publish, 'gh', fake_gh), \
                 patch.object(publish, 'release_by_tag', return_value=release):
             with self.assertRaises(ValueError): publish.publish(self.root, self.notes)
-        self.assertEqual(len(events), 1)
+        self.assertFalse(any(e[0][:3] in [('api', '--method', 'PUT'), ('api', '--method', 'POST')] for e in events))
 
     def test_older_release_never_regresses_latest_version(self):
         _, release, events, fake_api, fake_gh = self.publication_fixture(draft=False, old_manifest={'version_code': 10})

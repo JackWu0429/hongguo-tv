@@ -51,3 +51,10 @@ test('reports native decoder failures and codec state without exposing media URL
   s.native.url='https://media.invalid/a.mp4?key=secret';
   assert.doesNotMatch(JSON.stringify(diagnostics.report(s)),/media\.invalid|secret/);
 });
+test('reports native track support separately from decoder and first-frame state',()=>{
+  const s=snapshot({native:{state:'preparing',surface:'SurfaceView',first_frame:false,video_decoder:'OMX.vendor.hevc.decoder',video_mime:'video/hevc',video_track:'video/hevc [hvc1.2.4.L150.B0] · 1920x1080 · 25fps',track_support:'FORMAT_HANDLED',track_selected:'是',unselected_hevc:'1280x720=FORMAT_EXCEEDS_CAPABILITIES'}});
+  const rows=Object.fromEntries(diagnostics.report(s).rows.map(x=>[x.label,x.value]));
+  assert.match(rows['视频轨道'],/video\/hevc.*FORMAT_HANDLED.*已选择/);
+  assert.match(rows['未选 HEVC'],/1280x720.*FORMAT_EXCEEDS_CAPABILITIES/);
+  assert.match(diagnostics.report(snapshot({native:{track_support:'FORMAT_UNSUPPORTED_SUBTYPE'}})).summary,/没有接受当前视频轨道/);
+});

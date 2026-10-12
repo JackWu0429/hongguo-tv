@@ -5,7 +5,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/native-player.js'), 'utf8');
 
-function fixture() {
+function fixture(engine = 'webview_media3') {
   const listeners = {};
   const classNames = new Set();
   const rootClassNames = new Set();
@@ -35,9 +35,14 @@ function fixture() {
   };
   const bridge = {
     isAvailable() { return true; },
+    engine() { return engine; },
     bounds() {},
     begin() {},
-    play(id, payload) { this.lastId = id; this.lastPayload = JSON.parse(payload); },
+    play(id, payload) { this.plays++; this.lastId = id; this.lastPayload = JSON.parse(payload); },
+    plays: 0, resumes: 0, stops: 0,
+    resume() { this.resumes++; },
+    pause() {},
+    stop() { this.stops++; },
     lastId: null,
     lastPayload: null,
     setVolume() {},
@@ -128,4 +133,54 @@ test('native playback clamps a position that exceeds the reported duration', () 
   f.context.window.HongguoNativePlayback.progress(id, 250000, 188000);
   assert.equal(proxy.currentTime, 188);
   assert.equal(proxy.duration, 188);
+});
+
+test('MPV edition sends sources only to MPV and resumes without recreating before first frame', async () => {
+  const f = fixture('mpv'), video = f.document.getElementById('hero-video');
+  video.src = '/media/test.mp4'; video.load(); video.currentTime = 12.5;
+  await video.play(); video.pause(); await video.play();
+  assert.equal(f.domVideo.src, '');
+  assert.equal(f.bridge.plays, 1);
+  assert.equal(f.bridge.resumes, 1);
+  assert.equal(f.bridge.lastPayload.start_position, 12.5);
+  assert.equal(f.bridge.lastPayload.source, 'http://127.0.0.1/media/test.mp4');
+});
+
+test('MPV source replacement ignores old frame, progress and ended callbacks', async () => {
+  const f = fixture('mpv'), video = f.document.getElementById('hero-video');
+  const playback = f.context.window.HongguoNativePlayback;
+  let ends = 0, frames = 0;
+  video.addEventListener('ended', () => ends++);
+  video.addEventListener('nativeframe', () => frames++);
+  video.src = '/media/one.mp4'; await video.play(); const old = f.bridge.lastId;
+  video.src = '/media/two.mp4'; await video.play(); const current = f.bridge.lastId;
+  playback.event(old, 'frame', {width: 1080, height: 1920});
+  playback.progress(old, 100000, 100000); playback.event(old, 'ended');
+  assert.equal(ends, 0); assert.equal(frames, 0); assert.equal(video.currentTime, 0);
+  playback.event(current, 'frame', {width: 720, height: 1280});
+  playback.event(current, 'playing'); playback.progress(current, 5000, 90000);
+  assert.equal(frames, 1); assert.equal(video.videoHeight, 1280); assert.equal(video.currentTime, 5);
+});
+
+test('MPV failure stays native, reports error and ignores late success until explicit retry', async () => {
+  const f = fixture('mpv'), video = f.document.getElementById('hero-video');
+  const playback = f.context.window.HongguoNativePlayback;
+  let errors = 0;
+  video.addEventListener('error', () => errors++);
+  video.src = '/media/test.mp4'; await video.play(); const old = f.bridge.lastId;
+  playback.event(old, 'error', {kind: 'first_frame_timeout'});
+  playback.event(old, 'playing'); playback.progress(old, 5000, 90000);
+  assert.equal(errors, 1); assert.equal(video.paused, true); assert.equal(video.currentTime, 0);
+  assert.equal(f.rootClassNames.has('native-playback'), true); assert.equal(f.domVideo.src, '');
+  await video.play(); assert.equal(f.bridge.plays, 2); assert.notEqual(f.bridge.lastId, old);
+});
+
+test('Media3 callback after returning to WebView cannot emit a stale ended or progress event', () => {
+  const f = fixture(), video = f.document.getElementById('hero-video');
+  const id = activateNative(f); let ends = 0, ticks = 0;
+  video.addEventListener('ended', () => ends++); video.addEventListener('timeupdate', () => ticks++);
+  f.context.window.HongguoNativePlayback.event(id, 'error');
+  f.context.window.HongguoNativePlayback.event(id, 'ended');
+  f.context.window.HongguoNativePlayback.progress(id, 30000, 90000);
+  assert.equal(ends, 0); assert.equal(ticks, 0); video.pause();
 });

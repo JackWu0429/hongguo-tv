@@ -1,0 +1,13 @@
+{
+  "builder": {"repo":"media-kit/libmpv-android-video-build","commit":"1ecf5100ec0f75e1d0630f48851b85769c92eed2","sha256":"45750cd7c7f96dcffac96fc717a4dd9c3f9d16b6262c5fc2c4b5e7fbd7d677c3","license":"LICENSE"},
+  "mpv": {"repo":"mpv-player/mpv","commit":"78d43740f52db817d98bcf24fb30a76ab6fa13ff","sha256":"678889728708141e97d283b2a7ef9953aa3102127a4c2aacefaf1adcb211915d","license":"LICENSE.LGPL"},
+  "ffmpeg": {"repo":"FFmpeg/FFmpeg","commit":"ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2","sha256":"aacce24d5bb6c67fbf1e3343bc15a6977ad700cdb4f43c8551f6544fa54ab7ec","license":"COPYING.LGPLv3"},
+  "mbedtls": {"repo":"Mbed-TLS/mbedtls","commit":"1873d3bfc2da771672bd8e7e8f41f57e0af77f33","sha256":"e639db55558ce853d4ad916c0ec89f04263f36da4be582a6bb7e1f22a59d7216","license":"LICENSE"},
+  "dav1d": {"repo":"videolan/dav1d","commit":"676a864a11af2c0522e1f992e770589543894686","sha256":"c2b69612b9613dc317fe05d709ce0b3786a89278a32250e79cb227fe7396a02a","license":"COPYING"},
+  "libxml2": {"repo":"GNOME/libxml2","commit":"f507d167f1755b7eaea09fb1a44d29aab828b6d1","sha256":"14764b2e0fa82153400e63fb031806a583b28cfe8cf96da51e75b5e684d5f377","license":"Copyright"},
+  "freetype": {"repo":"freetype/freetype","commit":"de8b92dd7ec634e9e2b25ef534c54a3537555c11","sha256":"14791d34053acf30394912a8b963277bee60b35fbb3038795d86555ba0415a44","license":"LICENSE.TXT"},
+  "fribidi": {"repo":"fribidi/fribidi","commit":"6428d8469e536bcbb6e12c7b79ba6659371c435a","sha256":"7920b7d33f1e3945134745a8c665ca5bc748b9d907b3a03b1a6d481a77c0ae7f","license":"COPYING"},
+  "harfbuzz": {"repo":"harfbuzz/harfbuzz","commit":"a321c4fee56b15247c10f9aa3db7e7ccb3b8173b","sha256":"54c5e3a665810c02413ec003cd0462cb1d662cca0c5722c0f219839137251974","license":"COPYING"},
+  "libass": {"repo":"libass/libass","commit":"e8ad72accd3a84268275a9385beb701c9284e5b3","sha256":"ce22a60e5abd265106e854ac5f4346d449c7943c519560bd128d763de1fb3a76","license":"COPYING"},
+  "dlg": {"repo":"nyorain/dlg","commit":"d142e646e263c89f93663e027c2f0d03739ab42d","sha256":"ec99c57984ebe8d1b3aa28d90c5758c7b83b63c04d0b0b10db7de207de06ef28","license":"LICENSE"}
+}

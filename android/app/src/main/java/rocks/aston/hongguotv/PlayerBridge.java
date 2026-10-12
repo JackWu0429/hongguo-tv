@@ -21,6 +21,7 @@ import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.Player;
+import androidx.media3.common.Format;
 import androidx.media3.common.VideoSize;
 import androidx.media3.common.Tracks;
 import androidx.media3.datasource.DefaultHttpDataSource;
@@ -43,7 +44,7 @@ import java.util.Map;
 
 /** UI-thread owned player. Every source has its own listener and load identity. */
 @android.annotation.SuppressLint("UnsafeOptInUsageError")
-final class PlayerBridge {
+final class PlayerBridge implements NativePlayerAdapter {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final WebView web;
     private final FrameLayout holder;
@@ -110,6 +111,7 @@ final class PlayerBridge {
 
     /** Media3 is available as a fallback on every supported Android release. */
     @JavascriptInterface public boolean isAvailable() { return nativePlaybackAvailable(Build.VERSION.SDK_INT); }
+    @JavascriptInterface public String engine() { return "webview_media3"; }
 
     @JavascriptInterface public void play(String loadId, String payload) {
         // Never accept arbitrary external URLs from a web page.
@@ -193,6 +195,7 @@ final class PlayerBridge {
         active.addListener(new Player.Listener(){
             private boolean current(){return !destroyed&&session==target&&player==active;}
             @Override public void onTracksChanged(Tracks tracks){
+                if(current())recordTrackDiagnostics(target,tracks);
                 if(current()&&!tracks.getGroups().isEmpty()&&!tracks.isTypeSelected(C.TRACK_TYPE_VIDEO)){
                     fail(target,"decoder",PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED);
                 }
@@ -229,6 +232,52 @@ final class PlayerBridge {
         active.prepare();active.setPlayWhenReady(target.wantsPlay&&!background);
         timeout=()->{if(session==target&&player==active&&!target.firstFrame&&!background)retry(target,"first_frame_timeout",0);};
         handler.postDelayed(timeout,25000);
+    }
+    private void recordTrackDiagnostics(Session target,Tracks tracks){
+        if(session!=target)return;
+        Format selectedVideo=null;int selectedSupport=-1;boolean selected=false;int videoTracks=0;
+        StringBuilder unselectedHevc=new StringBuilder();
+        for(Tracks.Group group:tracks.getGroups()){
+            if(group.getType()!=C.TRACK_TYPE_VIDEO)continue;
+            for(int i=0;i<group.length;i++){
+                videoTracks++;
+                Format format=group.getTrackFormat(i);int support=group.getTrackSupport(i);
+                if(group.isTrackSelected(i)){
+                    selected=true;selectedVideo=format;selectedSupport=support;
+                }else if(MimeTypes.VIDEO_H265.equals(format.sampleMimeType)&&unselectedHevc.length()<768){
+                    if(unselectedHevc.length()>0)unselectedHevc.append(' ');
+                    unselectedHevc.append(describeFormat(format)).append('=').append(supportName(support));
+                }
+            }
+        }
+        try{
+            diagnosticFields.put("video_track",selectedVideo==null?"无":describeFormat(selectedVideo))
+                .put("track_support",selectedVideo==null?"-":supportName(selectedSupport))
+                .put("track_selected",selected?"是":"否")
+                .put("video_track_count",videoTracks);
+            if(unselectedHevc.length()>0)diagnosticFields.put("unselected_hevc",unselectedHevc.toString());
+            else diagnosticFields.remove("unselected_hevc");
+        }catch(Exception ignored){}
+        updateDiagnostic(target,diagnosticFields.optString("state","preparing"));saveDiagnostic();
+    }
+    private static String supportName(int support){
+        switch(support){
+            case C.FORMAT_HANDLED:return "FORMAT_HANDLED";
+            case C.FORMAT_EXCEEDS_CAPABILITIES:return "FORMAT_EXCEEDS_CAPABILITIES";
+            case C.FORMAT_UNSUPPORTED_DRM:return "FORMAT_UNSUPPORTED_DRM";
+            case C.FORMAT_UNSUPPORTED_SUBTYPE:return "FORMAT_UNSUPPORTED_SUBTYPE";
+            case C.FORMAT_UNSUPPORTED_TYPE:return "FORMAT_UNSUPPORTED_TYPE";
+            default:return "UNKNOWN("+support+")";
+        }
+    }
+    private static String describeFormat(Format format){
+        StringBuilder value=new StringBuilder();
+        value.append(format.sampleMimeType==null?"?":format.sampleMimeType);
+        if(format.codecs!=null&&!format.codecs.isEmpty())value.append(" [").append(format.codecs).append(']');
+        if(format.width>0&&format.height>0)value.append(" · ").append(format.width).append('x').append(format.height);
+        if(format.frameRate>0)value.append(" · ").append(Math.round(format.frameRate)).append("fps");
+        if(format.colorInfo!=null)value.append(" · ").append(format.colorInfo.toLogString());
+        return value.toString();
     }
     private void retry(Session target,String kind,int code){
         clearTimeout();if(session!=target)return;
@@ -328,9 +377,9 @@ final class PlayerBridge {
     }
     private void clearTimeout(){if(timeout!=null){handler.removeCallbacks(timeout);timeout=null;}}
     private void releasePlayer(){clearTimeout();ExoPlayer old=player;player=null;if(old!=null){old.setVolume(0);if(surface!=null)old.clearVideoSurfaceView(surface);else old.clearVideoTextureView(texture);old.release();}}
-    void onPause(){background=true;clearTimeout();if(session!=null)session.clock.reset();if(player!=null)player.pause();markInactive();}
-    void onResume(){background=false;if(session!=null&&player!=null&&session.wantsPlay){
+    public void onPause(){background=true;clearTimeout();if(session!=null)session.clock.reset();if(player!=null)player.pause();markInactive();}
+    public void onResume(){background=false;if(session!=null&&player!=null&&session.wantsPlay){
         if(!preferences.edit().putBoolean("playback_active",Build.VERSION.SDK_INT<=23&&!session.live).commit()){fail(session,"settings",0);return;}
         player.play();if(!session.firstFrame){Session target=session;ExoPlayer active=player;timeout=()->{if(session==target&&player==active&&!target.firstFrame)retry(target,"first_frame_timeout",0);};handler.postDelayed(timeout,25000);}}}
-    void destroy(){destroyed=true;handler.removeCallbacksAndMessages(null);releasePlayer();markInactive();session=null;holder.setVisibility(View.GONE);}
+    public void destroy(){destroyed=true;handler.removeCallbacksAndMessages(null);releasePlayer();markInactive();session=null;holder.setVisibility(View.GONE);}
 }

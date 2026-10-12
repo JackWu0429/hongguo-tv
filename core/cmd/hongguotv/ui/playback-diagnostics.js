@@ -44,8 +44,11 @@
     var webview = provider ? provider + ' · Chromium ' + engineVersion : 'Chromium ' + engineVersion + '（浏览器标识）';
     var rows = [], summary;
     function add(label, value) { rows.push({ label: label, value: value }); }
-    if (native.error_kind === 'decoder') summary = 'Media3 无法解码当前视频；请检查设备的 HEVC/H.264 解码能力';
-    else if (native.error_kind === 'network') summary = 'Media3 读取视频数据失败';
+    var playerName = native.engine === 'mpv' ? 'MPV' : 'Media3';
+    if (native.error_kind === 'decoder') summary = playerName + ' 无法解码当前' + (native.video_mime === 'video/hevc' ? ' HEVC ' : '') + '视频；请结合设备现象判断';
+    else if (native.track_support === 'FORMAT_UNSUPPORTED_SUBTYPE' || native.track_support === 'FORMAT_UNSUPPORTED_TYPE') summary = '设备没有接受当前视频轨道的编码格式';
+    else if (native.track_support === 'FORMAT_EXCEEDS_CAPABILITIES') summary = '当前视频轨道超过设备的解码能力';
+    else if (native.error_kind === 'network') summary = playerName + ' 读取视频数据失败';
     else if (video.error) summary = errorNames[video.error] || '播放器报告错误';
     else if (flags.failed) summary = '播放未能完成准备；请查看本次请求和最近错误';
     else if (flags.preparing && !video.width) summary = '加载层仍显示，视频尚未报告有效画面尺寸';
@@ -67,7 +70,15 @@
       var nativeState = text(native.state, 24) || '未知';
       var nativeCodec = [text(native.video_decoder, 48), text(native.video_mime, 32)].filter(Boolean).join(' / ');
       var nativeError = native.error_kind ? ' · ' + text(native.error_kind, 24) + (num(native.error_code) ? ' ' + num(native.error_code) : '') : '';
-      add('Media3', nativeState + (native.surface ? ' · ' + text(native.surface, 20) : '') + (nativeCodec ? ' · ' + nativeCodec : '') + nativeError + (native.first_frame ? ' · 已出首帧' : ' · 未出首帧'));
+      add(playerName, nativeState + (native.surface ? ' · ' + text(native.surface, 20) : '') + (nativeCodec ? ' · ' + nativeCodec : '') + nativeError + (native.first_frame ? ' · 已出首帧' : ' · 未出首帧'));
+      if (native.engine === 'mpv') add('MPV 解码', '软件解码 · ' + text(native.frame_signal, 32));
+    }
+    if (native.video_track || native.track_support || native.track_selected) {
+      var track = text(native.video_track, 120) || '未取得';
+      if (native.track_support) track += ' · ' + text(native.track_support, 42);
+      if (native.track_selected) track += ' · 已选择' + (native.track_selected === '否' ? '：否' : '');
+      add('视频轨道', track);
+      if (native.unselected_hevc) add('未选 HEVC', text(native.unselected_hevc, 220));
     }
     add('画面保护', (flags.loading || flags.preparing ? '加载层显示' : '加载层已撤下') + ' · 视频' + (flags.videoVisible ? '可见' : '隐藏') + (flags.waiting ? ' · 等待数据' : ''));
     add('声音状态', (flags.audioHeld ? '临时静音保护' : video.muted || !video.volume ? '播放器静音' : '已解除静音') + ' · 应用音量 ' + Math.round(video.volume * 100) + '%');
@@ -75,7 +86,7 @@
     if (flags.source && core.media_prepared) request += ' · MP4 就绪 ' + (num(core.media_bytes) / 1048576).toFixed(1) + ' MB';
     request += flags.source && core.media_http_status ? ' · HTTP ' + num(core.media_http_status) + '（' + num(core.media_age_seconds) + '秒前）' : core.unavailable ? ' · 核心诊断读取失败' : ' · 尚无媒体请求记录';
     add('本次请求', request);
-    add('最近错误', native.error_kind ? 'Media3 ' + text(native.error_kind, 24) + (num(native.error_code) ? '（' + num(native.error_code) + '）' : '') : video.error ? (errorNames[video.error] || '未知媒体错误') + '（' + video.error + '）' : flags.failed ? '播放准备失败（重试按钮已显示）' : flags.source && core.media_http_status >= 400 ? '本机媒体 HTTP ' + num(core.media_http_status) : '未报告播放错误');
+    add('最近错误', native.error_kind ? playerName + ' ' + text(native.error_kind, 24) + (num(native.error_code) ? '（' + num(native.error_code) + '）' : '') : video.error ? (errorNames[video.error] || '未知媒体错误') + '（' + video.error + '）' : flags.failed ? '播放准备失败（重试按钮已显示）' : flags.source && core.media_http_status >= 400 ? '本机媒体 HTTP ' + num(core.media_http_status) : '未报告播放错误');
     return { summary: summary, rows: rows, capturedAt: snapshot.capturedAt };
   }
   var api = { readVideo: readVideo, report: report };

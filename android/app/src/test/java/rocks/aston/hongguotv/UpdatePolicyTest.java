@@ -4,6 +4,23 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class UpdatePolicyTest {
+    @Test public void editionsUseIndependentChannelsAndCannotCrossInstall() {
+        assertTrue(UpdatePolicy.manifestUrl("standard").endsWith("/update.json"));
+        assertTrue(UpdatePolicy.manifestUrl("mpv").endsWith("/update-mpv.json"));
+        UpdatePolicy.validateVariant("standard", "", "rocks.aston.hongguotv", 23);
+        UpdatePolicy.validateVariant("mpv", "mpv", "rocks.aston.hongguotv.mpv", 23);
+        for (String[] values : new String[][]{{"mpv", "", "rocks.aston.hongguotv.mpv"},
+                {"standard", "mpv", "rocks.aston.hongguotv"},
+                {"mpv", "mpv", "rocks.aston.hongguotv"}}) {
+            try { UpdatePolicy.validateVariant(values[0], values[1], values[2], 23); fail("cross-edition accepted"); }
+            catch (IllegalArgumentException expected) { /* expected */ }
+        }
+        String url = "https://github.com/aston314/hongguo-tv-releases/releases/download/v0.2.47/hongguo-tv-mpv-0.2.47.apk";
+        String sha = new String(new char[64]).replace('\0', 'a');
+        UpdatePolicy.validate("rocks.aston.hongguotv.mpv", 2, "0.2.47", 23, 100, sha, url, "rocks.aston.hongguotv.mpv", 1, "0.2.46");
+        try { UpdatePolicy.validate("rocks.aston.hongguotv", 49, "0.2.47", 23, 100, sha, url, "rocks.aston.hongguotv", 48, "0.2.46"); fail("MPV URL accepted by standard"); }
+        catch (IllegalArgumentException expected) { /* expected */ }
+    }
     @Test public void checkThrottleAndClockChanges() {
         assertTrue(UpdatePolicy.automaticCheckDue(100, 0));
         assertFalse(UpdatePolicy.automaticCheckDue(1000, 100));

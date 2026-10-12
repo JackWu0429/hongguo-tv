@@ -39,7 +39,7 @@ import org.json.JSONObject;
 public class MainActivity extends Activity {
     private String coreUrl;
     private WebView webView;
-    private PlayerBridge playerBridge;
+    private NativePlayerAdapter playerBridge;
     private boolean backPending;
     private boolean activityForeground;
     private AlertDialog exitDialog;
@@ -160,7 +160,7 @@ public class MainActivity extends Activity {
         FrameLayout nativeVideoLayer = new FrameLayout(this);
         content.addView(nativeVideoLayer, new FrameLayout.LayoutParams(-1, -1));
         content.addView(webView, new FrameLayout.LayoutParams(-1, -1));
-        playerBridge = new PlayerBridge(webView, nativeVideoLayer);
+        playerBridge = PlayerFactory.create(webView, nativeVideoLayer);
         webView.addJavascriptInterface(playerBridge, "HongguoNativePlayer");
         startupPanel = new LinearLayout(this);
         startupPanel.setOrientation(LinearLayout.VERTICAL);
