@@ -129,9 +129,9 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                     post(() -> {
                         if ("eof-reached".equals(name) && value && target.firstFrame) finish(target);
                         else if ("paused-for-cache".equals(name) && target.firstFrame && target.wantsPlay && !background)
-                            event(target, value ? "buffering" : "playing", null);
+                            MpvPlayerBridge.this.event(target, value ? "buffering" : "playing", null);
                         else if ("pause".equals(name) && target.firstFrame && !background)
-                            event(target, value ? "paused" : "playing", null);
+                            MpvPlayerBridge.this.event(target, value ? "paused" : "playing", null);
                     });
                 }
                 @Override public void event(int value) {
