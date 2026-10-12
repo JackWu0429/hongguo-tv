@@ -125,6 +125,10 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             option(active, "config", "no"); option(active, "terminal", "no");
             option(active, "vo", "gpu"); option(active, "gpu-context", "android");
             option(active, "opengl-es", "yes"); option(active, "hwdec", target.mode.hwdec);
+            // Match WebView object-fit: contain: preserve the source aspect
+            // ratio, center in the current Surface, and never crop to fill.
+            option(active, "keepaspect", "yes"); option(active, "panscan", "0");
+            option(active, "video-align-x", "0"); option(active, "video-align-y", "0");
             // Mobile rendering defaults used by media_kit; retain HDR policy.
             option(active, "scale", "bilinear"); option(active, "dscale", "bilinear");
             option(active, "dither", "no"); option(active, "correct-downscaling", "no");

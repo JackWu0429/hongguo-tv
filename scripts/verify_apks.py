@@ -17,8 +17,7 @@ def verify(apk, variant, version, code, debug=False):
     assert f"versionName='{version}{'-debug' if debug else ''}'" in badging
     assert "sdkVersion:'23'" in badging
     assert debug == ('application-debuggable' in badging)
-    if not debug:
-        assert f"application-label:'红果短剧{' MPV' if variant == 'mpv' else ''}'" in badging
+    assert "application-label:'红果短剧'" in badging
     signature = subprocess.check_output([str(tools / 'apksigner'), 'verify', '--verbose', '--print-certs', str(apk)], text=True)
     signer = re.findall(r'Signer #\d+ certificate SHA-256 digest: ([0-9a-f]+)', signature)
     assert signer

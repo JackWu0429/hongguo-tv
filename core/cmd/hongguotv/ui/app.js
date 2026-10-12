@@ -46,7 +46,7 @@
     support: '.support-card, .support-close',
     rankModal: '.rank-filter-option, .rank-filter-close, .rank-filter-apply',
     confirmation: '.confirm-button',
-    playerOptions: '.player-option, #player-compose-input',
+    playerOptions: '.player-option, #player-compose-input, #player-diagnostics-scroll',
     modalActions: '.modal-action',
     episodes: '.detail-episode',
     detailTabs: '.detail-tab',
@@ -698,7 +698,7 @@
     if (element.classList.contains('playback-mode-action')) return 'playbackModes';
     if (element.classList.contains('account-action')) return 'accountActions';
     if (element.classList.contains('confirm-button')) return 'confirmation';
-    if (element.classList.contains('player-option') || element.id === 'player-compose-input') return 'playerOptions';
+    if (element.classList.contains('player-option') || element.id === 'player-compose-input' || element.id === 'player-diagnostics-scroll') return 'playerOptions';
     if (element.closest('#discussion-panel')) return 'discussion';
     if (element.classList.contains('detail-tab')) return 'detailTabs';
     if (element.classList.contains('review-card')) return 'detailReviews';
@@ -923,7 +923,7 @@
     if (rankFilterOpen) return moveModalFrom(current, direction);
     if (playerOptionsOpen) {
       if (document.getElementById('player-options').classList.contains('is-diagnostics')) {
-        return direction === 'left' || direction === 'right' ? moveGrid('.diagnostic-action', current, direction) : null;
+        return moveDiagnosticFocus(current, direction);
       }
       if (current.id === 'player-compose-input') return direction === 'down' ? firstVisible('#player-compose-scan') || document.getElementById('player-compose-send') : direction === 'up' ? document.getElementById('player-options-close') : direction === 'right' ? document.getElementById('player-compose-send') : null;
       if (current.id === 'player-compose-scan') return direction === 'up' || direction === 'left' ? document.getElementById('player-compose-input') : direction === 'right' || direction === 'down' ? document.getElementById('player-compose-send') : null;
@@ -1477,7 +1477,28 @@
       { label: '诊断状态', value: reason ? '请更新应用后重试' : '已读取' }
     ], capturedAt: snapshot.capturedAt || '—' };
   }
+  function moveDiagnosticFocus(current, direction) {
+    var scroll = document.getElementById('player-diagnostics-scroll');
+    var refresh = document.getElementById('player-diagnostics-refresh');
+    var close = document.getElementById('player-diagnostics-close');
+    if (current === scroll) {
+      if (direction === 'right') return refresh;
+      var bottom = Math.max(0, scroll.scrollHeight - scroll.clientHeight);
+      if (direction === 'down' && scroll.scrollTop >= bottom - 1) return refresh;
+      if (direction === 'up' || direction === 'down') {
+        var step = Math.max(60, Math.round(scroll.clientHeight * .7));
+        scroll.scrollTop = Math.max(0, Math.min(bottom, scroll.scrollTop + (direction === 'down' ? step : -step)));
+      }
+      return null;
+    }
+    if (direction === 'up') return scroll;
+    if (direction === 'left') return current === close ? refresh : scroll;
+    if (direction === 'right' && current === refresh) return close;
+    return null;
+  }
   function renderPlaybackDiagnostics(snapshot) {
+    var scroll = document.getElementById('player-diagnostics-scroll');
+    var scrollTop = scroll.scrollTop;
     var report, api = window.HongguoPlaybackDiagnostics;
     try {
       if (!api || typeof api.report !== 'function') throw new Error('diagnostic component unavailable');
@@ -1495,6 +1516,9 @@
       row.appendChild(label); row.appendChild(value); rows.appendChild(row);
     });
     document.getElementById('player-diagnostics-time').textContent = '快照 ' + report.capturedAt;
+    // Clearing the rows can temporarily clamp scrollTop to zero. Restore it
+    // after both the synchronous snapshot and the asynchronous core report.
+    scroll.scrollTop = scrollTop;
   }
   function refreshPlaybackDiagnostics() {
     if (!playerOptionsOpen || !document.getElementById('player-options').classList.contains('is-diagnostics')) return;
@@ -1641,8 +1665,9 @@
       document.getElementById('player-compose').classList.add('is-hidden');
       document.getElementById('player-options-message').textContent = '';
       document.getElementById('player-options').classList.remove('is-hidden');
+      document.getElementById('player-diagnostics-scroll').scrollTop = 0;
       refreshPlaybackDiagnostics();
-      goFocus(document.getElementById('player-diagnostics-refresh'));
+      goFocus(document.getElementById('player-diagnostics-scroll'));
       return;
     }
     var video = document.getElementById('hero-video');
@@ -1686,7 +1711,19 @@
     return true;
   }
   function seekBy(delta) { return seekTo(document.getElementById('hero-video').currentTime + delta); }
-  function setCinema(enabled) { shell.classList.toggle('is-cinema', enabled); updatePlaybackControls(); }
+  function syncNativePlayerBounds() {
+    var adapter = window.HongguoNativePlaybackAdapter;
+    if (adapter && typeof adapter.syncBounds === 'function') adapter.syncBounds();
+  }
+  function setCinema(enabled) {
+    shell.classList.toggle('is-cinema', enabled);
+    updatePlaybackControls();
+    // CSS cinema mode does not resize the Android WebView. Read the new
+    // layout explicitly, including after the browser fullscreen callback.
+    syncNativePlayerBounds();
+    setTimeout(syncNativePlayerBounds, 0);
+    setTimeout(syncNativePlayerBounds, 120);
+  }
   function exitCinema(keepHidden) {
     fullscreenExitKeepsHidden = !!keepHidden;
     setCinema(false);

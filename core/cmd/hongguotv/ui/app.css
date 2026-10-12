@@ -144,10 +144,13 @@ button:focus { outline: none; }
 .player-option { min-height: 44px; padding: 8px 12px; color: #dddde6; background: #343540; border-radius: 8px; text-align: center; }
 .player-option.is-selected { color: #fff; background: #f35d7b; }
 .player-option.is-focused { outline: none; box-shadow: 0 0 0 3px #fff; }
-.player-options.is-diagnostics { position: fixed; z-index: 151; top: 50%; right: auto; bottom: auto; left: 50%; width: calc(100% - 48px); max-width: 900px; max-height: calc(100% - 40px); padding: 20px 24px; box-sizing: border-box; overflow-y: auto; transform: translate(-50%,-50%); background: #20212b; }
+.player-options.is-diagnostics { position: fixed; z-index: 151; top: 50%; right: auto; bottom: auto; left: 50%; width: calc(100% - 48px); max-width: 900px; max-height: calc(100% - 40px); padding: 20px 24px; box-sizing: border-box; overflow: hidden; transform: translate(-50%,-50%); background: #20212b; }
 .player-options.is-diagnostics .player-options-heading { margin-bottom: 8px; }
 .player-options.is-diagnostics #player-options-close, .player-options.is-diagnostics #player-options-message { display: none; }
 .diagnostic-shade { position: fixed; z-index: 150; top: 0; right: 0; bottom: 0; left: 0; background: rgba(0,0,0,.72); }
+.diagnostic-scroll { max-height: calc(100vh - 180px); padding: 8px 10px; box-sizing: border-box; overflow-y: auto; border: 2px solid transparent; border-radius: 8px; }
+.diagnostic-scroll:focus, .diagnostic-scroll.is-focused { outline: none; border-color: #fff; }
+@media (min-height: 700px) { .diagnostic-scroll { max-height: 520px; } }
 #player-diagnostics-summary { margin: 0 0 12px; color: #f4c4ce; font-size: 15px; line-height: 1.4; }
 .diagnostic-rows { display: flex; flex-wrap: wrap; margin: 0 -10px; }
 .diagnostic-row { display: flex; align-items: flex-start; flex: 0 0 50%; width: 50%; min-height: 39px; padding: 7px 10px; box-sizing: border-box; border-bottom: 1px solid #353642; font-size: 15px; line-height: 1.4; }
