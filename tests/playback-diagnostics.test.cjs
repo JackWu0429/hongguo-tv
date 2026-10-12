@@ -3,13 +3,15 @@ const assert = require('node:assert/strict');
 const diagnostics = require('../core/cmd/hongguotv/ui/playback-diagnostics.js');
 test('MPV reports actual decoding separately from preference, including software fallback and signed A/V difference',()=>{
   function rows(native){return Object.fromEntries(diagnostics.report(snapshot({native:{engine:'mpv',state:'playing',...native}})).rows.map(x=>[x.label,x.value]));}
-  const hw=rows({mode:'mpv_auto',hwdec_current:'mediacodec-copy',decoder_frame_drop_count:2,frame_drop_count:0,avsync:-0.032});
+  const hw=rows({mode:'mpv_auto',hwdec_current:'mediacodec-copy',decoder_frame_drop_count:2,frame_drop_count:0,demuxer_cache_duration:12.8,avsync:-0.032});
   assert.match(hw['MPV 解码'],/自动解码.*实际：mediacodec-copy/);
   assert.equal(hw['MPV 掉帧'],'解码 2 · 渲染 0');assert.equal(hw['MPV 音画差值'],'-32 ms');
+  assert.equal(hw['MPV 缓存时长'],'0:12');
   assert.match(rows({mode:'mpv_auto',hwdec_current:'no'})['MPV 解码'],/自动解码.*实际：软件解码/);
   const unknown=rows({mode:'mpv_software'});
   assert.match(unknown['MPV 解码'],/实际：未取得/);
   assert.equal(unknown['MPV 掉帧'],'解码 未取得 · 渲染 未取得');assert.equal(unknown['MPV 音画差值'],undefined);
+  assert.equal(unknown['MPV 缓存时长'],undefined);
 });
 function video(values={}) { return Object.assign({currentTime:8,duration:90,videoWidth:720,videoHeight:1280,readyState:4,networkState:1,paused:false,ended:false,seeking:false,muted:true,volume:1,buffered:{length:1,start:()=>0,end:()=>20},error:null},values); }
 function snapshot(values={}) { return Object.assign({video:diagnostics.readVideo(video()),flags:{preparing:true,audioHeld:true,source:true},episode:8,quality:'720P',userAgent:'Mozilla/5.0 Chrome/44.0.2403.119 HongguoTV-Android',capturedAt:'12:34:56',device:{app_version:'0.2.31',version_code:33,manufacturer:'TV maker',model:'TV-9',android_version:'9',sdk:28,process_bits:32},core:{version:'0.2.31-aabbccddeeff00112233445566778899aabbccdd',arch:'arm'}},values); }

@@ -29,6 +29,7 @@ jobs:
           import os, re
           assert re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', os.environ['RELEASE_TAG'])
           PY
+          version="${RELEASE_TAG#v}"
           mkdir -p "$RUNNER_TEMP/signed-download"
           python3 - <<'PY'
           import json, os, subprocess
@@ -55,9 +56,23 @@ jobs:
           (folder / 'release-notes.md').write_text(metadata['release_notes'])
           print('Verified exact signed release files:', ', '.join(p.name for p in files))
           PY
+          mkdir -p "$RUNNER_TEMP/public-download"
+          cp "$RUNNER_TEMP/signed-download/hongguo-tv-$version.apk" "$RUNNER_TEMP/public-download/"
+          cp "$RUNNER_TEMP/signed-download/hongguo-tv-mpv-$version.apk" "$RUNNER_TEMP/public-download/"
+          cp "$RUNNER_TEMP/signed-download/update.json" "$RUNNER_TEMP/public-download/"
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          folder = Path(os.environ['RUNNER_TEMP']) / 'public-download'
+          private = json.loads((Path(os.environ['RUNNER_TEMP']) / 'signed-download' / 'update-mpv.json').read_text())
+          private.pop('library_source', None)
+          (folder / 'update-mpv.json').write_text(json.dumps(private, ensure_ascii=False, indent=2) + '\n')
+          PY
+          (cd "$RUNNER_TEMP/public-download" && sha256sum "hongguo-tv-$version.apk" "hongguo-tv-mpv-$version.apk" > SHA256SUMS.txt)
+          cp "$RUNNER_TEMP/signed-download/release-notes.md" "$RUNNER_TEMP/public-download/release-notes.md"
       - name: Publish only the verified download files
         env:
           GH_TOKEN: ${{ secrets.HONGGUO_RELEASES_TOKEN }}
         run: |
           test -n "$GH_TOKEN" || { echo "Configure the scoped HONGGUO_RELEASES_TOKEN" >&2; exit 1; }
-          python3 scripts/publish_public_release.py --directory "$RUNNER_TEMP/signed-download" --notes "$RUNNER_TEMP/signed-download/release-notes.md"
+          python3 scripts/publish_public_release.py --directory "$RUNNER_TEMP/public-download" --notes "$RUNNER_TEMP/public-download/release-notes.md"

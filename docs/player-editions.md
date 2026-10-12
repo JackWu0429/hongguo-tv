@@ -29,7 +29,7 @@ Android Go、JNI、APK 只在 GitHub Actions 构建。本机可运行 Go/JS/Pyth
 
 - CI：显式运行两版 debug 单元测试、构建和 lint，校验三 ABI、包名、签名及库隔离。
 - Release workflow_dispatch：构建两版正式签名包，核验签名和发布文件，不创建 Release/tag、不更新下载渠道。
-- 版本 tag：发布两版 APK、两个更新清单、库源码 ZIP 与校验和，再把相同文件同步到公开下载仓库。
+- 版本 tag：私有 Release 发布两版 APK、两个更新清单、LGPL 库源码 ZIP 与校验和；公开下载仓库只同步两版 APK、两个更新清单和 APK 校验和，不提供库源码 ZIP 下载。
 - 不上传临时 Actions APK artifact，避免配额再次耗尽。
 
 MPV 渲染重启事件与有效视频尺寸、有效 Surface 共同释放加载层。

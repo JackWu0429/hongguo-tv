@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish only allowlisted release files. Never upload the source checkout."""
+"""Publish only allowlisted public release files. Never upload the source checkout."""
 import argparse
 import base64
 import hashlib
@@ -107,11 +107,15 @@ def verify_bundle(directory):
         if manifest['download_url'] != base + apk.name: raise ValueError('Invalid public download URL')
         binaries.append(apk)
         if variant == 'mpv':
-            source = directory / f'hongguo-tv-mpv-library-source-{version}.zip'
-            info = manifest.get('library_source', {})
-            if info.get('name') != source.name or info.get('url') != base + source.name or info.get('size') != source.stat().st_size or info.get('sha256') != digest(source):
-                raise ValueError('MPV corresponding library source differs')
-            verify_library_kit(source); binaries.append(source)
+            # The private signed release may carry the LGPL source kit. The
+            # public download release intentionally omits it to keep the user
+            # download repository small; APK users do not need the kit.
+            if 'library_source' in manifest:
+                source = directory / f'hongguo-tv-mpv-library-source-{version}.zip'
+                info = manifest.get('library_source', {})
+                if info.get('name') != source.name or info.get('url') != base + source.name or info.get('size') != source.stat().st_size or info.get('sha256') != digest(source):
+                    raise ValueError('MPV corresponding library source differs')
+                verify_library_kit(source); binaries.append(source)
         manifests[channel] = manifest
     if len({m['version_name'] for m in manifests.values()}) != 1: raise ValueError('Edition versions differ')
     sums = directory / 'SHA256SUMS.txt'
@@ -145,7 +149,13 @@ def publish(directory, notes):
     for channel, manifest in manifests.items(): may_update(read_channel(channel)[1], manifest)
     release = release_by_tag(tag)
     if release is not None:
-        if any(a['name'] not in {p.name for p in files} for a in release['assets']):
+        allowed = {p.name for p in files}
+        # Releases made before the public-source split may retain their old
+        # source kit. Preserve those historical assets; new public releases do
+        # not upload a source kit.
+        version = manifests['update.json']['version_name']
+        legacy_source = f'hongguo-tv-mpv-library-source-{version}.zip'
+        if any(a['name'] not in allowed and a['name'] != legacy_source for a in release['assets']):
             raise ValueError('Existing release has unexpected assets; preserving it')
         # Check every existing asset before uploading any missing one.
         for path in files:

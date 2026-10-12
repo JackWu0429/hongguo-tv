@@ -48,6 +48,18 @@ class DualEditionTests(unittest.TestCase):
         self.assertEqual(len(files), 6)
         self.assertNotIn('private-account.go', [p.name for p in files])
 
+    def test_public_bundle_can_omit_the_private_mpv_source_kit(self):
+        values = self.bundle()
+        source = self.root / 'hongguo-tv-mpv-library-source-0.2.47.zip'
+        source.unlink()
+        values['update-mpv.json'].pop('library_source')
+        (self.root / 'update-mpv.json').write_text(json.dumps(values['update-mpv.json']))
+        binaries = [self.root / 'hongguo-tv-0.2.47.apk', self.root / 'hongguo-tv-mpv-0.2.47.apk']
+        (self.root / 'SHA256SUMS.txt').write_text(''.join(pub.digest(p) + '  ' + p.name + '\n' for p in binaries))
+        manifests, files = pub.verify_bundle(self.root)
+        self.assertEqual(set(manifests), {'update.json', 'update-mpv.json'})
+        self.assertEqual({p.name for p in files}, {'hongguo-tv-0.2.47.apk', 'hongguo-tv-mpv-0.2.47.apk', 'SHA256SUMS.txt', 'update.json', 'update-mpv.json'})
+
     def test_cross_edition_manifest_is_rejected(self):
         values = self.bundle(); values['update-mpv.json']['package_name'] = 'rocks.aston.hongguotv'
         (self.root / 'update-mpv.json').write_text(json.dumps(values['update-mpv.json']))

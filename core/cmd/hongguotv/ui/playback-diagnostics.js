@@ -89,6 +89,8 @@
         var actual = text(native.hwdec_current, 32);
         add('MPV 解码', requested + ' · 实际：' + (actual === 'no' ? '软件解码' : actual ? actual : '未取得') + ' · 输出就绪不等同于实机画面可见');
         add('MPV 掉帧', '解码 ' + metric(native.decoder_frame_drop_count) + ' · 渲染 ' + metric(native.frame_drop_count));
+        if (typeof native.demuxer_cache_duration === 'number' && isFinite(native.demuxer_cache_duration) && native.demuxer_cache_duration >= 0)
+          add('MPV 缓存时长', clock(native.demuxer_cache_duration));
         if (typeof native.avsync === 'number' && isFinite(native.avsync)) add('MPV 音画差值', Math.round(native.avsync * 1000) + ' ms');
         if (native.output_messages) add('MPV 输出提示', text(native.output_messages, 90));
       }
