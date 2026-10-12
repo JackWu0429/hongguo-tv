@@ -147,6 +147,10 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             active.setPropertyDouble("speed", speed);
             active.setPropertyBoolean("pause", background || !target.wantsPlay);
             active.command(new String[]{"loadfile", target.source, "replace"});
+            // A source replacement can inherit the previous file's paused
+            // state. Re-apply the desired state after issuing loadfile and
+            // again when MPV confirms that the new file is loaded.
+            applyPlayState(target);
         } catch (LinkageError | RuntimeException failure) { fail(target, "initialization"); }
     }
 
@@ -206,6 +210,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                         if (value == MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED) {
                             target.output.loaded = true;
                             if (target.pendingSeek) { active.command(new String[]{"seek", Double.toString(target.position / 1000.0), "absolute+exact"}); target.pendingSeek = false; }
+                            applyPlayState(target);
                         } else if (value == MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART) {
                             target.output.restarted = true; rendered(target);
                         }
@@ -228,6 +233,10 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         if (player.setOptionString(name, value) < 0) throw new IllegalStateException("MPV option rejected: " + name);
     }
     private static boolean finite(double value) { return !Double.isNaN(value) && !Double.isInfinite(value); }
+    private void applyPlayState(Session target) {
+        if (!current(target) || target.player == null) return;
+        target.player.setPropertyBoolean("pause", background || !target.wantsPlay);
+    }
     private void guarded(Session target, Runnable action) {
         if (!current(target)) return;
         try { action.run(); } catch (RuntimeException failure) { fail(target, "player"); }
