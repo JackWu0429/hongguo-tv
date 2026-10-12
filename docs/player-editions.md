@@ -6,7 +6,7 @@
 |---|---|---|
 | 名称 | 红果短剧 | 红果短剧 MPV |
 | 包名 | rocks.aston.hongguotv | rocks.aston.hongguotv.mpv |
-| 播放 | WebView → Media3 兼容回退 | libmpv，hwdec=no 软件解码 |
+| 播放 | WebView → Media3 兼容回退 | libmpv，默认自动解码，可选择软件解码 |
 | 更新 | update.json | update-mpv.json |
 | 安装包 | hongguo-tv-VERSION.apk | hongguo-tv-mpv-VERSION.apk |
 
@@ -34,4 +34,10 @@ Android Go、JNI、APK 只在 GitHub Actions 构建。本机可运行 Go/JS/Pyth
 
 MPV 渲染重启事件与有效视频尺寸、有效 Surface 共同释放加载层。
 该信号仍不能证明实体屏幕真的有画面，诊断注明 `playback-restart`；
-软件 HEVC 的流畅度、音画同步、连续切集和前后台需要设备验收。
+自动/软件 HEVC 的流畅度、音画同步、连续切集和前后台需要设备验收。
+
+## MPV 解码选择（v0.2.50 起）
+
+“我的 → 播放解码”可选择自动或软件解码，持久保存，下次播放/切集生效。默认采用与 MiniReel 锁定依赖相同的 `hwdec=auto-safe`，允许 MediaCodec 回读后交由 MPV 渲染；失败时 MPV 可回到软件。软件模式保留 `hwdec=no`，便于绕过厂商硬解输出异常。当前播放使用启动时的模式快照，切换设置不打断播放。
+
+采用 bilinear 放大/缩小，关闭 dither 和额外校正/线性/ sigmoid 缩放，保留 HDR 策略。诊断区分设置与 `hwdec-current` 实际路径，并显示解码/渲染掉帧及可用的音画差值；未取得指标不伪造零。自动模式不能保证所有设备黑帧自动回退，出现异常仍可选择软件模式。
