@@ -58,3 +58,26 @@ test('reports native track support separately from decoder and first-frame state
   assert.match(rows['未选 HEVC'],/1280x720.*FORMAT_EXCEEDS_CAPABILITIES/);
   assert.match(diagnostics.report(snapshot({native:{track_support:'FORMAT_UNSUPPORTED_SUBTYPE'}})).summary,/没有接受当前视频轨道/);
 });
+test('MPV reports actual audio output and native surface independently of the hidden HTML video',()=>{
+  const s=snapshot({flags:{source:true,videoVisible:false},native:{engine:'mpv',state:'playing',surface:'SurfaceView',output_ready:true,
+    restart_seen:true,vo_configured:true,video_output:'gpu',surface_width:1280,surface_height:720,surface_attached:true,surface_visible:true,
+    audio_output:'opensles',audio_codec:'aac',audio_format:'s16',audio_rate:48000,audio_channels:2,actual_mute:true,actual_volume:100,actual_pause:false,
+    output_messages:'音频输出警告'}});
+  s.video.muted=false;
+  const rows=Object.fromEntries(diagnostics.report(s).rows.map(x=>[x.label,x.value]));
+  assert.match(rows.MPV,/输出已就绪/);assert.doesNotMatch(rows.MPV,/已出首帧/);
+  assert.match(rows['MPV 视频输出'],/gpu.*1280 × 720.*重启信号/);
+  assert.match(rows['MPV 音频输出'],/opensles.*aac.*s16.*48000 Hz.*2 声道/);
+  assert.match(rows['MPV 实际状态'],/已静音.*100%.*运行中/);
+  assert.match(rows['声音状态'],/已解除静音/);
+  assert.match(rows['画面保护'],/原生视频层已显示/);assert.doesNotMatch(rows['画面保护'],/视频隐藏/);
+  assert.equal(rows['MPV 输出提示'],'音频输出警告');
+});
+test('MPV diagnostics retain signed native errors and do not invent output state from a legacy restart',()=>{
+  const s=snapshot({native:{engine:'mpv',state:'error',first_frame:true,frame_signal:'playback-restart',error_kind:'media',error_code:-13}});
+  const rows=Object.fromEntries(diagnostics.report(s).rows.map(x=>[x.label,x.value]));
+  assert.match(rows.MPV,/输出待确认/);assert.doesNotMatch(rows.MPV,/已出首帧/);
+  assert.match(rows['最近错误'],/media（-13）/);assert.match(rows['MPV 实际状态'],/状态未取得/);
+  s.native.log='https://media.invalid/a.mp4?key=secret';
+  assert.doesNotMatch(JSON.stringify(diagnostics.report(s)),/media\.invalid|secret/);
+});

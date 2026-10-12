@@ -16,9 +16,12 @@ final class MPVLib {
     interface EventObserver {
         void eventProperty(String name, boolean value);
         void event(int value);
+        void outputMessage(int component, int level);
+        void endFile(int reason, int error);
         void error();
     }
     static final class MpvEvent {
+        static final int MPV_EVENT_LOG_MESSAGE = 2;
         static final int MPV_EVENT_END_FILE = 7;
         static final int MPV_EVENT_FILE_LOADED = 8;
         static final int MPV_EVENT_PLAYBACK_RESTART = 21;
@@ -54,6 +57,7 @@ final class MPVLib {
     int setOptionString(String name, String value) { return nativeOption(handle(), name, value); }
     void setPropertyBoolean(String name, boolean value) { nativeSet(handle(), name, value ? "yes" : "no"); }
     void setPropertyDouble(String name, double value) { nativeSet(handle(), name, Double.toString(value)); }
+    void setPropertyString(String name, String value) { nativeSet(handle(), name, value); }
     Double getPropertyDouble(String name) { return nativeDouble(handle(), name); }
     Integer getPropertyInt(String name) { Double value = getPropertyDouble(name); return value == null ? null : value.intValue(); }
     Boolean getPropertyBoolean(String name) { return nativeFlag(handle(), name); }
@@ -84,6 +88,10 @@ final class MPVLib {
                         if (kind == MpvEvent.MPV_EVENT_PROPERTY_CHANGE) {
                             if (index >= 0 && index < properties.size() && event[2] >= 0)
                                 observer.eventProperty(properties.get(index), event[2] != 0);
+                        } else if (kind == MpvEvent.MPV_EVENT_LOG_MESSAGE) {
+                            if (event[3] > 0) observer.outputMessage((int) event[3], (int) event[2]);
+                        } else if (kind == MpvEvent.MPV_EVENT_END_FILE) {
+                            observer.endFile((int) event[2], (int) event[3]);
                         } else observer.event(kind);
                     }
                 }
