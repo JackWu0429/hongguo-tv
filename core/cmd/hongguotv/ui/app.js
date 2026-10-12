@@ -168,6 +168,7 @@
   var playerReturnFocus = null;
   var libraryPage = document.getElementById('library-page');
   var accountPage = document.getElementById('account-page');
+  var settingsPage = document.getElementById('settings-page');
   var accountData = null;
   var accountBusy = false;
   var accountNotice = '';
@@ -723,10 +724,9 @@
     if (previous && previous.tagName === 'INPUT' && element.tagName !== 'INPUT' && window.HongguoTVInput) window.HongguoTVInput.finishEditing();
     element.focus();
     markFocus(element);
-    // The account workspace is its own scroll container. Android 6 may move
-    // focus without scrolling that container, leaving the focused update
-    // button below the viewport and making it appear unreachable.
-    if (pageMode() === 'account' && element.closest && element.closest('#account-page')) {
+    // Older WebViews may focus an action without scrolling its workspace.
+    if ((pageMode() === 'account' || pageMode() === 'settings') && element.closest &&
+        element.closest(pageMode() === 'settings' ? '#settings-page' : '#account-page')) {
       // Keep both MPV choices and their status above the viewport edge,
       // including old WebViews without scroll-margin support.
       var scrollTarget = element.closest('#mpv-playback-settings') || element;
@@ -747,6 +747,7 @@
     if (remembered && focusables().indexOf(remembered) >= 0) return remembered;
     if (pageMode() === 'search') return searchInput || document.querySelector('.search-submit');
     if (pageMode() === 'account') return firstVisible('.account-input') || firstVisible('.account-action');
+    if (pageMode() === 'settings') return firstVisible('.app-update-action') || firstVisible('.playback-mode-action') || activeSidebar();
     if (pageMode() === 'support') return firstVisible('.support-card');
     if (isLibraryPage()) return firstVisible('.library-card') || firstVisible('.history-filter.is-active') || firstVisible('[data-action="library-discover"]') || firstVisible('.library-toolbar-button');
     if (pageMode() === 'rank') return firstVisible('.rank-tab.is-active') || firstRankTab();
@@ -796,7 +797,7 @@
   function firstCalendarRow() { return firstVisible('.calendar-row'); }
 
   function hideWorkspacePages() {
-    [rankPage, newPage, reservationPage, followPage, libraryPage, accountPage, supportPage].forEach(function (page) {
+    [rankPage, newPage, reservationPage, followPage, libraryPage, accountPage, settingsPage, supportPage].forEach(function (page) {
       if (page) page.classList.add('is-hidden');
     });
   }
@@ -1098,7 +1099,7 @@
     }
     if (zone === 'appUpdates') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstVisible('#account-import-history') || firstVisible('#account-sync') || firstVisible('#account-profile .account-action') || firstVisible('#account-login-form .account-action');
+      if (direction === 'up') return activeSidebar();
       if (direction === 'down') return firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
       return null;
     }
@@ -1113,7 +1114,7 @@
       var leftSelector = '#account-login-form .account-input, #account-login-form .account-action, #account-mfa .account-action, #account-profile .account-action';
       if (current.id === 'account-sync' || current.id === 'account-import-history') {
         if (direction === 'left') return focusables(leftSelector).indexOf(accountLeftFocus) >= 0 ? accountLeftFocus : firstVisible(leftSelector) || activeSidebar();
-        if (direction === 'down') return current.id === 'account-sync' ? firstVisible('#account-import-history') || firstVisible('.app-update-action') : firstVisible('.app-update-action');
+        if (direction === 'down') return current.id === 'account-sync' ? firstVisible('#account-import-history') : null;
         if (direction === 'up') return current.id === 'account-import-history' ? firstVisible('#account-sync') || firstVisible(leftSelector) : null;
         return null;
       }
@@ -1127,7 +1128,7 @@
       var target = moveGrid(leftSelector, current, direction);
       if (target) return target;
       if (direction === 'right' && (firstVisible('#account-sync') || firstVisible('#account-import-history'))) { accountLeftFocus = current; return firstVisible('#account-sync') || firstVisible('#account-import-history'); }
-      return direction === 'down' ? firstVisible('.app-update-action') : direction === 'left' || direction === 'up' ? activeSidebar() : null;
+      return direction === 'left' || direction === 'up' ? activeSidebar() : null;
     }
     if (zone === 'libraryItems') {
       if (direction === 'left' || direction === 'right') return moveGrid('.library-card', current, direction) || (direction === 'left' ? activeSidebar() : null);
@@ -4349,6 +4350,10 @@
       accountPage.classList.remove('is-hidden');
       renderAccount();
       pollAccount();
+    } else if (item.dataset.page === 'settings') {
+      mainSurface.classList.add('has-workspace');
+      settingsPage.classList.remove('is-hidden');
+      appUpdates.refresh();
     } else if (item.dataset.page === 'support') {
       mainSurface.classList.add('has-workspace');
       supportPage.classList.remove('is-hidden');
