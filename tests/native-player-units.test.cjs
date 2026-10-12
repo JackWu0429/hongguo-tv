@@ -162,6 +162,20 @@ test('MPV source replacement ignores old frame, progress and ended callbacks', a
   assert.equal(frames, 1); assert.equal(video.videoHeight, 1280); assert.equal(video.currentTime, 5);
 });
 
+test('MPV source replacement stops the old session before starting the new one', async () => {
+  const f = fixture('mpv'), video = f.document.getElementById('hero-video');
+  const order = [];
+  const oldStop = f.bridge.stop;
+  const oldPlay = f.bridge.play;
+  f.bridge.stop = function () { order.push('stop'); oldStop.call(this); };
+  f.bridge.play = function (id, payload) { order.push('play'); oldPlay.call(this, id, payload); };
+  video.src = '/media/one.mp4'; await video.play();
+  video.src = '/media/two.mp4'; await video.play();
+  assert.deepEqual(order, ['stop', 'play', 'stop', 'play']);
+  assert.equal(f.bridge.plays, 2);
+  assert.equal(f.bridge.stops, 2);
+});
+
 test('MPV failure stays native, reports error and ignores late success until explicit retry', async () => {
   const f = fixture('mpv'), video = f.document.getElementById('hero-video');
   const playback = f.context.window.HongguoNativePlayback;

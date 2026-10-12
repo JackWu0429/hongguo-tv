@@ -15,7 +15,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import org.json.JSONObject;
 
-/** One libmpv instance per source: callbacks from a released source cannot own the new one. */
+/** One shared libmpv client; session guards keep released-source callbacks inert. */
 public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder.Callback {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final WebView web;
@@ -23,6 +23,12 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     private final SurfaceView surface;
     private final SharedPreferences preferences;
     private Session session;
+    // Keep one libmpv client while the SurfaceView remains alive. Recreating
+    // libmpv for every page/card transition was the riskiest path on vendor
+    // 32-bit Android builds: the old native client could still be unwinding
+    // while the new client captured the same SurfaceView.
+    private MPVLib player;
+    private boolean playerSurfaceAttached;
     private boolean destroyed, background;
     private double volume = 1, speed = 1;
     private boolean muted = true;
@@ -56,7 +62,11 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         surface.setFocusable(false);
         surface.getHolder().addCallback(this);
         holder.addView(surface, new FrameLayout.LayoutParams(-1, -1));
-        holder.setVisibility(View.GONE);
+        // Keep the SurfaceView alive between sources. Alpha hides the native
+        // layer without destroying its ANativeWindow, so the next card can
+        // reuse the same libmpv client and surface safely.
+        holder.setVisibility(View.VISIBLE);
+        holder.setAlpha(0f);
         web.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> applyBounds());
         handler.postDelayed(progress, 500);
     }
@@ -104,6 +114,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                 double rate = data.optDouble("speed", speed);
                 if (finite(rate) && rate > 0 && rate <= 4) speed = rate;
                 holder.setVisibility(View.VISIBLE);
+                holder.setAlpha(1f);
                 armTimeout(target);
                 event(target, "buffering", null);
                 start(target);
@@ -113,57 +124,77 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         }
     }
 
-    private boolean current(Session target) { return !destroyed && session == target && !target.terminal; }
+    private boolean current(Session target) { return target != null && !destroyed && session == target && !target.terminal; }
     private void start(Session target) {
         if (!current(target) || target.player != null || !surface.getHolder().getSurface().isValid()) return;
         try {
-            MPVLib active = MPVLib.create(web.getContext());
+            MPVLib active = ensurePlayer();
             if (active == null) { fail(target, "initialization"); return; }
             target.player = active;
+            if (!playerSurfaceAttached) {
+                active.attachSurface(surface.getHolder().getSurface());
+                playerSurfaceAttached = true;
+            }
+            target.output.attached = playerSurfaceAttached;
+            android.graphics.Rect frame = surface.getHolder().getSurfaceFrame();
+            surfaceSize(target, frame.width(), frame.height());
+            active.setPropertyString("android-surface-size", frame.width() + "x" + frame.height());
+            active.setPropertyString("hwdec", target.mode.hwdec);
+            target.pendingSeek = target.position > 0;
+            active.setPropertyString("force-window", "yes");
+            active.setPropertyBoolean("mute", muted);
+            active.setPropertyDouble("volume", volume * 100);
+            active.setPropertyDouble("speed", speed);
+            active.setPropertyBoolean("pause", background || !target.wantsPlay);
+            active.command(new String[]{"loadfile", target.source, "replace"});
+        } catch (LinkageError | RuntimeException failure) { fail(target, "initialization"); }
+    }
+
+    /** Create/configure the one client shared by source replacements. */
+    private MPVLib ensurePlayer() {
+        if (player != null) return player;
+        final MPVLib active = MPVLib.create(web.getContext());
+        if (active == null) return null;
+        try {
             // Match media_kit's safe automatic Android path. Users can retain
             // software decoding if their vendor decoder produces bad frames.
             option(active, "config", "no"); option(active, "terminal", "no");
             option(active, "vo", "gpu"); option(active, "gpu-context", "android");
-            option(active, "opengl-es", "yes"); option(active, "hwdec", target.mode.hwdec);
-            // Match WebView object-fit: contain: preserve the source aspect
-            // ratio, center in the current Surface, and never crop to fill.
+            option(active, "opengl-es", "yes"); option(active, "hwdec", MpvDecodeMode.stored(decoderMode()).hwdec);
             option(active, "keepaspect", "yes"); option(active, "panscan", "0");
             option(active, "video-align-x", "0"); option(active, "video-align-y", "0");
-            // Mobile rendering defaults used by media_kit; retain HDR policy.
             option(active, "scale", "bilinear"); option(active, "dscale", "bilinear");
             option(active, "dither", "no"); option(active, "correct-downscaling", "no");
             option(active, "linear-downscaling", "no"); option(active, "sigmoid-upscaling", "no");
-            // media_kit uses OpenSL ES on physical Android devices. Keep
-            // AudioTrack as an initialization fallback with conservative PCM.
-            option(active, "ao", "opensles,audiotrack");
-            option(active, "audiotrack-pcm-float", "no");
-            option(active, "keep-open", "yes");
-            option(active, "idle", "yes"); option(active, "force-window", "no");
-            option(active, "osd-level", "0"); option(active, "input-default-bindings", "no");
-            option(active, "input-vo-keyboard", "no"); option(active, "sid", "no");
-            option(active, "cache", "yes"); option(active, "demuxer-max-bytes", "32MiB");
-            option(active, "demuxer-max-back-bytes", "8MiB");
+            option(active, "ao", "opensles,audiotrack"); option(active, "audiotrack-pcm-float", "no");
+            option(active, "keep-open", "yes"); option(active, "idle", "yes");
+            option(active, "force-window", "no"); option(active, "osd-level", "0");
+            option(active, "input-default-bindings", "no"); option(active, "input-vo-keyboard", "no");
+            option(active, "sid", "no"); option(active, "cache", "yes");
+            option(active, "demuxer-max-bytes", "32MiB"); option(active, "demuxer-max-back-bytes", "8MiB");
             option(active, "network-timeout", "15");
-            option(active, "start", Double.toString(target.position / 1000.0));
+            player = active;
             active.addObserver(new MPVLib.EventObserver() {
-                private void post(Runnable action) { handler.post(() -> { if (target.player == active) guarded(target, action); }); }
-                @Override public void error() { post(() -> fail(target, "native_event")); }
+                private void post(Runnable action) {
+                    handler.post(() -> {
+                        Session target = session;
+                        if (target != null && target.player == active) guarded(target, action);
+                    });
+                }
+                @Override public void error() { post(() -> fail(session, "native_event")); }
                 @Override public void outputMessage(int component, int level) {
-                    post(() -> { target.output.message(component, level); updateDiagnostic(target, null); });
+                    post(() -> { Session target = session; if (target != null) { target.output.message(component, level); updateDiagnostic(target, null); } });
                 }
                 @Override public void endFile(int reason, int error) {
-                    post(() -> {
+                    post(() -> { Session target = session; if (target == null) return;
                         if (reason == 0 && target.outputReady) finish(target);
                         else if (reason == 4 || error < 0) fail(target, "media", error);
-                        // stop/quit belong to disposal, not auto-next or a failed load.
                     });
                 }
                 @Override public void eventProperty(String name, boolean value) {
-                    post(() -> {
+                    post(() -> { Session target = session; if (target == null) return;
                         if ("eof-reached".equals(name) && value && target.outputReady) finish(target);
-                        else if ("vo-configured".equals(name)) {
-                            target.output.configured = value; rendered(target);
-                        }
+                        else if ("vo-configured".equals(name)) { target.output.configured = value; rendered(target); }
                         else if ("paused-for-cache".equals(name) && target.outputReady && target.wantsPlay && !background)
                             MpvPlayerBridge.this.event(target, value ? "buffering" : "playing", null);
                         else if ("pause".equals(name) && target.outputReady && !background)
@@ -171,15 +202,11 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                     });
                 }
                 @Override public void event(int value) {
-                    post(() -> {
+                    post(() -> { Session target = session; if (target == null) return;
                         if (value == MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED) {
                             target.output.loaded = true;
-                            if (target.pendingSeek) {
-                                active.command(new String[]{"seek", Double.toString(target.position / 1000.0), "absolute+exact"});
-                                target.pendingSeek = false;
-                            }
-                        }
-                        else if (value == MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART) {
+                            if (target.pendingSeek) { active.command(new String[]{"seek", Double.toString(target.position / 1000.0), "absolute+exact"}); target.pendingSeek = false; }
+                        } else if (value == MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART) {
                             target.output.restarted = true; rendered(target);
                         }
                     });
@@ -190,16 +217,12 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             active.observeProperty("pause", MPVLib.MpvFormat.MPV_FORMAT_FLAG);
             active.observeProperty("paused-for-cache", MPVLib.MpvFormat.MPV_FORMAT_FLAG);
             active.observeProperty("vo-configured", MPVLib.MpvFormat.MPV_FORMAT_FLAG);
-            active.attachSurface(surface.getHolder().getSurface()); target.output.attached = true;
-            android.graphics.Rect frame = surface.getHolder().getSurfaceFrame();
-            surfaceSize(target, frame.width(), frame.height());
-            active.setPropertyString("force-window", "yes");
-            active.setPropertyBoolean("mute", muted);
-            active.setPropertyDouble("volume", volume * 100);
-            active.setPropertyDouble("speed", speed);
-            active.setPropertyBoolean("pause", background || !target.wantsPlay);
-            active.command(new String[]{"loadfile", target.source, "replace"});
-        } catch (LinkageError | RuntimeException failure) { fail(target, "initialization"); }
+            return active;
+        } catch (LinkageError | RuntimeException failure) {
+            player = null;
+            try { active.destroy(); } catch (RuntimeException ignored) {}
+            return null;
+        }
     }
     private static void option(MPVLib player, String name, String value) {
         if (player.setOptionString(name, value) < 0) throw new IllegalStateException("MPV option rejected: " + name);
@@ -252,7 +275,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         target.errorKind = kind; target.errorCode = code;
         try { detail.put("kind", kind).put("code", code); } catch (Exception ignored) {}
         event(target, "error", detail); target.terminal = true;
-        dispose(target); holder.setVisibility(View.GONE);
+        dispose(target); holder.setVisibility(View.VISIBLE); holder.setAlpha(0f);
     }
     private final Runnable progress = new Runnable() {
         @Override public void run() {
@@ -292,9 +315,12 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                 fields.put("video_decoder", target.decoder).put("hwdec_current", property(player, "hwdec-current"));
                 Integer decodedDrops = player.getPropertyInt("decoder-frame-drop-count"), outputDrops = player.getPropertyInt("frame-drop-count");
                 Double avsync = player.getPropertyDouble("avsync");
+                Double cacheDuration = player.getPropertyDouble("demuxer-cache-duration");
                 if (decodedDrops != null && decodedDrops >= 0) fields.put("decoder_frame_drop_count", decodedDrops);
                 if (outputDrops != null && outputDrops >= 0) fields.put("frame_drop_count", outputDrops);
                 if (avsync != null && finite(avsync)) fields.put("avsync", avsync);
+                if (cacheDuration != null && finite(cacheDuration) && cacheDuration >= 0)
+                    fields.put("demuxer_cache_duration", cacheDuration);
                 fields.put("audio_output", property(player, "current-ao"))
                     .put("audio_codec", property(player, "audio-codec"))
                     .put("audio_format", property(player, "audio-out-params/format"));
@@ -325,7 +351,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         if (!destroyed) web.evaluateJavascript("window.HongguoNativePlayback&&window.HongguoNativePlayback.event(" + JSONObject.quote(id) + "," + JSONObject.quote(name) + "," + (detail == null ? "{}" : detail.toString()) + ")", null);
     }
     @JavascriptInterface public void begin(String id) { stop(); }
-    @JavascriptInterface public void stop() { handler.post(() -> { release(); holder.setVisibility(View.GONE); }); }
+    @JavascriptInterface public void stop() { handler.post(() -> { release(); holder.setVisibility(View.VISIBLE); holder.setAlpha(0f); }); }
     @JavascriptInterface public void pause() { handler.post(() -> { Session s = session; if (s != null) guarded(s, () -> { s.wantsPlay = false; if (s.player != null) s.player.setPropertyBoolean("pause", true); }); }); }
     @JavascriptInterface public void resume() { handler.post(() -> { Session s = session; if (s != null) guarded(s, () -> { s.wantsPlay = true; if (s.player != null && s.output.attached && !background) s.player.setPropertyBoolean("pause", false); }); }); }
     @JavascriptInterface public void setSpeed(double value) {
@@ -343,7 +369,11 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         handler.post(() -> { Session s = session; if (s != null) guarded(s, () -> {
             s.position = Math.round(seconds * 1000);
             s.pendingSeek = !s.output.loaded;
-            if (s.output.loaded && s.player != null) s.player.command(new String[]{"seek", Double.toString(seconds), "absolute+exact"});
+            // User initiated seeks should land on a nearby keyframe first.
+            // Initial resume/episode positions keep absolute+exact in the
+            // FILE_LOADED path, where timestamp fidelity matters more than
+            // interactive latency on a network source.
+            if (s.output.loaded && s.player != null) s.player.command(new String[]{"seek", Double.toString(seconds), "absolute"});
         }); });
     }
     @JavascriptInterface public void seekBy(int seconds) { handler.post(() -> { if (session != null) seekTo(Math.max(0, session.position / 1000.0 + Math.max(-60, Math.min(60, seconds)))); }); }
@@ -388,6 +418,12 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             s.output.surfaceWidth = 0; s.output.surfaceHeight = 0;
             event(s, "buffering", null);
         });
+        else if (player != null) {
+            // No active session owns the surface, but the shared native client
+            // still must not retain a dead ANativeWindow.
+            MPVLib old = player; player = null; playerSurfaceAttached = false;
+            try { old.destroy(); } catch (RuntimeException ignored) {}
+        }
     }
     private void dispose(Session target) {
         if (target.timeout != null) handler.removeCallbacks(target.timeout);
@@ -397,10 +433,24 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                 old.setPropertyBoolean("mute", true);
             } catch (RuntimeException ignored) {
                 // Destroy still owns cleanup if a dying source rejected a command.
-            } finally { target.output.attached = false; old.destroy(); }
+            } finally { target.output.attached = false; if (old == player) player = null; playerSurfaceAttached = false; old.destroy(); }
         }
     }
-    private void release() { Session old = session; session = null; if (old != null) { old.terminal = true; dispose(old); } }
+    private void release() {
+        Session old = session; session = null;
+        if (old != null) {
+            old.terminal = true;
+            if (old.timeout != null) handler.removeCallbacks(old.timeout);
+            // Keep the client and SurfaceView alive for the next source. A
+            // source replacement is a normal operation, not a native teardown.
+            if (old.player != null && old.player == player) {
+                try { old.player.setPropertyBoolean("pause", true); } catch (RuntimeException ignored) {}
+                old.player = null;
+            } else if (old.player != null) {
+                dispose(old);
+            }
+        }
+    }
     @Override public void onPause() {
         background = true; Session s = session;
         if (s != null) { if (s.timeout != null) handler.removeCallbacks(s.timeout); guarded(s, () -> { if (s.player != null) s.player.setPropertyBoolean("pause", true); }); }
@@ -409,5 +459,11 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         background = false; Session s = session;
         if (s != null) guarded(s, () -> { armTimeout(s); start(s); if (s.player != null && s.output.attached) s.player.setPropertyBoolean("pause", !s.wantsPlay); });
     }
-    @Override public void destroy() { destroyed = true; handler.removeCallbacksAndMessages(null); release(); surface.getHolder().removeCallback(this); holder.setVisibility(View.GONE); }
+    @Override public void destroy() {
+        destroyed = true; handler.removeCallbacksAndMessages(null); release();
+        surface.getHolder().removeCallback(this);
+        MPVLib old = player; player = null; playerSurfaceAttached = false;
+        if (old != null) { try { old.destroy(); } catch (RuntimeException ignored) {} }
+        holder.setAlpha(0f); holder.setVisibility(View.GONE);
+    }
 }
