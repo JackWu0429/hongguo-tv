@@ -631,12 +631,13 @@ button:focus { outline: none; }
 }
 .app-shell[data-mode="support"] .top-bar, .app-shell[data-mode="account"] .top-bar { background: #111217; }
 
-/* In native Android playback the Media3 surface is behind the WebView. Keep
+/* In native Android playback the Media3/MPV surface is behind the WebView. Keep
    the HTML shell transparent only where the video is painted; sidebar and
    controls retain their normal surfaces. */
 html.native-playback, html.native-playback body { background: transparent; }
 html.native-playback .app-shell, html.native-playback .main-surface,
 html.native-playback .hero, html.native-playback .hero-media,
+html.native-playback .app-shell.is-cinema .hero,
 html.native-playback .hero.is-feed .hero-media { background: transparent; }
 html.native-playback .hero-video { display: none !important; }
 
