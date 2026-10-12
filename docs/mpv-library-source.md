@@ -5,7 +5,7 @@
 发行库的下载地址及 SHA256。不是 full/encoders-gpl 构建，不包含其辅助库。
 mpv 使用 `-Dgpl=false`，FFmpeg 使用 `--disable-gpl --disable-nonfree
 --enable-version3`；FFmpeg 及与它组合的库适用 LGPLv3 要求。完整版权和许可在
-`NOTICE.txt`、各源码归档内，应用“我的 → 开源许可”也可离线查看。
+`NOTICE.txt`、各源码归档内，应用“设置 → 开源许可”也可离线查看。
 FreeType 选择 FTL 许可，完整声明在 NOTICE。其他依赖保留各自原始许可。
 
 附件自动包含库的对应源码、上游补丁/构建脚本、独立 MIT JNI 桥和库替换工具。

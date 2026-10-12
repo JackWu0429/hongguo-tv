@@ -19,6 +19,7 @@ button:focus { outline: none; }
 .side-item.is-focused, .side-item:focus { color: #fff; background: rgba(255,255,255,.17); box-shadow: 0 0 0 2px #fff; transform: scale(1.018); }
 .side-icon { display: inline-block; flex: 0 0 32px; width: 32px; height: 32px; fill: none; color: currentColor; }
 .sidebar-bottom { margin-top: auto; padding-top: 16px; }
+.sidebar-bottom .side-item + .side-item { margin-top: 5px; }
 .side-item-secondary { color: #c5c5ce; }
 
 .main-surface { position: relative; display: flex; flex: 1 1 auto; width: calc(100% - 250px); min-width: 0; flex-direction: column; background: #111217; }
@@ -488,15 +489,15 @@ button:focus { outline: none; }
   .search-heading-row { display: block; }
   .search-box { margin-top: 16px; }
 }
-.account-page { padding: 1.5rem 2.3rem; overflow-y: auto; }
-.account-heading h1 { margin: 0 0 .6rem; font-size: 2rem; }
-.account-heading p, .account-card p { color: #a9a9b5; line-height: 1.6; }
+.account-page, .settings-page { padding: 1.5rem 2.3rem; overflow-y: auto; }
+.account-heading h1, .settings-heading h1 { margin: 0 0 .6rem; font-size: 2rem; }
+.account-heading p, .account-card p, .settings-card p { color: #a9a9b5; line-height: 1.6; }
 .account-layout { display: flex; gap: 1.5rem; max-width: 70rem; margin-top: 2rem; }
-.account-card { flex: 1; min-width: 0; padding: 2rem; border: 1px solid #30303a; border-radius: 1rem; background: #181820; }
+.account-card, .settings-card { flex: 1; min-width: 0; padding: 2rem; border: 1px solid #30303a; border-radius: 1rem; background: #181820; }
 .app-update-card { max-width: 70rem; margin-top: 1.5rem; }
 .app-update-actions { display: flex; flex-wrap: wrap; }
 .app-update-actions button { margin: 0 .8rem .6rem 0; }
-.account-card h2 { font-size: 1.45rem; margin: 0 0 1.3rem; }
+.account-card h2, .settings-card h2 { font-size: 1.45rem; margin: 0 0 1.3rem; }
 .account-card label { display: block; margin: 1rem 0 .6rem; color: #bbbcc8; }
 .account-input { width: 100%; min-height: 3.2rem; padding: .9rem 1rem; box-sizing: border-box; border: 2px solid #41414c; border-radius: .6rem; background: #101016; color: #fff; font-size: 1.3rem; text-align: left; cursor: pointer; }
 .account-input.is-empty { color: #a9a9b5; }

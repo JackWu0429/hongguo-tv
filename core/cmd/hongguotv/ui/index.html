@@ -22,6 +22,7 @@
     <symbol id="icon-reservation" viewBox="0 0 24 24"><path d="M6 4h12a2 2 0 0 1 2 2v14H4V6a2 2 0 0 1 2-2zM4 9h16M8 2v4M16 2v4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"/><circle cx="12" cy="15" r="3.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 13.5V15l1.3.8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/></symbol>
     <symbol id="icon-heart" viewBox="0 0 24 24"><path d="M12 20S4 15.2 4 9.7A4.1 4.1 0 0 1 12 7a4.1 4.1 0 0 1 8 2.7C20 15.2 12 20 12 20Z" fill="currentColor"/></symbol>
     <symbol id="icon-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5 20a7 7 0 0 1 14 0" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.7"/></symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24"><path d="m9 3-.7 2.4-2 .9-2.3-.6-2 3.5 1.7 1.8v2L2 14.8l2 3.5 2.3-.6 2 .9L9 21h6l.7-2.4 2-.9 2.3.6 2-3.5-1.7-1.8v-2L22 9.2l-2-3.5-2.3.6-2-.9L15 3z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
     <symbol id="icon-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z" fill="currentColor"/></symbol>
     <symbol id="icon-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM14 5h4v14h-4z" fill="currentColor"/></symbol>
     <symbol id="icon-fullscreen" viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -55,6 +56,7 @@
       </nav>
       <div class="sidebar-bottom">
         <button class="side-item side-item-secondary" data-page="account" data-focus="sidebar-account"><svg class="side-icon"><use href="#icon-user" xlink:href="#icon-user"></use></svg><span>我的</span></button>
+        <button class="side-item side-item-secondary" data-page="settings" data-focus="sidebar-settings"><svg class="side-icon"><use href="#icon-settings" xlink:href="#icon-settings"></use></svg><span>设置</span></button>
       </div>
     </aside>
 
@@ -208,13 +210,17 @@
           </div>
           <div class="account-card account-sync-card"><h2>云同步</h2><p class="account-sync-state" id="account-sync-state">未登录 · 记录保存在本机</p><p id="account-sync-detail">收藏、点赞、观看历史和播放进度会与红果账号同步。</p><button class="account-action account-primary" id="account-sync" data-focus="account-sync" disabled>立即同步</button><div class="account-history-import"><button class="account-action" id="account-import-history" data-focus="account-import-history" disabled>合并登录前记录</button><p id="account-import-detail" role="status" aria-live="polite">登录后可将本机观看历史合并到当前账号。</p></div><p class="account-footnote">同一部剧保留较新的观看进度，合并后自动同步。登录前的原记录继续保留，退出账号后仍可查看。点赞针对当前播放集，登录后可使用。</p></div>
         </div>
-        <div class="account-card app-update-card" id="app-update-card">
+      </section>
+
+      <section class="settings-page page-workspace is-hidden" id="settings-page" aria-labelledby="settings-title">
+        <div class="settings-heading"><h1 id="settings-title">设置</h1></div>
+        <div class="settings-card app-update-card" id="app-update-card">
           <h2>版本更新</h2>
           <p>当前版本 <strong id="app-current-version">读取中…</strong></p>
           <p id="app-update-state" role="status" aria-live="polite">启动后每天自动检查一次，播放时不打扰。</p>
           <div class="app-update-actions"><button class="app-update-action account-action" id="app-check-update" data-focus="app-check-update">检查更新</button><button class="app-update-action account-action is-hidden" id="app-open-licenses" data-focus="app-open-licenses">开源许可</button></div>
         </div>
-        <div class="account-card app-update-card is-hidden" id="mpv-playback-settings">
+        <div class="settings-card app-update-card is-hidden" id="mpv-playback-settings">
           <h2>播放解码</h2>
           <p>自动解码优先尝试硬件加速；画面异常时可选软件解码。设置在下次播放或切集时生效。</p>
           <div class="app-update-actions"><button class="playback-mode-action account-action" id="mpv-decode-auto" data-mode="mpv_auto" data-focus="mpv-decode-auto" aria-pressed="false">自动解码</button><button class="playback-mode-action account-action" id="mpv-decode-software" data-mode="mpv_software" data-focus="mpv-decode-software" aria-pressed="false">软件解码</button></div>
