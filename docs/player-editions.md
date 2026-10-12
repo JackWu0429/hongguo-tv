@@ -4,7 +4,7 @@
 
 | | 标准版 | MPV 版 |
 |---|---|---|
-| 名称 | 红果短剧 | 红果短剧 MPV |
+| 名称 | 红果短剧 | 红果短剧 |
 | 包名 | rocks.aston.hongguotv | rocks.aston.hongguotv.mpv |
 | 播放 | WebView → Media3 兼容回退 | libmpv，默认自动解码，可选择软件解码 |
 | 更新 | update.json | update-mpv.json |
