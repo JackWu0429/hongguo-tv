@@ -157,6 +157,8 @@ button:focus { outline: none; }
 .diagnostic-row { display: flex; align-items: flex-start; flex: 0 0 50%; width: 50%; min-height: 39px; padding: 7px 10px; box-sizing: border-box; border-bottom: 1px solid #353642; font-size: 15px; line-height: 1.4; }
 .diagnostic-label { display: block; flex: 0 0 88px; width: 88px; color: #aeb0bf; }
 .diagnostic-value { display: block; flex: 1 1 auto; min-width: 0; color: #f2f2f7; word-wrap: break-word; }
+.diagnostic-row-wide { flex-basis: 100%; width: 100%; }
+.diagnostic-row-wide .diagnostic-value { word-break: break-all; }
 .diagnostic-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; }
 #player-diagnostics-time { color: #aeb0bf; font-size: 13px; }
 .diagnostic-action { margin-left: 12px; min-width: 82px; }

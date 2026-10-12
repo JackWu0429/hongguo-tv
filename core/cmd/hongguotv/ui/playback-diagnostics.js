@@ -62,6 +62,7 @@
     add('设备型号', text(device.manufacturer, 28) + ' ' + text(device.model, 52) || '浏览器预览');
     if (!device.model) rows[2].value = android ? '设备信息未取得' : '浏览器预览';
     add('系统 / 架构', device.sdk ? 'Android ' + text(device.android_version, 20) + ' / API ' + num(device.sdk) + ' · ' + bits + (arch ? ' / ' + arch : '') : (android ? 'Android · 位数未知' : '桌面浏览器') + (arch ? ' / ' + arch : ''));
+    rows = rows.concat(snapshot.environmentRows || []);
     add('WebView', webview);
     add('当前视频', snapshot.episode > 0 ? '第 ' + num(snapshot.episode) + ' 集 · ' + (text(snapshot.quality, 20) || '自动') : '集数尚未确定');
     add('视频画面', video.width + ' × ' + video.height + (video.decoded !== null ? ' · 帧计数 ' + video.decoded : ' · 帧计数不可用'));
