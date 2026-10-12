@@ -31,6 +31,8 @@ extern "C" JNIEXPORT jlong JNICALL JNI_METHOD(nativeCreate)(JNIEnv *env, jclass)
     if (!vm || mpv_lavc_set_java_vm(vm) < 0) { error(env, "Cannot register Java VM"); return 0; }
     mpv_handle *handle = mpv_create();
     if (!handle) { error(env, "Cannot create MPV"); return 0; }
+    int status = mpv_request_log_messages(handle, "warn");
+    if (status < 0) { mpv_terminate_destroy(handle); check(env, status); return 0; }
     return static_cast<jlong>(reinterpret_cast<intptr_t>(new Client{handle}));
 }
 extern "C" JNIEXPORT void JNICALL JNI_METHOD(nativeInit)(JNIEnv *env, jclass, jlong p) {
@@ -44,14 +46,27 @@ extern "C" JNIEXPORT void JNICALL JNI_METHOD(nativeDestroy)(JNIEnv *env, jclass,
 extern "C" JNIEXPORT jlongArray JNICALL JNI_METHOD(nativePoll)(JNIEnv *env, jclass, jlong p) {
     mpv_event *event = mpv_wait_event(client(p)->mpv, 0);
     if (event->event_id == MPV_EVENT_NONE) return nullptr;
-    jlong values[3] = {event->event_id, static_cast<jlong>(event->reply_userdata), -1};
+    jlong values[4] = {event->event_id, static_cast<jlong>(event->reply_userdata), -1, 0};
     if (event->event_id == MPV_EVENT_PROPERTY_CHANGE && event->data) {
         const auto *property = static_cast<mpv_event_property *>(event->data);
         if (property->format == MPV_FORMAT_FLAG && property->data)
             values[2] = *static_cast<int *>(property->data) != 0;
+    } else if (event->event_id == MPV_EVENT_LOG_MESSAGE && event->data) {
+        const auto *message = static_cast<mpv_event_log_message *>(event->data);
+        // Classify locally. Raw logs can contain signed media URLs; never send
+        // their text or arbitrary module names to Java, WebView or diagnostics.
+        const std::string prefix = message->prefix ? message->prefix : "";
+        values[2] = message->log_level;
+        if (prefix == "vo" || prefix.rfind("vo/", 0) == 0) values[3] = 1;
+        else if (prefix == "ao" || prefix.rfind("ao/", 0) == 0) values[3] = 2;
+        else if (prefix == "vd" || prefix.rfind("vd/", 0) == 0) values[3] = 3;
+        else if (prefix == "ad" || prefix.rfind("ad/", 0) == 0) values[3] = 4;
+    } else if (event->event_id == MPV_EVENT_END_FILE && event->data) {
+        const auto *end = static_cast<mpv_event_end_file *>(event->data);
+        values[2] = end->reason; values[3] = end->error;
     }
-    jlongArray result = env->NewLongArray(3);
-    if (result) env->SetLongArrayRegion(result, 0, 3, values);
+    jlongArray result = env->NewLongArray(4);
+    if (result) env->SetLongArrayRegion(result, 0, 4, values);
     return result;
 }
 extern "C" JNIEXPORT void JNICALL JNI_METHOD(nativeObserve)(JNIEnv *env, jclass, jlong p, jint id, jstring name) {

@@ -636,7 +636,8 @@ button:focus { outline: none; }
    controls retain their normal surfaces. */
 html.native-playback, html.native-playback body { background: transparent; }
 html.native-playback .app-shell, html.native-playback .main-surface,
-html.native-playback .hero, html.native-playback .hero-media { background: transparent; }
+html.native-playback .hero, html.native-playback .hero-media,
+html.native-playback .hero.is-feed .hero-media { background: transparent; }
 html.native-playback .hero-video { display: none !important; }
 
 .follow-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 22px; }
