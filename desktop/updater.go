@@ -25,8 +25,8 @@ const desktopProxy = "https://ghfast.top/"
 const desktopPublicBase = "https://github.com/aston314/hongguo-tv-releases/releases/download/"
 
 // CI stamps a desktop-only channel. Android version codes and APK channels are unrelated.
-var desktopVersion = "0.2.61"
-var desktopVersionCode = "3"
+var desktopVersion = "0.2.62"
+var desktopVersionCode = "4"
 
 type desktopPackage struct {
 	Name   string `json:"name"`

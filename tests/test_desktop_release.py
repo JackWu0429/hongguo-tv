@@ -3,9 +3,20 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'scripts'))
 import publish_desktop_release as release
 import desktop_metadata
+import package_desktop_app
 import unittest.mock
 
 class DesktopReleaseTests(unittest.TestCase):
+ def test_bundle_archive_roundtrips_chinese_name_and_executable_mode(self):
+  with tempfile.TemporaryDirectory() as temp:
+   root=Path(temp);app=root/'红果短剧.app';exe=app/'Contents/MacOS/红果短剧'
+   exe.parent.mkdir(parents=True);exe.write_bytes(b'\xca\xfe\xba\xbeapp');exe.chmod(0o755)
+   archive=root/'app.zip';package_desktop_app.package(app,archive)
+   with zipfile.ZipFile(archive) as z:
+    info=z.getinfo('红果短剧.app/Contents/MacOS/红果短剧')
+    self.assertTrue(info.flag_bits & 0x800)
+    self.assertEqual((info.external_attr >> 16) & 0o777,0o755)
+    self.assertEqual(z.read(info),exe.read_bytes())
  def setUp(self):
   self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name);self.notes=self.root/'notes.md';self.notes.write_text('下载 ZIP 自行替换')
   for suffix,files in [('macos-universal',{'红果短剧.app/Contents/MacOS/红果短剧':b'\xca\xfe\xba\xbeapp','红果短剧.app/Contents/MacOS/hongguo-tv-core':b'\xca\xfe\xba\xbecore','红果短剧.app/Contents/Info.plist':b'plist'}),('windows-x64',{'红果短剧.exe':b'MZapp','hongguo-tv-core.exe':b'MZcore','README.txt':b'notes'})]:

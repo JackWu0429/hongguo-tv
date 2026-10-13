@@ -42,7 +42,9 @@ if [[ "$DESKTOP_PLATFORM" == darwin/universal ]]; then
   codesign --force --sign - "$app/Contents/MacOS/hongguo-tv-core"
   codesign --force --deep --sign - "$app"
   codesign --verify --deep --strict "$app"
-  ditto -c -k --sequesterRsrc --keepParent "$app" "dist/hongguo-desktop-$APP_VERSION-macos-universal.zip"
+  # ditto writes UTF-8 Chinese names without the UTF-8 flag on some runners,
+  # which other ZIP readers interpret as CP437. Use standard UTF-8 ZIP paths.
+  python3 ../scripts/package_desktop_app.py "$app" "dist/hongguo-desktop-$APP_VERSION-macos-universal.zip"
 else
   cp build/sidecar/hongguo-tv-core.exe build/bin/
   python3 ../scripts/verify_desktop_ui.py build/bin/hongguo-tv-core.exe
