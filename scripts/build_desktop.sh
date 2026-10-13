@@ -31,6 +31,7 @@ wails build -clean -platform "$DESKTOP_PLATFORM" -webview2 browser -ldflags "-s 
 if [[ "$DESKTOP_PLATFORM" == darwin/universal ]]; then
   app="build/bin/hongguo-desktop.app"
   cp build/sidecar/hongguo-tv-core "$app/Contents/MacOS/"
+  python3 ../scripts/verify_desktop_ui.py "$app/Contents/MacOS/hongguo-tv-core"
   chmod +x "$app/Contents/MacOS/hongguo-tv-core"
   lipo "$app/Contents/MacOS/hongguo-tv-core" -verify_arch x86_64 arm64
   lipo "$app/Contents/MacOS/hongguo-desktop" -verify_arch x86_64 arm64
@@ -41,6 +42,7 @@ if [[ "$DESKTOP_PLATFORM" == darwin/universal ]]; then
   ditto -c -k --sequesterRsrc --keepParent "$app" "dist/hongguo-desktop-$APP_VERSION-macos-universal.zip"
 else
   cp build/sidecar/hongguo-tv-core.exe build/bin/
+  python3 ../scripts/verify_desktop_ui.py build/bin/hongguo-tv-core.exe
   cp ../docs/desktop-install-windows.txt build/bin/README.txt
   (cd build/bin && 7z a "../../dist/hongguo-desktop-$APP_VERSION-windows-x64.zip" hongguo-desktop.exe hongguo-tv-core.exe README.txt)
 fi
