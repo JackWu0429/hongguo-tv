@@ -70,6 +70,7 @@ type accountManager struct {
 	syncing          bool
 	syncError        string
 	lastSync         int64
+	notificationMu   sync.Mutex
 	wake             chan struct{}
 	cancelSync       context.CancelFunc
 }
