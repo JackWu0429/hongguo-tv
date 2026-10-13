@@ -36,6 +36,8 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     private float left, top, width, height;
     private volatile String diagnostic = "{\"engine\":\"mpv\"}";
 
+    private interface SessionAction { void run(Session target); }
+
     private static final class Session {
         final long generation;
         final String id, source;
@@ -188,7 +190,6 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             option(active, "network-timeout", "15");
             player = active;
             active.addObserver(new MPVLib.EventObserver() {
-                private interface SessionAction { void run(Session target); }
                 private void post(SessionAction action) {
                     // Capture the session when libmpv delivers the callback.
                     // Reading the mutable field later can attribute a delayed
