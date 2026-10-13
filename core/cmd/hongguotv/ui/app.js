@@ -77,6 +77,10 @@
     }
   });
   var androidShell = /HongguoTV-Android/.test(navigator.userAgent);
+  // Explicit Wails configuration or ?platform=desktop; TV browser previews
+  // retain the Android interaction model.
+  var desktopShell = !!window.HongguoDesktop;
+  document.documentElement.classList.toggle('desktop-shell', desktopShell);
   var numericKeypad;
   var accountNumberScan;
   var searchNumberScan;
@@ -284,7 +288,9 @@
     return fetch(url, options).then(function (response) {
       return response.json().then(function (payload) {
         if (!response.ok || !payload.ok) throw new Error(payload.error || '连接失败（' + response.status + '）');
-        return payload.data || payload;
+        var data = payload.data || payload;
+        if (data.path && window.HongguoDesktopUI) data.path = window.HongguoDesktopUI.mediaSource(data.path, window.HongguoDesktop);
+        return data;
       });
     });
   }
@@ -1288,16 +1294,17 @@
   function renderAccountNumber(field) {
     var code = field.id === 'account-code';
     var placeholder = code ? '请输入验证码' : accountData && accountData.phase === 'code' && accountData.phone ? '请重新输入 ' + accountData.phone + ' 的完整手机号' : '请输入手机号';
-    field.textContent = field.value || placeholder;
+    if (desktopShell) field.placeholder = placeholder;
+    else field.textContent = field.value || placeholder;
     field.classList.toggle('is-empty', !field.value);
-    field.setAttribute('aria-label', (code ? '短信验证码' : '手机号') + '，确认键输入');
+    field.setAttribute('aria-label', (code ? '短信验证码' : '手机号') + (desktopShell ? '' : '，确认键输入'));
   }
   function openAccountKeypad(field) {
     if (!numericKeypad || !field || field.disabled || accountBusy || pageMode() !== 'account' || accountKeypadOpen()) return;
     accountKeypadReturnFocus = field;
     accountKeypadPhase = accountData && accountData.phase || 'phone';
     var kind = field.id === 'account-code' ? 'code' : 'phone';
-    if (numericKeypad.open(kind, field.value)) accountNumberScan.start(kind);
+    if (numericKeypad.open(kind, field.value) && !desktopShell && accountNumberScan) accountNumberScan.start(kind);
   }
 
   function normalizedKey(event) {
@@ -1320,6 +1327,14 @@
       event.preventDefault(); event.stopPropagation(); return;
     }
     var current = document.activeElement;
+    if (typeof desktopShell !== 'undefined' && desktopShell && window.HongguoDesktopUI.editing(current)) {
+      if (event.isComposing || event.keyCode === 229 || key !== 'Enter') return;
+      if (current.id === 'search-input') submitSearch();
+      else if (current.id === 'account-phone') accountSendCode();
+      else if (current.id === 'account-code') accountLogin();
+      else return;
+      event.preventDefault(); event.stopPropagation(); return;
+    }
     if (current && current.classList.contains('player-text-input') && ['Escape', 'ArrowUp', 'ArrowDown'].indexOf(key) < 0) return;
     var direction = ({ ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' })[key];
 
@@ -1738,7 +1753,7 @@
     if (!playerOptionsOpen || !document.getElementById('player-options').classList.contains('is-diagnostics')) return;
     cancelDiagnosticRead();
     var epoch = diagnosticEpoch, video = document.getElementById('hero-video'), hero = document.getElementById('hero');
-    var device = {};
+    var device = desktopShell ? { app_version: window.HongguoDesktop.version } : {};
     try { if (window.HongguoTVDiagnostics) device = JSON.parse(window.HongguoTVDiagnostics.readDevice()); } catch (ignored) {}
     var native = {};
     try { if (window.HongguoNativePlayer && window.HongguoNativePlayer.diagnostics) native = JSON.parse(window.HongguoNativePlayer.diagnostics()); } catch (ignoredNative) {}
@@ -1756,6 +1771,7 @@
     var environment = readDiagnosticEnvironment();
     var presentation = activePlayback && activePlayback.presentation;
     var source = video.getAttribute('src') || '';
+    if (desktopShell && window.HongguoDesktop.mediaBase && source.indexOf(window.HongguoDesktop.mediaBase + '/') === 0) source = source.slice(window.HongguoDesktop.mediaBase.length);
     var snapshot = {
       device: device || {}, userAgent: environment.userAgent, environmentRows: environment.rows,
       native: native || {},
@@ -1942,7 +1958,8 @@
   function exitCinema(keepHidden) {
     fullscreenExitKeepsHidden = !!keepHidden;
     setCinema(false);
-    if (document.fullscreenElement && document.exitFullscreen) Promise.resolve(document.exitFullscreen()).catch(function () {});
+    if (desktopShell && window.go && window.go.main) window.go.main.desktopApp.SetFullscreen(false);
+    else if (document.fullscreenElement && document.exitFullscreen) Promise.resolve(document.exitFullscreen()).catch(function () {});
   }
   function toggleCinema() {
     if (shell.classList.contains('is-cinema')) exitCinema();
@@ -1950,7 +1967,8 @@
       setCinema(true);
       // Android already fills the display. Keep the CSS layout if the browser
       // Fullscreen API is unavailable; never fullscreen the video alone.
-      if (shell.requestFullscreen) Promise.resolve(shell.requestFullscreen()).catch(function () {});
+      if (desktopShell && window.go && window.go.main) window.go.main.desktopApp.SetFullscreen(true);
+      else if (shell.requestFullscreen) Promise.resolve(shell.requestFullscreen()).catch(function () {});
     }
     revealControls();
   }
@@ -2024,7 +2042,7 @@
     return !applicationInBackground && !document.hidden && !isPlaybackPage() && !supportModalOpen && !detailModalOpen && !discussionOpen && !confirmOpen && !playerOptionsOpen && !accountBusy && !accountKeypadOpen() && !(current && /INPUT|TEXTAREA/.test(current.tagName));
   }
   // Old native IME callbacks are irrelevant to the app-owned numeric keypad.
-  window.HongguoTV = { remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {} };
+  window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {} };
 
   function isLibraryPage() { return ['history', 'favorites', 'likes'].indexOf(pageMode()) >= 0; }
   function libraryEntry(id) { return libraryData.entries.filter(function (entry) { return entry.drama.series_id === id; })[0] || null; }
@@ -2447,7 +2465,7 @@
     document.getElementById('account-sms-number').textContent = data.sms_number || '';
     document.getElementById('account-sms-content').textContent = data.sms_content || '';
     var smsImage = document.getElementById('account-sms-qr-image');
-    var smsQR = mfa && !mfaExpired && /^data:image\/png;base64,/.test(data.sms_qr || '') ? data.sms_qr : '';
+    var smsQR = !desktopShell && mfa && !mfaExpired && /^data:image\/png;base64,/.test(data.sms_qr || '') ? data.sms_qr : '';
     if (smsImage.getAttribute('src') !== smsQR) {
       if (smsQR) smsImage.setAttribute('src', smsQR); else smsImage.removeAttribute('src');
     }
@@ -4010,7 +4028,7 @@
   }
 
   function openSearchScan() {
-    if (pageMode() !== 'search' || searchScanOpen || applicationInBackground) return;
+    if (desktopShell || pageMode() !== 'search' || searchScanOpen || applicationInBackground) return;
     searchScanReturnFocus = document.activeElement;
     searchScanOpen = true;
     document.getElementById('search-scan-title').textContent = '手机扫码搜索';
@@ -4037,7 +4055,7 @@
   }
 
   function openDanmakuScan() {
-    if (!playerOptionsOpen || danmakuScanOpen || searchScanOpen || !composeSession || composeBusy || applicationInBackground) return;
+    if (desktopShell || !playerOptionsOpen || danmakuScanOpen || searchScanOpen || !composeSession || composeBusy || applicationInBackground) return;
     danmakuScanReturnFocus = document.activeElement;
     danmakuScanOpen = true;
     document.getElementById('search-scan-title').textContent = '手机扫码发弹幕';
@@ -5007,7 +5025,7 @@
     button.addEventListener('click', function () { numericKeypad.choose(index); numericKeypad.press(key); });
     document.getElementById('account-keypad-keys').appendChild(button);
   });
-  document.querySelectorAll('.account-input').forEach(function (field) { field.addEventListener('click', function () { openAccountKeypad(field); }); });
+  document.querySelectorAll('.account-input').forEach(function (field) { if (!desktopShell) field.addEventListener('click', function () { openAccountKeypad(field); }); });
 
   engagement = window.HongguoEngagement.create({
     request: function (target) {
@@ -5057,7 +5075,7 @@
       // Keep the active TV focus node alive while native checking/download runs.
       check.disabled = !data.supported;
       check.setAttribute('aria-disabled', data.state === 'checking' || data.state === 'downloading' ? 'true' : 'false');
-      check.textContent = data.state === 'checking' ? '检查中…' : data.state === 'available' || data.state === 'ready' ? '查看更新 ' + data.latest_version : '检查更新';
+      check.textContent = data.state === 'desktop' ? '查看桌面版本' : data.state === 'checking' ? '检查中…' : data.state === 'available' || data.state === 'ready' ? '查看更新 ' + data.latest_version : '检查更新';
     }
   });
   document.getElementById('app-check-update').addEventListener('click', appUpdates.check);

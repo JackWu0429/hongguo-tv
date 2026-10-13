@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Distribution packaging is executed by desktop.yml on GitHub runners.
+set -euo pipefail
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+: "${GITHUB_ACTIONS:?Desktop packages are built on GitHub Actions}"
+: "${HONGGUO_CORE_VERSION:?Set the exact version and commit}"
+: "${APP_VERSION:?Set the product version}"
+: "${DESKTOP_PLATFORM:?darwin/universal or windows/amd64}"
+cd "$ROOT_DIR"
+mkdir -p desktop/build/darwin desktop/build/sidecar desktop/dist
+cp desktop/resources/Info.plist desktop/build/darwin/Info.plist
+cp desktop/resources/appicon.png desktop/build/appicon.png
+python3 - <<'PY'
+import json, os
+from pathlib import Path
+path=Path('desktop/wails.json'); config=json.loads(path.read_text())
+config['info']['productVersion']=os.environ['APP_VERSION']; path.write_text(json.dumps(config,ensure_ascii=False,indent=2))
+PY
+if [[ "$DESKTOP_PLATFORM" == darwin/universal ]]; then
+  for arch in amd64 arm64; do
+    GOOS=darwin GOARCH="$arch" CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$HONGGUO_CORE_VERSION" -o "desktop/build/sidecar/core-$arch" ./core/cmd/hongguotv
+  done
+  lipo -create desktop/build/sidecar/core-amd64 desktop/build/sidecar/core-arm64 -output desktop/build/sidecar/hongguo-tv-core
+else
+  GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$HONGGUO_CORE_VERSION" -o desktop/build/sidecar/hongguo-tv-core.exe ./core/cmd/hongguotv
+fi
+cd desktop
+export PATH="$(go env GOPATH)/bin:$PATH"
+node frontend/build.mjs
+wails build -clean -platform "$DESKTOP_PLATFORM" -webview2 browser -ldflags "-s -w -X main.version=$HONGGUO_CORE_VERSION"
+if [[ "$DESKTOP_PLATFORM" == darwin/universal ]]; then
+  app="build/bin/hongguo-desktop.app"
+  cp build/sidecar/hongguo-tv-core "$app/Contents/MacOS/"
+  chmod +x "$app/Contents/MacOS/hongguo-tv-core"
+  lipo -verify_arch x86_64 arm64 "$app/Contents/MacOS/hongguo-tv-core"
+  lipo -verify_arch x86_64 arm64 "$app/Contents/MacOS/hongguo-desktop"
+  # Ad hoc signing verifies bundle integrity; it is not Apple notarization.
+  codesign --force --sign - "$app/Contents/MacOS/hongguo-tv-core"
+  codesign --force --deep --sign - "$app"
+  codesign --verify --deep --strict "$app"
+  ditto -c -k --sequesterRsrc --keepParent "$app" "dist/hongguo-desktop-$APP_VERSION-macos-universal.zip"
+else
+  cp build/sidecar/hongguo-tv-core.exe build/bin/
+  cp ../docs/desktop-install-windows.txt build/bin/README.txt
+  (cd build/bin && 7z a "../../dist/hongguo-desktop-$APP_VERSION-windows-x64.zip" hongguo-desktop.exe hongguo-tv-core.exe README.txt)
+fi
+python3 - <<'PY'
+import hashlib
+from pathlib import Path
+for path in Path('dist').glob('*.zip'):
+    digest=hashlib.sha256(path.read_bytes()).hexdigest()
+    (path.parent/(path.name+'.sha256')).write_text(digest+'  '+path.name+'\n')
+    print(path.name,path.stat().st_size,digest)
+PY

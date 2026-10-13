@@ -5,6 +5,15 @@ html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background:
 button { border: 0; color: inherit; font: inherit; cursor: pointer; }
 button:focus { outline: none; }
 .is-hidden { display: none !important; }
+.desktop-shell .search-scan,
+.desktop-shell .player-compose-scan,
+.desktop-shell .account-number-scan,
+.desktop-shell #account-sms-qr,
+.desktop-shell #account-sms-qr-help { display: none !important; }
+.desktop-shell .account-keypad-body { justify-content: center; }
+.desktop-shell .account-sms-details dd { user-select: text; }
+.desktop-shell .account-input { font: inherit; color: inherit; }
+.desktop-shell .account-input:focus { outline: none; box-shadow: 0 0 0 3px #fff; }
 .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 
 .app-shell { display: flex; width: 100vw; height: 100vh; min-width: 960px; min-height: 540px; background: #0c0d12; }

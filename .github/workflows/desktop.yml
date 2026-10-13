@@ -1,0 +1,120 @@
+name: Desktop preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      preview_number:
+        description: Private desktop preview number (separate from Android release)
+        default: "1"
+        required: true
+  push:
+    branches: ["codex/dual-player-editions"]
+    paths: ["desktop/**", "core/**", "scripts/build_desktop.sh", "docs/desktop*", ".github/workflows/desktop.yml"]
+  pull_request:
+    paths: ["desktop/**", "core/**", "scripts/build_desktop.sh", "docs/desktop*", ".github/workflows/desktop.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare private draft preview
+        id: release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW_NUMBER: ${{ inputs.preview_number }}
+        run: |
+          [[ "$PREVIEW_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          python3 scripts/release_metadata.py --github-env "$GITHUB_ENV"
+          APP_VERSION=$(python3 -c 'import scripts.release_metadata as m; from pathlib import Path; print(m.metadata(Path("."))[0])')
+          tag="desktop-v$APP_VERSION-preview.$PREVIEW_NUMBER"
+          if gh release view "$tag" --json isDraft >/dev/null 2>&1; then
+            [[ "$(gh release view "$tag" --json isDraft --jq .isDraft)" == true ]]
+            [[ "$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)" == "$GITHUB_SHA" ]]
+          else
+            gh release create "$tag" --draft --prerelease --target "$GITHUB_SHA" --title "红果短剧桌面测试版 $APP_VERSION · preview $PREVIEW_NUMBER" --notes-file docs/desktop-preview-release.md
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: darwin/universal
+          - os: windows-2022
+            platform: windows/amd64
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache-dependency-path: |
+            go.sum
+            desktop/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Read shared version
+        shell: bash
+        run: python3 scripts/release_metadata.py --github-env "$GITHUB_ENV"
+      - name: Test core and shared desktop UI
+        shell: bash
+        run: |
+          go test ./core/...
+          node --check core/cmd/hongguotv/ui/desktop.js
+          node --test tests/*.test.cjs
+          node desktop/frontend/build.mjs
+          cd desktop
+          go test ./...
+          go vet ./...
+      - name: Install pinned Wails CLI
+        shell: bash
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
+      - name: Build shell and Go core
+        shell: bash
+        env:
+          DESKTOP_PLATFORM: ${{ matrix.platform }}
+        run: bash scripts/build_desktop.sh
+      - name: Attach exact packages to private draft
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW_TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "$PREVIEW_TAG" desktop/dist/*.zip desktop/dist/*.sha256
+
+  publish:
+    needs: [prepare, build]
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify complete package set and publish private prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/desktop-release"
+          gh release download "$PREVIEW_TAG" --dir "$RUNNER_TEMP/desktop-release"
+          python3 scripts/verify_desktop_packages.py "$RUNNER_TEMP/desktop-release"
+          gh release edit "$PREVIEW_TAG" --draft=false --prerelease --latest=false
