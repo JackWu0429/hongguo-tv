@@ -32,8 +32,8 @@ if [[ "$DESKTOP_PLATFORM" == darwin/universal ]]; then
   app="build/bin/hongguo-desktop.app"
   cp build/sidecar/hongguo-tv-core "$app/Contents/MacOS/"
   chmod +x "$app/Contents/MacOS/hongguo-tv-core"
-  lipo -verify_arch x86_64 arm64 "$app/Contents/MacOS/hongguo-tv-core"
-  lipo -verify_arch x86_64 arm64 "$app/Contents/MacOS/hongguo-desktop"
+  lipo "$app/Contents/MacOS/hongguo-tv-core" -verify_arch x86_64 arm64
+  lipo "$app/Contents/MacOS/hongguo-desktop" -verify_arch x86_64 arm64
   # Ad hoc signing verifies bundle integrity; it is not Apple notarization.
   codesign --force --sign - "$app/Contents/MacOS/hongguo-tv-core"
   codesign --force --deep --sign - "$app"

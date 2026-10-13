@@ -93,6 +93,14 @@ jobs:
         env:
           DESKTOP_PLATFORM: ${{ matrix.platform }}
         run: bash scripts/build_desktop.sh
+      - name: Verify bundled native core startup and account routing
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os }}" == windows-* ]]; then
+            python3 scripts/verify_desktop_core.py desktop/build/bin/hongguo-tv-core.exe "$HONGGUO_CORE_VERSION"
+          else
+            python3 scripts/verify_desktop_core.py desktop/build/bin/hongguo-desktop.app/Contents/MacOS/hongguo-tv-core "$HONGGUO_CORE_VERSION"
+          fi
       - name: Attach exact packages to private draft
         if: github.event_name == 'workflow_dispatch'
         shell: bash

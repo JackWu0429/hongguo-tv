@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -175,7 +176,7 @@ func TestAccountLoginPersistenceIsolationAndNoCredentialExposure(t *testing.T) {
 		t.Fatal("credentials leaked to UI")
 	}
 	stat, err := os.Stat(filepath.Join(m.dir, "account.json"))
-	if err != nil || stat.Mode().Perm() != 0600 {
+	if err != nil || runtime.GOOS != "windows" && stat.Mode().Perm() != 0600 {
 		t.Fatal("account file must be private")
 	}
 	owner := "123456789"
