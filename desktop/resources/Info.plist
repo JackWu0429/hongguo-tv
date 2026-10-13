@@ -4,6 +4,8 @@
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleName</key><string>红果短剧</string>
 <key>CFBundleDisplayName</key><string>红果短剧</string>
+<key>CFBundleDevelopmentRegion</key><string>zh-Hans</string>
+<key>CFBundleLocalizations</key><array><string>zh-Hans</string><string>en</string></array>
 <key>CFBundleExecutable</key><string>{{.OutputFilename}}</string>
 <key>CFBundleIdentifier</key><string>rocks.aston.hongguo.desktop</string>
 <key>CFBundleVersion</key><string>{{.Info.ProductVersion}}</string>

@@ -32,6 +32,8 @@ wails build -clean -platform "$DESKTOP_PLATFORM" -webview2 browser -ldflags "-s 
 if [[ "$DESKTOP_PLATFORM" == darwin/universal ]]; then
   app="build/bin/hongguo-desktop.app"
   cp build/sidecar/hongguo-tv-core "$app/Contents/MacOS/"
+  mkdir -p "$app/Contents/Resources/zh-Hans.lproj"
+  cp resources/zh-Hans.lproj/InfoPlist.strings "$app/Contents/Resources/zh-Hans.lproj/InfoPlist.strings"
   python3 ../scripts/verify_desktop_ui.py "$app/Contents/MacOS/hongguo-tv-core"
   chmod +x "$app/Contents/MacOS/hongguo-tv-core"
   lipo "$app/Contents/MacOS/hongguo-tv-core" -verify_arch x86_64 arm64
