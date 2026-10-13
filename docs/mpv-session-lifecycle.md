@@ -2,9 +2,9 @@
 
 MPV 版在页面之间切换剧集时复用同一个 `libmpv` 客户端和 Android `SurfaceView`。推荐页、搜索、找剧、排行榜、历史和收藏都经过同一条切集路径。
 
-切换源时，WebView 先发送 `stop/begin`，桥接层暂停当前会话并把 native 层设为透明；随后新的 `play` 请求使用同一个 MPV 客户端执行 `loadfile ... replace`。这样不会在旧 native 客户端尚未完全退出时，马上创建另一个客户端并重新捕获同一个 Surface。
+切换源时，WebView 先发送 `stop/begin`，桥接层在同一个 MPV 客户端上排队 `pause → stop`，并把 native 层设为透明；随后新的 `play` 请求才执行 `loadfile ... replace`。新源打开期间保持暂停，收到当前源的 `FILE_LOADED` 后才恢复播放。这样不会在旧源的 demuxer/decoder 仍工作时直接替换，也不会让切集瞬间先出声音。
 
-旧会话的 JavaScript 和 MPV 回调仍然必须经过当前会话检查。只有当前会话可以更新进度、首帧、结束和错误状态。真正的 `SurfaceView.surfaceDestroyed`、播放初始化失败和 Activity 销毁才释放 `libmpv`；Surface 重建后再创建客户端并恢复当前源和位置。
+旧会话的 JavaScript 和 MPV 回调仍然必须经过当前会话检查。回调投递时会绑定当时的会话代次，不能在稍后读取可变的当前会话；未完成 `FILE_LOADED` 的 `END_FILE` 也会被视为换源过程中的 stop 事件而忽略。只有当前会话可以更新进度、首帧、结束和错误状态。真正的 `SurfaceView.surfaceDestroyed`、播放初始化失败和 Activity 销毁才释放 `libmpv`；Surface 重建后再创建客户端并恢复当前源和位置。
 
 这项保护主要针对厂商定制的 32 位 Android 设备上“推荐页可播放、从其它页面点卡片立即退出”的现象。它不能证明所有设备的 native 解码能力，也不能代替设备上的崩溃日志验收。
 

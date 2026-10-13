@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/native-player.js'), 'utf8');
+const mpvBridgeSource = fs.readFileSync(require.resolve('../android/app/src/mpv/java/rocks/aston/hongguotv/MpvPlayerBridge.java'), 'utf8');
 
 function fixture(engine = 'webview_media3') {
   const listeners = {};
@@ -174,6 +175,15 @@ test('MPV source replacement stops the old session before starting the new one',
   assert.deepEqual(order, ['stop', 'play', 'stop', 'play']);
   assert.equal(f.bridge.plays, 2);
   assert.equal(f.bridge.stops, 2);
+});
+
+test('MPV bridge keeps source replacement serialized and isolates delayed native events', () => {
+  const release = mpvBridgeSource.slice(mpvBridgeSource.indexOf('private void release()'), mpvBridgeSource.indexOf('@Override public void onPause()'));
+  const start = mpvBridgeSource.slice(mpvBridgeSource.indexOf('private void start(Session target)'), mpvBridgeSource.indexOf('/** Create/configure the one client'));
+  assert.match(release, /setPropertyBoolean\("pause", true\)[\s\S]*command\(new String\[\]\{"stop"\}\)/);
+  assert.match(start, /setPropertyBoolean\("pause", true\)[\s\S]*command\(new String\[\]\{"loadfile", target\.source, "replace"\}\)/);
+  assert.match(mpvBridgeSource, /final Session observed = session/);
+  assert.match(mpvBridgeSource, /if \(!target\.output\.loaded\) return;/);
 });
 
 test('MPV failure stays native, reports error and ignores late success until explicit retry', async () => {

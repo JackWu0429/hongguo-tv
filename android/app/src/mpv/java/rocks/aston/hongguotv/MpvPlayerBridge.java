@@ -29,6 +29,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     // while the new client captured the same SurfaceView.
     private MPVLib player;
     private boolean playerSurfaceAttached;
+    private long generation;
     private boolean destroyed, background;
     private double volume = 1, speed = 1;
     private boolean muted = true;
@@ -36,6 +37,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     private volatile String diagnostic = "{\"engine\":\"mpv\"}";
 
     private static final class Session {
+        final long generation;
         final String id, source;
         final JSONObject data;
         final MpvDecodeMode mode;
@@ -47,7 +49,8 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         String errorKind = "";
         int errorCode;
         Runnable timeout;
-        Session(String id, String source, JSONObject data, MpvDecodeMode mode) {
+        Session(long generation, String id, String source, JSONObject data, MpvDecodeMode mode) {
+            this.generation = generation;
             this.id = id; this.source = source; this.data = data;
             this.mode = mode;
             wantsPlay = !data.optBoolean("paused", false);
@@ -108,7 +111,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             handler.post(() -> {
                 if (destroyed) return;
                 release();
-                Session target = new Session(id, source, data, MpvDecodeMode.stored(decoderMode())); session = target;
+                Session target = new Session(generation, id, source, data, MpvDecodeMode.stored(decoderMode())); session = target;
                 if (!MediaUrlPolicy.valid(source)) { fail(target, "source"); return; }
                 if (!applyBounds()) { fail(target, "display"); return; }
                 double rate = data.optDouble("speed", speed);
@@ -124,7 +127,10 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         }
     }
 
-    private boolean current(Session target) { return target != null && !destroyed && session == target && !target.terminal; }
+    private boolean current(Session target) {
+        return target != null && !destroyed && session == target
+            && target.generation == generation && !target.terminal;
+    }
     private void start(Session target) {
         if (!current(target) || target.player != null || !surface.getHolder().getSurface().isValid()) return;
         try {
@@ -145,12 +151,15 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             active.setPropertyBoolean("mute", muted);
             active.setPropertyDouble("volume", volume * 100);
             active.setPropertyDouble("speed", speed);
-            active.setPropertyBoolean("pause", background || !target.wantsPlay);
+            // Match MiniReel's open(play: false): a new source must not emit
+            // audio while its demuxer and video output are being replaced.
+            // FILE_LOADED below is the only point at which the play intent is
+            // applied to this session.
+            active.setPropertyBoolean("pause", true);
+            // release() queues stop before this loadfile command. libmpv
+            // processes commands in order, so the previous source is fully
+            // stopped before the replacement is opened on the same client.
             active.command(new String[]{"loadfile", target.source, "replace"});
-            // A source replacement can inherit the previous file's paused
-            // state. Re-apply the desired state after issuing loadfile and
-            // again when MPV confirms that the new file is loaded.
-            applyPlayState(target);
         } catch (LinkageError | RuntimeException failure) { fail(target, "initialization"); }
     }
 
@@ -179,24 +188,33 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             option(active, "network-timeout", "15");
             player = active;
             active.addObserver(new MPVLib.EventObserver() {
-                private void post(Runnable action) {
+                private interface SessionAction { void run(Session target); }
+                private void post(SessionAction action) {
+                    // Capture the session when libmpv delivers the callback.
+                    // Reading the mutable field later can attribute a delayed
+                    // old-source event to a newer card.
+                    final Session observed = session;
                     handler.post(() -> {
-                        Session target = session;
-                        if (target != null && target.player == active) guarded(target, action);
+                        if (observed != null && observed.player == active)
+                            guarded(observed, () -> action.run(observed));
                     });
                 }
-                @Override public void error() { post(() -> fail(session, "native_event")); }
+                @Override public void error() { post(target -> fail(target, "native_event")); }
                 @Override public void outputMessage(int component, int level) {
-                    post(() -> { Session target = session; if (target != null) { target.output.message(component, level); updateDiagnostic(target, null); } });
+                    post(target -> { target.output.message(component, level); updateDiagnostic(target, null); });
                 }
                 @Override public void endFile(int reason, int error) {
-                    post(() -> { Session target = session; if (target == null) return;
+                    post(target -> {
+                        // stop emits END_FILE too. A new session has not yet
+                        // loaded a file, so never turn that transition event
+                        // into a failure for the replacement source.
+                        if (!target.output.loaded) return;
                         if (reason == 0 && target.outputReady) finish(target);
-                        else if (reason == 4 || error < 0) fail(target, "media", error);
+                        else if ((reason == 4 || error < 0) && target.outputReady) fail(target, "media", error);
                     });
                 }
                 @Override public void eventProperty(String name, boolean value) {
-                    post(() -> { Session target = session; if (target == null) return;
+                    post(target -> {
                         if ("eof-reached".equals(name) && value && target.outputReady) finish(target);
                         else if ("vo-configured".equals(name)) { target.output.configured = value; rendered(target); }
                         else if ("paused-for-cache".equals(name) && target.outputReady && target.wantsPlay && !background)
@@ -206,7 +224,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                     });
                 }
                 @Override public void event(int value) {
-                    post(() -> { Session target = session; if (target == null) return;
+                    post(target -> {
                         if (value == MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED) {
                             target.output.loaded = true;
                             if (target.pendingSeek) { active.command(new String[]{"seek", Double.toString(target.position / 1000.0), "absolute+exact"}); target.pendingSeek = false; }
@@ -362,7 +380,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     @JavascriptInterface public void begin(String id) { stop(); }
     @JavascriptInterface public void stop() { handler.post(() -> { release(); holder.setVisibility(View.VISIBLE); holder.setAlpha(0f); }); }
     @JavascriptInterface public void pause() { handler.post(() -> { Session s = session; if (s != null) guarded(s, () -> { s.wantsPlay = false; if (s.player != null) s.player.setPropertyBoolean("pause", true); }); }); }
-    @JavascriptInterface public void resume() { handler.post(() -> { Session s = session; if (s != null) guarded(s, () -> { s.wantsPlay = true; if (s.player != null && s.output.attached && !background) s.player.setPropertyBoolean("pause", false); }); }); }
+    @JavascriptInterface public void resume() { handler.post(() -> { Session s = session; if (s != null) guarded(s, () -> { s.wantsPlay = true; if (s.player != null && s.output.loaded && s.output.attached && !background) s.player.setPropertyBoolean("pause", false); }); }); }
     @JavascriptInterface public void setSpeed(double value) {
         if (!finite(value) || value <= 0 || value > 4) return;
         handler.post(() -> { speed = value; Session s = session; if (s != null) guarded(s, () -> { if (s.player != null) s.player.setPropertyDouble("speed", value); }); });
@@ -447,13 +465,21 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     }
     private void release() {
         Session old = session; session = null;
+        generation++;
         if (old != null) {
             old.terminal = true;
             if (old.timeout != null) handler.removeCallbacks(old.timeout);
-            // Keep the client and SurfaceView alive for the next source. A
-            // source replacement is a normal operation, not a native teardown.
+            // Keep the client and SurfaceView alive for the next source, but
+            // explicitly stop the old file before the next loadfile command.
+            // Pausing alone leaves demuxer/decoder work and END_FILE events in
+            // flight on vendor MPV builds.
             if (old.player != null && old.player == player) {
-                try { old.player.setPropertyBoolean("pause", true); } catch (RuntimeException ignored) {}
+                try {
+                    old.player.setPropertyBoolean("pause", true);
+                    old.player.command(new String[]{"stop"});
+                } catch (RuntimeException ignored) {}
+                old.output.loaded = false;
+                old.outputReady = false;
                 old.player = null;
             } else if (old.player != null) {
                 dispose(old);
@@ -466,7 +492,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     }
     @Override public void onResume() {
         background = false; Session s = session;
-        if (s != null) guarded(s, () -> { armTimeout(s); start(s); if (s.player != null && s.output.attached) s.player.setPropertyBoolean("pause", !s.wantsPlay); });
+        if (s != null) guarded(s, () -> { armTimeout(s); start(s); if (s.player != null && s.output.loaded && s.output.attached) s.player.setPropertyBoolean("pause", !s.wantsPlay); });
     }
     @Override public void destroy() {
         destroyed = true; handler.removeCallbacksAndMessages(null); release();
