@@ -23,6 +23,7 @@ function fixture({failWrite=false,ready=true}={}) {
     },
     fetchData:async url=>{calls.push('source');assert.match(url,/\/api\/v1\/play\/info\?/);return {path:'/media/next.mp4',quality:'720P',qualities:['720P']};}
   });
+  vm.runInContext("var desktopShell=false;" + source.match(/  function applicationHidden[^\n]+/)[0], c);
   vm.runInContext(`
     var accountEpoch=2,feedGeneration=1,continuationGeneration=0,seasonSwitchRequest=null;
     var detailModalOpen=false,qualityPrevious=null,applicationInBackground=false;

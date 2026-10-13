@@ -7,7 +7,7 @@ from publish_public_release import REPOSITORY,api,gh,release_by_tag,upload_asset
 from desktop_metadata import metadata
 import subprocess,sys
 
-CHANNEL='desktop-update.json'
+CHANNEL='desktop-update-v2.json'
 
 def generate(directory,version,code,notes):
     if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+',version) or type(code)!=int or code<1:raise ValueError('Invalid desktop version')

@@ -80,6 +80,7 @@
   // Explicit Wails configuration or ?platform=desktop; TV browser previews
   // retain the Android interaction model.
   var desktopShell = !!window.HongguoDesktop;
+  function applicationHidden() { return desktopShell ? !!window.HongguoDesktop.background : !!document.hidden; }
   document.documentElement.classList.toggle('desktop-shell', desktopShell);
   var numericKeypad;
   var accountNumberScan;
@@ -634,7 +635,7 @@
   }
   function tickDanmaku() {
     var video = document.getElementById('hero-video');
-    if (!danmakuEnabled || !activePlayback || !activePlayback.vid || video.paused || !isPlaybackPage() || document.hidden || applicationInBackground) return;
+    if (!danmakuEnabled || !activePlayback || !activePlayback.vid || video.paused || !isPlaybackPage() || applicationHidden() || applicationInBackground) return;
     var now = Math.floor(video.currentTime * 1000); var windowStart = Math.floor(now / 30000) * 30000;
     if (danmakuWindow !== windowStart && !danmakuBusy) {
       danmakuWindow = windowStart; danmakuBusy = true; danmakuRows = [];
@@ -1449,7 +1450,7 @@
     button.disabled = !enabled;
   }
   function notificationCanPopup() {
-    return !applicationInBackground && !document.hidden && !isPlaybackPage() && !detailModalOpen && !playerOptionsOpen && !discussionOpen && !confirmOpen && !supportModalOpen;
+    return !applicationInBackground && !applicationHidden() && !isPlaybackPage() && !detailModalOpen && !playerOptionsOpen && !discussionOpen && !confirmOpen && !supportModalOpen;
   }
   function notificationHidePopup() {
     clearTimeout(notificationPopupTimer);
@@ -1510,7 +1511,7 @@
     flushNotificationPopup();
   }
   function notificationCheck(force) {
-    if (!notificationAccountKey() || notificationCheckBusy || document.hidden || applicationInBackground) return Promise.resolve(false);
+    if (!notificationAccountKey() || notificationCheckBusy || applicationHidden() || applicationInBackground) return Promise.resolve(false);
     var now = Date.now();
     if (!force && now - notificationLastCheck < 10 * 60 * 1000) { flushNotificationPopup(); return Promise.resolve(false); }
     notificationLastCheck = now; notificationCheckBusy = true;
@@ -1784,7 +1785,7 @@
         source: !!source, waiting: !!(presentation && presentation.waiting), audioHeld: !!playbackAudioHold,
         failed: !!(presentation && presentation.failed) || !document.getElementById('player-retry').classList.contains('is-hidden'),
         videoVisible: style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity) > 0,
-        background: applicationInBackground || document.hidden }
+        background: applicationInBackground || applicationHidden() }
     };
     renderPlaybackDiagnostics(snapshot);
     // Read only local status for this exact source; never resolve or fetch media.
@@ -1829,7 +1830,7 @@
     var old = qualityPrevious; qualityPrevious = null;
     if (old && activePlayback === old.playback) {
       setPlayerStatus('');
-      if (old.playing && !document.hidden && !applicationInBackground) playMedia(document.getElementById('hero-video')).catch(function () {});
+      if (old.playing && !applicationHidden() && !applicationInBackground) playMedia(document.getElementById('hero-video')).catch(function () {});
     }
   }
   function switchQuality(value) {
@@ -1856,12 +1857,12 @@
       bindPlaybackPresentation(playback, data.path);
       video.src = data.path; video.load(); updatePlaybackControls(); closePlayerOptions();
       setPlayerStatus(episodeLoadingText(playback.episode));
-      if (previous.playing && !document.hidden && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus(''); revealControls(); });
+      if (previous.playing && !applicationHidden() && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus(''); revealControls(); });
     }).catch(function (error) {
       if (epoch !== qualityEpoch || generation !== feedGeneration) return;
       qualityPrevious = null; qualityRequest = null;
       document.getElementById('player-options-message').textContent = error.message + '，原视频保留';
-      if (previous.playing && !document.hidden && !applicationInBackground) playMedia(video).catch(function () {});
+      if (previous.playing && !applicationHidden() && !applicationInBackground) playMedia(video).catch(function () {});
     });
   }
   function sendDanmaku() {
@@ -1972,6 +1973,13 @@
     }
     revealControls();
   }
+  function desktopFullscreenChanged(enabled) {
+    if (!desktopShell) return;
+    nativeFullscreen = !!enabled;
+    setCinema(enabled);
+    if (!enabled && fullscreenExitKeepsHidden) hideControls();
+    fullscreenExitKeepsHidden = false;
+  }
   function handleBack() {
     if (searchScanOpen) { closeSearchScan(true); return true; }
     if (typeof danmakuScanOpen !== 'undefined' && danmakuScanOpen) { closeDanmakuScan(true); return true; }
@@ -2039,10 +2047,10 @@
   }
   function canShowAppUpdate() {
     var current = document.activeElement;
-    return !applicationInBackground && !document.hidden && !isPlaybackPage() && !supportModalOpen && !detailModalOpen && !discussionOpen && !confirmOpen && !playerOptionsOpen && !accountBusy && !accountKeypadOpen() && !(current && /INPUT|TEXTAREA/.test(current.tagName));
+    return !applicationInBackground && !applicationHidden() && !isPlaybackPage() && !supportModalOpen && !detailModalOpen && !discussionOpen && !confirmOpen && !playerOptionsOpen && !accountBusy && !accountKeypadOpen() && !(current && /INPUT|TEXTAREA/.test(current.tagName));
   }
   // Old native IME callbacks are irrelevant to the app-owned numeric keypad.
-  window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {} };
+  window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, desktopFullscreenChanged: desktopFullscreenChanged, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {} };
 
   function isLibraryPage() { return ['history', 'favorites', 'likes'].indexOf(pageMode()) >= 0; }
   function libraryEntry(id) { return libraryData.entries.filter(function (entry) { return entry.drama.series_id === id; })[0] || null; }
@@ -2739,7 +2747,7 @@
   }
 
   function switchRecommendation(step) {
-    if (pageMode() !== 'recommend' || detailModalOpen || playerOptionsOpen || confirmOpen || discussionOpen || applicationInBackground || document.hidden || feedIndex < 0) return;
+    if (pageMode() !== 'recommend' || detailModalOpen || playerOptionsOpen || confirmOpen || discussionOpen || applicationInBackground || applicationHidden() || feedIndex < 0) return;
     playFeedItem(feedIndex + step);
   }
 
@@ -2749,7 +2757,7 @@
     var suppressClickUntil = 0;
     var wheelAt = 0, wheelDelta = 0, wheelConsumed = false;
     function allowed(target) {
-      return pageMode() === 'recommend' && feedIndex >= 0 && !detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && !applicationInBackground && !document.hidden && !target.closest('button, input, textarea, a');
+      return pageMode() === 'recommend' && feedIndex >= 0 && !detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && !applicationInBackground && !applicationHidden() && !target.closest('button, input, textarea, a');
     }
     surface.addEventListener('touchstart', function (event) {
       touch = null;
@@ -2829,7 +2837,7 @@
 
   function canContinuePlayback(playback) {
     return activePlayback === playback && playback.generation === feedGeneration && isPlaybackPage() &&
-      (!playback.continuationToken || playback.continuationToken === continuationGeneration) && !applicationInBackground && !document.hidden;
+      (!playback.continuationToken || playback.continuationToken === continuationGeneration) && !applicationInBackground && !applicationHidden();
   }
 
   function continueAfterEpisode(playback) {
@@ -2974,7 +2982,7 @@
       episode: playback.episode, quality: playbackPreferences.quality, generation: playback.generation, owner: accountEpoch,
       duration: Number(video.duration), position: Number(video.currentTime), paused: video.paused, ended: video.ended,
       stable_seconds: playback.stableSince ? Math.max(0, Date.now() - playback.stableSince) / 1000 : 0,
-      started: playback.started, active: playback.generation === feedGeneration && isPlaybackPage() && !applicationInBackground && !document.hidden && !qualityPrevious });
+      started: playback.started, active: playback.generation === feedGeneration && isPlaybackPage() && !applicationInBackground && !applicationHidden() && !qualityPrevious });
   }
   function holdPlaybackAudio(generation) {
     var video = document.getElementById('hero-video');
@@ -3004,7 +3012,7 @@
   function currentPlaybackPresentation(playback, presentation, video) {
     return !!(playback && presentation && activePlayback === playback && playback.presentation === presentation &&
       playback.generation === feedGeneration && playback.owner === accountEpoch && isPlaybackPage() &&
-      !applicationInBackground && !document.hidden && !presentation.failed &&
+      !applicationInBackground && !applicationHidden() && !presentation.failed &&
       video.classList.contains('has-source') && video.getAttribute('src') === presentation.source);
   }
   function playbackVideoReady(playback, presentation, video) {
@@ -3043,7 +3051,7 @@
         resolve(value);
       }
       function abort() { finish(false); }
-      function current() { return generation === feedGeneration && !applicationInBackground && !document.hidden && !(signal && signal.aborted); }
+      function current() { return generation === feedGeneration && !applicationInBackground && !applicationHidden() && !(signal && signal.aborted); }
       if (!current()) { finish(false); return; }
       if (signal) signal.addEventListener('abort', abort);
       frame = requestAnimationFrame(function () {
@@ -3076,7 +3084,7 @@
   function markPlaybackStarted(playback) {
     var video = document.getElementById('hero-video');
     var presentation = playback && playback.presentation;
-    if (applicationInBackground || document.hidden) { video.pause(); return; }
+    if (applicationInBackground || applicationHidden()) { video.pause(); return; }
     if (!presentation || presentation.failed) return;
     if (!currentPlaybackPresentation(playback, presentation, video) || video.paused || video.ended || video.seeking || video.readyState < 2) return;
     presentation.waiting = false;
@@ -3197,7 +3205,7 @@
         var handoff = episodePrefetch.consume(target);
         playbackPrefetchHandoff = handoff;
         return (handoff ? handoff.promise : Promise.resolve()).then(function () {
-          if (generation !== feedGeneration || request.signal.aborted || applicationInBackground || document.hidden) return null;
+          if (generation !== feedGeneration || request.signal.aborted || applicationInBackground || applicationHidden()) return null;
           playbackPrefetchHandoff = null;
           if (handoff && handoff.timing.ready_at) {
             activePlayback.timing.prefetch_ms = Math.max(0, handoff.timing.ready_at - handoff.timing.started_at);
@@ -3226,7 +3234,7 @@
         placeholder.classList.add('is-hidden');
         video.load();
         setPlayerStatus(episodeLoadingText(activePlayback.episode));
-        if (!document.hidden && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus(''); revealControls(); showNotice('视频已准备好，请按确认键开始播放'); });
+        if (!applicationHidden() && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus(''); revealControls(); showNotice('视频已准备好，请按确认键开始播放'); });
         else { setPlayerStatus(''); revealControls(); }
       })
       .catch(function (error) {
@@ -4358,7 +4366,7 @@
     var request = new AbortController(); seasonSwitchRequest = request; seasonSwitchID = item.series_id;
     updateSeriesRows(); seriesMessage('');
     getDetail(item, request.signal).then(function (detail) {
-      if (!detailModalOpen || detailTab !== 'series' || generation !== seasonSwitchGeneration || panel !== detailGeneration || feed !== feedGeneration || epoch !== accountEpoch || applicationInBackground || document.hidden) return;
+      if (!detailModalOpen || detailTab !== 'series' || generation !== seasonSwitchGeneration || panel !== detailGeneration || feed !== feedGeneration || epoch !== accountEpoch || applicationInBackground || applicationHidden()) return;
       if (!detail.vid_list || !detail.vid_list.length) throw new Error('这季尚无可播放集数');
       var next = Object.assign({}, item, detail);
       ++detailGeneration; currentDetail = next; detailSeriesID = next.series_id; renderDetail(next);
@@ -4903,7 +4911,7 @@
     saveProgress(true, true);
     continueAfterEpisode(playback);
   });
-  document.addEventListener('visibilitychange', function () { if (document.hidden) pauseForBackground(); else resumeFromBackground(); });
+  document.addEventListener('visibilitychange', function () { if (desktopShell) return; if (applicationHidden()) pauseForBackground(); else resumeFromBackground(); });
 
   function openQRCode(card, image, title) {
     supportReturnFocus = card; supportModalOpen = true;
@@ -5043,7 +5051,7 @@
   });
 
   smsVerification = window.HongguoSMSVerification.create({
-    canPoll: function () { return pageMode() === 'account' && !document.hidden; },
+    canPoll: function () { return pageMode() === 'account' && !applicationHidden(); },
     request: function () {
       var controller = new AbortController();
       return { abort: function () { controller.abort(); }, promise: accountRequest('verify', {}, controller.signal).then(function (ok) {
@@ -5054,7 +5062,7 @@
       if (value.state === 'expired') accountNotice = '本机验证等待时间已结束，请重新获取验证码';
       renderAccount();
       if (value.state === 'timeout' && pageMode() === 'account' && !supportModalOpen) goFocus(document.getElementById('account-verify'));
-      if (value.state === 'expired' && !document.hidden) pollAccount();
+      if (value.state === 'expired' && !applicationHidden()) pollAccount();
     }
   });
 
@@ -5128,6 +5136,6 @@
   loadStatus();
   libraryReady = loadLibrary();
   pollAccount();
-  accountPollTimer = setInterval(function () { if (!document.hidden) pollAccount(); }, 8000);
+  accountPollTimer = setInterval(function () { if (!applicationHidden()) pollAccount(); }, 8000);
   loadCatalog('推荐');
 }());

@@ -1,7 +1,7 @@
 红果短剧 Windows 桌面测试版
 
-1. 解压整个文件夹，保留 hongguo-desktop.exe 和 hongguo-tv-core.exe 在同一目录。
-2. 双击 hongguo-desktop.exe。不要单独启动核心程序。
+1. 解压整个文件夹，保留 红果短剧.exe 和 hongguo-tv-core.exe 在同一目录。
+2. 双击 红果短剧.exe。不要单独启动核心程序。
 3. 本应用使用 Microsoft Edge WebView2 Runtime。若未安装，请从微软官网下载并安装：
    https://developer.microsoft.com/microsoft-edge/webview2/
 4. 当前测试版未用 Windows 代码签名证书签名，系统可能提示未知发布者。

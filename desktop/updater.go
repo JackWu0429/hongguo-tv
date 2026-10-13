@@ -20,13 +20,13 @@ import (
 	"time"
 )
 
-const desktopManifestURL = "https://raw.githubusercontent.com/aston314/hongguo-tv-releases/main/desktop-update.json"
+const desktopManifestURL = "https://raw.githubusercontent.com/aston314/hongguo-tv-releases/main/desktop-update-v2.json"
 const desktopProxy = "https://ghfast.top/"
 const desktopPublicBase = "https://github.com/aston314/hongguo-tv-releases/releases/download/"
 
 // CI stamps a desktop-only channel. Android version codes and APK channels are unrelated.
-var desktopVersion = "0.2.59"
-var desktopVersionCode = "1"
+var desktopVersion = "0.2.61"
+var desktopVersionCode = "3"
 
 type desktopPackage struct {
 	Name   string `json:"name"`
@@ -71,7 +71,7 @@ type desktopUpdater struct {
 
 func newDesktopUpdater(code int, dataDir, downloads, platform string) *desktopUpdater {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &desktopUpdater{currentCode: code, platform: platform, downloads: downloads, stateFile: filepath.Join(dataDir, "desktop-update-check.json"), ctx: ctx, cancel: cancel,
+	return &desktopUpdater{currentCode: code, platform: platform, downloads: downloads, stateFile: filepath.Join(dataDir, "desktop-update-v2-check.json"), ctx: ctx, cancel: cancel,
 		client: &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, DialContext: (&net.Dialer{Timeout: 20 * time.Second}).DialContext, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 30 * time.Second}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 8 {
 				return errors.New("too many redirects")
@@ -295,9 +295,9 @@ func verifyDesktopZIP(path, platform string) error {
 		return err
 	}
 	defer z.Close()
-	required := map[string]string{"hongguo-desktop.exe": "MZ", "hongguo-tv-core.exe": "MZ"}
+	required := map[string]string{"红果短剧.exe": "MZ", "hongguo-tv-core.exe": "MZ"}
 	if platform == "macos-universal" {
-		required = map[string]string{"hongguo-desktop.app/Contents/MacOS/hongguo-desktop": "\xca\xfe\xba\xbe", "hongguo-desktop.app/Contents/MacOS/hongguo-tv-core": "\xca\xfe\xba\xbe", "hongguo-desktop.app/Contents/Info.plist": ""}
+		required = map[string]string{"红果短剧.app/Contents/MacOS/红果短剧": "\xca\xfe\xba\xbe", "红果短剧.app/Contents/MacOS/hongguo-tv-core": "\xca\xfe\xba\xbe", "红果短剧.app/Contents/Info.plist": ""}
 	}
 	seen := map[string]bool{}
 	var total uint64

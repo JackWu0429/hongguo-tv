@@ -26,3 +26,25 @@ test('desktop update bridge reads async status and calls only download/folder bi
  bridge.check();bridge.download();bridge.openFolder();await new Promise(r=>setImmediate(r));assert.deepEqual(calls,['check','download','folder']);
  bridge.setPromptAllowed(true);assert.equal(JSON.parse(bridge.getStatus()).prompt_allowed,true);
 });
+
+test('native desktop window state ignores transient WebView hiding, but minimisation still pauses once',async()=>{
+ const {createWindowMonitor}=require('../core/cmd/hongguotv/ui/desktop.js');let hidden=false,fullscreen=false,pauses=0,resumes=0;const fullscreens=[];
+ const config={platform:'darwin'};
+ const win={document:{hidden:true},HongguoTV:{pauseForBackground(){pauses++},resumeFromBackground(){resumes++},desktopFullscreenChanged(value){fullscreens.push(value)}},go:{main:{desktopApp:{GetWindowState:async()=>JSON.stringify({hidden,fullscreen})}}}};
+ const monitor=createWindowMonitor(win,config),flush=()=>new Promise(r=>setImmediate(r));
+ monitor.refresh();await flush();assert.equal(pauses,0);assert.equal(config.background,false);
+ fullscreen=true;monitor.refresh();await flush();assert.equal(pauses,0);assert.deepEqual(fullscreens,[false,true]);
+ fullscreen=false;monitor.refresh();await flush();assert.equal(pauses,0);assert.deepEqual(fullscreens,[false,true,false]);
+ hidden=true;monitor.refresh();monitor.refresh();await flush();assert.equal(pauses,1);assert.equal(config.background,true);
+ monitor.refresh();await flush();assert.equal(pauses,1);
+ hidden=false;monitor.refresh();await flush();assert.equal(resumes,1);assert.equal(config.background,false);
+});
+
+test('Android visibility and desktop native minimisation remain independent',()=>{
+ const c=vm.createContext({desktopShell:true,window:{HongguoDesktop:{background:false}},document:{hidden:true}});
+ vm.runInContext(app.match(/  function applicationHidden[^\n]+/)[0],c);
+ assert.equal(c.applicationHidden(),false);
+ c.window.HongguoDesktop.background=true;assert.equal(c.applicationHidden(),true);
+ c.desktopShell=false;assert.equal(c.applicationHidden(),true);
+ c.document.hidden=false;assert.equal(c.applicationHidden(),false);
+});

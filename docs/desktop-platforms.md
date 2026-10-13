@@ -39,7 +39,7 @@ macOS 为系统 WKWebView，Windows 为 WebView2。桌面端不包含 MPV/Media3
   需要 Microsoft Edge WebView2 Runtime，缺失时引导访问微软下载页。
 - push/PR 只运行验证；workflow_dispatch 成功后将两包、SHA256 文件和桌面清单作为私人
   Release 发布，再同步公共下载仓库。两平台都成功、包内容及校验和正确才发布，失败保留 draft。
-- 不用 Actions artifact 分发，只在公共仓库增加 desktop-v 标签与 desktop-update.json；不修改 Android 签名或更新渠道。
+- 不用 Actions artifact 分发，只在公共仓库增加 desktop-v 标签与 desktop-update-v2.json；不修改 Android 签名或更新渠道。
 - 无开发者证书时 macOS 只做 ad hoc 完整性签名，没有 Apple 公证；Windows
   未做代码签名。系统可能提示未知开发者。正式信任签名可后续接入 CI secrets。
 
@@ -53,3 +53,7 @@ Go 测试覆盖账号/API 转发、外部 origin 拒绝、共享页面、Range�
 桌面首次安装后仍需实测真实红果登录、连续切集、全屏与 HEVC 视频画面/声音。
 参考已分析的 Mac 应用记录见 `docs/hongguo-macos-v1.1.8-analysis.md`，不把其无源码
 二进制的播放实现当成当前应用的实测证据。
+
+## 0.2.61 桌面名称迁移
+
+macOS bundle 目录及 Windows 启动程序分别为 `红果短剧.app` / `红果短剧.exe`。只设置 CFBundleDisplayName 不保证 Finder/Launchpad 显示中文。0.2.59/0.2.60 更新器校验英文目录，因此旧 `desktop-update.json` 保持在 0.2.60；需手动下载一次 0.2.61，随后使用 `desktop-update-v2.json`。bundle ID、应用单实例标识、数据目录和账号/history 契约不变。

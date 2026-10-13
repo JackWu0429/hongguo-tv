@@ -26,9 +26,9 @@ func updateFixture(t *testing.T, platform string) (desktopManifest, []byte) {
 	t.Helper()
 	var b bytes.Buffer
 	z := zip.NewWriter(&b)
-	files := map[string]string{"hongguo-desktop.exe": "MZshell", "hongguo-tv-core.exe": "MZcore", "README.txt": "test"}
+	files := map[string]string{"红果短剧.exe": "MZshell", "hongguo-tv-core.exe": "MZcore", "README.txt": "test"}
 	if platform == "macos-universal" {
-		files = map[string]string{"hongguo-desktop.app/Contents/MacOS/hongguo-desktop": "\xca\xfe\xba\xbeShell", "hongguo-desktop.app/Contents/MacOS/hongguo-tv-core": "\xca\xfe\xba\xbeCore", "hongguo-desktop.app/Contents/Info.plist": "plist"}
+		files = map[string]string{"红果短剧.app/Contents/MacOS/红果短剧": "\xca\xfe\xba\xbeShell", "红果短剧.app/Contents/MacOS/hongguo-tv-core": "\xca\xfe\xba\xbeCore", "红果短剧.app/Contents/Info.plist": "plist"}
 	}
 	for n, v := range files {
 		f, err := z.Create(n)
@@ -215,6 +215,42 @@ func TestDesktopZIPRejectsWrongPlatformAndTraversal(t *testing.T) {
 	os.WriteFile(path, unsafe.Bytes(), 0600)
 	if verifyDesktopZIP(path, "windows-amd64") == nil {
 		t.Fatal("traversal accepted")
+	}
+}
+func TestDesktopZIPRejectsLegacyEnglishApplicationPath(t *testing.T) {
+	for _, platform := range []string{"macos-universal", "windows-amd64"} {
+		_, data := updateFixture(t, platform)
+		reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var legacy bytes.Buffer
+		writer := zip.NewWriter(&legacy)
+		for _, entry := range reader.File {
+			name := strings.ReplaceAll(entry.Name, "红果短剧", "hongguo-desktop")
+			out, err := writer.Create(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			in, err := entry.Open()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := io.Copy(out, in); err != nil {
+				t.Fatal(err)
+			}
+			in.Close()
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(t.TempDir(), "legacy.zip")
+		if err := os.WriteFile(path, legacy.Bytes(), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if verifyDesktopZIP(path, platform) == nil {
+			t.Fatal("legacy display path accepted by renamed channel")
+		}
 	}
 }
 func TestDesktopCheckCancellationStopsRequests(t *testing.T) {

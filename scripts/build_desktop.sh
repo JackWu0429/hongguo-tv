@@ -30,14 +30,14 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 node frontend/build.mjs
 wails build -clean -platform "$DESKTOP_PLATFORM" -webview2 browser -ldflags "-s -w -X main.version=$HONGGUO_CORE_VERSION -X main.desktopVersion=$APP_VERSION -X main.desktopVersionCode=$DESKTOP_VERSION_CODE"
 if [[ "$DESKTOP_PLATFORM" == darwin/universal ]]; then
-  app="build/bin/hongguo-desktop.app"
+  app="build/bin/红果短剧.app"
   cp build/sidecar/hongguo-tv-core "$app/Contents/MacOS/"
   mkdir -p "$app/Contents/Resources/zh-Hans.lproj"
   cp resources/zh-Hans.lproj/InfoPlist.strings "$app/Contents/Resources/zh-Hans.lproj/InfoPlist.strings"
   python3 ../scripts/verify_desktop_ui.py "$app/Contents/MacOS/hongguo-tv-core"
   chmod +x "$app/Contents/MacOS/hongguo-tv-core"
   lipo "$app/Contents/MacOS/hongguo-tv-core" -verify_arch x86_64 arm64
-  lipo "$app/Contents/MacOS/hongguo-desktop" -verify_arch x86_64 arm64
+  lipo "$app/Contents/MacOS/红果短剧" -verify_arch x86_64 arm64
   # Ad hoc signing verifies bundle integrity; it is not Apple notarization.
   codesign --force --sign - "$app/Contents/MacOS/hongguo-tv-core"
   codesign --force --deep --sign - "$app"
@@ -47,7 +47,7 @@ else
   cp build/sidecar/hongguo-tv-core.exe build/bin/
   python3 ../scripts/verify_desktop_ui.py build/bin/hongguo-tv-core.exe
   cp ../docs/desktop-install-windows.txt build/bin/README.txt
-  (cd build/bin && 7z a "../../dist/hongguo-desktop-$APP_VERSION-windows-x64.zip" hongguo-desktop.exe hongguo-tv-core.exe README.txt)
+  (cd build/bin && 7z a "../../dist/hongguo-desktop-$APP_VERSION-windows-x64.zip" 红果短剧.exe hongguo-tv-core.exe README.txt)
 fi
 python3 - <<'PY'
 import hashlib

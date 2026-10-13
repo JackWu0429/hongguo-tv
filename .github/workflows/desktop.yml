@@ -102,7 +102,7 @@ jobs:
           if [[ "${{ matrix.os }}" == windows-* ]]; then
             python3 scripts/verify_desktop_core.py desktop/build/bin/hongguo-tv-core.exe "$HONGGUO_CORE_VERSION"
           else
-            python3 scripts/verify_desktop_core.py desktop/build/bin/hongguo-desktop.app/Contents/MacOS/hongguo-tv-core "$HONGGUO_CORE_VERSION"
+            python3 scripts/verify_desktop_core.py desktop/build/bin/红果短剧.app/Contents/MacOS/hongguo-tv-core "$HONGGUO_CORE_VERSION"
           fi
       - name: Attach exact packages to private draft
         if: github.event_name == 'workflow_dispatch'
@@ -129,7 +129,7 @@ jobs:
           gh release download "$PREVIEW_TAG" --dir "$RUNNER_TEMP/desktop-release"
           python3 scripts/verify_desktop_packages.py "$RUNNER_TEMP/desktop-release"
           python3 scripts/publish_desktop_release.py --directory "$RUNNER_TEMP/desktop-release" --notes docs/desktop-release.md --generate-only
-          gh release upload "$PREVIEW_TAG" "$RUNNER_TEMP/desktop-release/desktop-update.json"
+          gh release upload "$PREVIEW_TAG" "$RUNNER_TEMP/desktop-release/desktop-update-v2.json"
           gh release edit "$PREVIEW_TAG" --draft=false --prerelease=false --latest=false
       - name: Mirror desktop ZIPs and update public download instructions
         if: inputs.publish_public

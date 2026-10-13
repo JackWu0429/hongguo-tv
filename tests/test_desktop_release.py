@@ -8,7 +8,7 @@ import unittest.mock
 class DesktopReleaseTests(unittest.TestCase):
  def setUp(self):
   self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name);self.notes=self.root/'notes.md';self.notes.write_text('下载 ZIP 自行替换')
-  for suffix,files in [('macos-universal',{'hongguo-desktop.app/Contents/MacOS/hongguo-desktop':b'\xca\xfe\xba\xbeapp','hongguo-desktop.app/Contents/MacOS/hongguo-tv-core':b'\xca\xfe\xba\xbecore','hongguo-desktop.app/Contents/Info.plist':b'plist'}),('windows-x64',{'hongguo-desktop.exe':b'MZapp','hongguo-tv-core.exe':b'MZcore','README.txt':b'notes'})]:
+  for suffix,files in [('macos-universal',{'红果短剧.app/Contents/MacOS/红果短剧':b'\xca\xfe\xba\xbeapp','红果短剧.app/Contents/MacOS/hongguo-tv-core':b'\xca\xfe\xba\xbecore','红果短剧.app/Contents/Info.plist':b'plist'}),('windows-x64',{'红果短剧.exe':b'MZapp','hongguo-tv-core.exe':b'MZcore','README.txt':b'notes'})]:
    p=self.root/f'hongguo-desktop-0.2.59-{suffix}.zip'
    with zipfile.ZipFile(p,'w') as z:
     for n,b in files.items():z.writestr(n,b)

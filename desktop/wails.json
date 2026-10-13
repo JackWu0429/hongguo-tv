@@ -1,7 +1,7 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "hongguo-desktop",
-  "outputfilename": "hongguo-desktop",
+  "name": "红果短剧",
+  "outputfilename": "红果短剧",
   "frontend:dir": "frontend",
   "frontend:install": "npm install --ignore-scripts --no-audit --no-fund",
   "frontend:build": "npm run build",
@@ -14,7 +14,7 @@
   "info": {
     "companyName": "aston314",
     "productName": "红果短剧",
-    "productVersion": "0.2.58",
-    "comments": "Hongguo desktop preview"
+    "productVersion": "0.2.61",
+    "comments": "红果短剧桌面版"
   }
 }

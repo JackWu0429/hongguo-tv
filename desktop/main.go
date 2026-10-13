@@ -49,6 +49,14 @@ func (a *desktopApp) SetFullscreen(enabled bool) {
 		wruntime.WindowUnfullscreen(a.ctx)
 	}
 }
+func (a *desktopApp) GetWindowState() string {
+	state := struct {
+		Hidden     bool `json:"hidden"`
+		Fullscreen bool `json:"fullscreen"`
+	}{desktopWindowHidden(a.ctx), wruntime.WindowIsFullscreen(a.ctx)}
+	b, _ := json.Marshal(state)
+	return string(b)
+}
 func (a *desktopApp) OpenDownloads() {
 	wruntime.BrowserOpenURL(a.ctx, "https://github.com/aston314/hongguo-tv/releases")
 }

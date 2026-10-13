@@ -18,15 +18,15 @@ for archive in archives:
         names=set(z.namelist())
         if archive.name.endswith('-macos-universal.zip'):
             platforms.add('macos')
-            for name in ['hongguo-desktop.app/Contents/MacOS/hongguo-desktop','hongguo-desktop.app/Contents/MacOS/hongguo-tv-core','hongguo-desktop.app/Contents/Info.plist']:
+            for name in ['红果短剧.app/Contents/MacOS/红果短剧','红果短剧.app/Contents/MacOS/hongguo-tv-core','红果短剧.app/Contents/Info.plist']:
                 assert name in names and z.getinfo(name).file_size>0
-            for name in ['hongguo-desktop.app/Contents/MacOS/hongguo-desktop','hongguo-desktop.app/Contents/MacOS/hongguo-tv-core']:
+            for name in ['红果短剧.app/Contents/MacOS/红果短剧','红果短剧.app/Contents/MacOS/hongguo-tv-core']:
                 assert z.read(name)[:4]==b'\xca\xfe\xba\xbe', 'macOS executable must be universal'
         elif archive.name.endswith('-windows-x64.zip'):
             platforms.add('windows')
-            for name in ['hongguo-desktop.exe','hongguo-tv-core.exe','README.txt']:
+            for name in ['红果短剧.exe','hongguo-tv-core.exe','README.txt']:
                 assert name in names and z.getinfo(name).file_size>0
-            for name in ['hongguo-desktop.exe','hongguo-tv-core.exe']:
+            for name in ['红果短剧.exe','hongguo-tv-core.exe']:
                 assert z.read(name)[:2]==b'MZ', 'Windows executable missing PE header'
         else: raise AssertionError('Unknown package')
     print(archive.name,archive.stat().st_size,digest)

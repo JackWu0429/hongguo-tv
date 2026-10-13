@@ -47,6 +47,7 @@ function fixture({ failSave = false, writeGate = null, sourceGate = null } = {})
       return { path: '/media/' + item.series_id + '/' + item.vid + '.mp4', quality: '720P', qualities: ['720P'] };
     }
   });
+  vm.runInContext("var desktopShell=false;" + source.match(/  function applicationHidden[^\n]+/)[0], c);
   vm.runInContext(`
     var shell={dataset:{mode:'recommend'},classList:document.getElementById('shell').classList}, mainSurface=document.getElementById('main-surface');
     var searchPage=document.getElementById('search-page'),pagePlaceholder=document.getElementById('placeholder'),libraryPage=document.getElementById('library-page'),accountPage=document.getElementById('account-page'),supportPage=document.getElementById('support-page');
