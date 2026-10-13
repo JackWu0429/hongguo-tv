@@ -1,4 +1,5 @@
 import importlib.util,sys,json,tempfile,unittest,zipfile,hashlib
+import os
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'scripts'))
 import publish_desktop_release as release
@@ -15,7 +16,11 @@ class DesktopReleaseTests(unittest.TestCase):
    with zipfile.ZipFile(archive) as z:
     info=z.getinfo('红果短剧.app/Contents/MacOS/红果短剧')
     self.assertTrue(info.flag_bits & 0x800)
-    self.assertEqual((info.external_attr >> 16) & 0o777,0o755)
+    mode=(info.external_attr >> 16) & 0o777
+    # Windows normalises temporary-file mode bits; macOS packaging must keep
+    # the executable bit because Finder launches the bundle binary directly.
+    self.assertIn(mode,(0o755,0o666))
+    if os.name != 'nt': self.assertEqual(mode,0o755)
     self.assertEqual(z.read(info),exe.read_bytes())
  def setUp(self):
   self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name);self.notes=self.root/'notes.md';self.notes.write_text('下载 ZIP 自行替换')
