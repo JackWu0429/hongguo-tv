@@ -158,9 +158,16 @@
       </section>
 
       <section class="follow-page page-workspace is-hidden" id="follow-page" aria-label="追更">
-        <div class="follow-heading"><div><h1>追更</h1><p>关注正在更新的短剧，看到新集会继续出现在这里。</p></div><button class="library-toolbar-button" id="follow-refresh" data-focus="follow-refresh">刷新</button></div>
-        <div class="follow-grid" id="follow-grid" data-focus-zone="followItems" aria-live="polite"></div>
-        <div id="follow-pagination" class="list-status" role="status"></div>
+        <div class="follow-heading"><div><h1>追更</h1><p>关注正在更新的短剧，看到新集会继续出现在这里。</p></div><div class="follow-actions" data-focus-zone="followActions"><button class="library-toolbar-button follow-action" id="follow-notifications-open" data-focus="follow-notifications-open">更新提醒<span class="follow-notification-badge is-hidden" id="follow-notifications-badge"></span></button><button class="library-toolbar-button follow-action" id="follow-refresh" data-focus="follow-refresh">刷新</button></div></div>
+        <div id="follow-list-view">
+          <div class="follow-grid" id="follow-grid" data-focus-zone="followItems" aria-live="polite"></div>
+          <div id="follow-pagination" class="list-status" role="status"></div>
+        </div>
+        <div class="follow-notification-view is-hidden" id="follow-notification-view" aria-label="更新提醒">
+          <div class="follow-notification-heading"><button class="library-toolbar-button follow-notification-action" id="follow-notifications-back" data-focus="follow-notifications-back">返回追更</button><div><strong>更新提醒</strong><button class="library-toolbar-button follow-notification-action" id="follow-notifications-read-all" data-focus="follow-notifications-read-all">全部标为已读</button></div></div>
+          <p class="follow-notification-copy">追更更新和预约上线会保留在这里，关闭右下角提示也不会丢失。</p>
+          <div class="follow-notification-list" id="follow-notification-list" data-focus-zone="followNotifications" aria-live="polite"></div>
+        </div>
       </section>
 
       <section class="library-page page-workspace is-hidden" id="library-page" aria-label="我的短剧">
@@ -314,6 +321,7 @@
       <section class="confirm-modal is-hidden" id="confirm-modal" aria-hidden="true"><div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><h2 id="confirm-title">清空记录？</h2><p id="confirm-copy"></p><div class="confirm-actions"><button id="confirm-cancel" class="confirm-button" data-focus="confirm-cancel">取消</button><button id="confirm-accept" class="confirm-button confirm-danger" data-focus="confirm-accept">清空</button></div></div></section>
       <section class="account-keypad-modal is-hidden" id="account-keypad-modal" aria-hidden="true"><div class="account-keypad-dialog" role="dialog" aria-modal="true" aria-labelledby="account-keypad-title"><h2 id="account-keypad-title">输入手机号</h2><div class="account-keypad-body"><div class="account-keypad-left"><div class="account-keypad-value" id="account-keypad-value" aria-live="polite"></div><p class="account-keypad-hint" id="account-keypad-hint"></p><div class="account-keypad-keys" id="account-keypad-keys"></div><p class="account-keypad-error" id="account-keypad-error" role="status" aria-live="polite"></p><p class="account-keypad-help">方向键选择 · 确认键输入 · 返回键关闭</p></div><div class="account-number-scan"><h3>也可用手机输入</h3><div class="account-number-qr-box"><img class="is-hidden" id="account-number-qr" alt="手机扫码输入" width="240" height="240"></div><p id="account-number-scan-status" role="status" aria-live="polite"></p><p class="account-number-scan-hint">手机和电视需在同一局域网<br>5分钟有效，关闭后失效<br>完成后请在电视继续操作</p></div></div></div></section>
       <div class="notice is-hidden" id="action-notice" role="status" aria-live="polite"></div>
+      <div class="notification-popup is-hidden" id="notification-popup" role="status" aria-live="polite" aria-atomic="true"></div>
     </section>
   </main>
   <script src="/pagination.js"></script>

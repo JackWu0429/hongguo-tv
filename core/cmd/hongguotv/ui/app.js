@@ -52,6 +52,8 @@
     detailTabs: '.detail-tab',
     seriesRows: '.series-row'
     ,followItems: '.follow-card'
+    ,followActions: '.follow-action'
+    ,followNotifications: '.follow-notification-row, .follow-notification-action'
     ,libraryTypeFilters: '.library-type-filter'
   };
   var status = document.getElementById('core-status');
@@ -187,6 +189,19 @@
   var libraryTypeFilter = 'all';
   var followPage = document.getElementById('follow-page');
   var followGrid = document.getElementById('follow-grid');
+  var followActions = document.querySelector('#follow-page .follow-actions');
+  var followListView = document.getElementById('follow-list-view');
+  var followNotificationView = document.getElementById('follow-notification-view');
+  var followNotificationList = document.getElementById('follow-notification-list');
+  var followNotificationItems = [];
+  var followNotificationUnread = 0;
+  var followNotificationViewOpen = false;
+  var followNotificationReturnFocus = null;
+  var notificationCheckBusy = false;
+  var notificationLastCheck = 0;
+  var notificationPopupTimer = null;
+  var notificationPopupQueue = [];
+  var notificationKnownKey = '';
   var libraryQueue = Promise.resolve();
   var libraryReady;
   var confirmOpen = false;
@@ -705,6 +720,8 @@
     if (element.classList.contains('review-card')) return 'detailReviews';
     if (element.classList.contains('related-card')) return 'detailRelated';
     if (element.classList.contains('rank-filter-option') || element.classList.contains('rank-filter-close') || element.classList.contains('rank-filter-apply')) return 'rankModal';
+    if (element.classList.contains('follow-action')) return 'followActions';
+    if (element.classList.contains('follow-notification-row') || element.classList.contains('follow-notification-action')) return 'followNotifications';
     if (element.classList.contains('follow-card')) return 'followItems';
     if (element.classList.contains('library-type-filter')) return 'libraryTypeFilters';
     if (element.classList.contains('series-row') || element.classList.contains('series-retry')) return 'seriesRows';
@@ -753,7 +770,7 @@
     if (pageMode() === 'rank') return firstVisible('.rank-tab.is-active') || firstRankTab();
     if (pageMode() === 'new') return firstVisible('.new-tab.is-active') || firstNewTab();
     if (pageMode() === 'reservations') return firstVisible('.reservation-tab.is-active');
-    if (pageMode() === 'follows') return firstVisible('.follow-card') || firstVisible('#follow-refresh');
+    if (pageMode() === 'follows') return followNotificationViewOpen ? firstVisible('.follow-notification-row') || firstVisible('#follow-notifications-back') : firstVisible('.follow-card') || firstVisible('#follow-notifications-open') || firstVisible('#follow-refresh');
     return document.querySelector('.page-placeholder-action');
   }
 
@@ -1091,9 +1108,28 @@
       if (direction === 'down') return firstVisible('.library-card') || firstVisible('[data-action="library-discover"]');
       return null;
     }
+    if (zone === 'followActions') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'up') return activeSidebar();
+      if (direction === 'down') return followNotificationViewOpen ? firstVisible('.follow-notification-row') || firstVisible('#follow-notifications-back') : firstVisible('.follow-card') || firstVisible('#follow-pagination .list-retry');
+      return null;
+    }
+    if (zone === 'followNotifications') {
+      if (current.classList.contains('follow-notification-action')) {
+        if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+        if (direction === 'up') return firstVisible('.follow-action') || activeSidebar();
+        if (direction === 'down') return firstVisible('.follow-notification-row') || current;
+        return null;
+      }
+      if (direction === 'left') return activeSidebar();
+      if (direction === 'right') return null;
+      if (direction === 'up') return moveGrid('.follow-notification-row', current, direction) || firstVisible('#follow-notifications-back');
+      if (direction === 'down') return moveGrid('.follow-notification-row', current, direction) || current;
+      return null;
+    }
     if (zone === 'followItems') {
       if (direction === 'left' || direction === 'right') return moveGrid('.follow-card', current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return moveGrid('.follow-card', current, direction) || firstVisible('#follow-refresh') || activeSidebar();
+      if (direction === 'up') return moveGrid('.follow-card', current, direction) || firstVisible('.follow-action') || activeSidebar();
       if (direction === 'down') return moveGrid('.follow-card', current, direction) || listBoundary(followPager, current, direction);
       return null;
     }
@@ -1335,6 +1371,139 @@
     notice.classList.remove('is-hidden');
     clearTimeout(showNotice.timer);
     showNotice.timer = setTimeout(function () { notice.classList.add('is-hidden'); }, 3200);
+  }
+
+  function notificationAccountKey() {
+    return accountData && accountData.logged_in && accountData.profile && accountData.profile.uid ? String(accountData.profile.uid) : '';
+  }
+  function notificationStorageKey() { return 'hongguo-notification-seen:' + notificationAccountKey(); }
+  function notificationSeenIDs() {
+    var result = Object.create(null);
+    try {
+      var raw = localStorage.getItem(notificationStorageKey());
+      var values = raw ? JSON.parse(raw) : [];
+      (values || []).forEach(function (id) { if (id) result[String(id)] = true; });
+    } catch (ignored) {}
+    return result;
+  }
+  function saveNotificationSeenIDs(seen) {
+    try {
+      var values = Object.keys(seen).slice(-220);
+      localStorage.setItem(notificationStorageKey(), JSON.stringify(values));
+    } catch (ignored) {}
+  }
+  function renderNotificationBadge() {
+    var badge = document.getElementById('follow-notifications-badge');
+    if (!badge) return;
+    badge.textContent = followNotificationUnread > 99 ? '99+' : String(followNotificationUnread);
+    badge.classList.toggle('is-hidden', followNotificationUnread < 1);
+  }
+  function updateFollowNotificationAccess() {
+    var button = document.getElementById('follow-notifications-open');
+    if (!button) return;
+    var enabled = !!(accountData && accountData.logged_in);
+    button.classList.toggle('is-hidden', !enabled);
+    button.disabled = !enabled;
+  }
+  function notificationCanPopup() {
+    return !applicationInBackground && !document.hidden && !isPlaybackPage() && !detailModalOpen && !playerOptionsOpen && !discussionOpen && !confirmOpen && !supportModalOpen;
+  }
+  function notificationHidePopup() {
+    clearTimeout(notificationPopupTimer);
+    var popup = document.getElementById('notification-popup');
+    if (popup) popup.classList.add('is-hidden');
+  }
+  function notificationShowPopup(item) {
+    if (!item || !notificationCanPopup()) { if (item) notificationPopupQueue.push(item); return; }
+    var popup = document.getElementById('notification-popup');
+    if (!popup) return;
+    popup.textContent = '';
+    var title = document.createElement('strong'); title.textContent = item.kind === 'reservation_online' ? '预约提醒' : '追更提醒';
+    var message = document.createElement('span'); message.textContent = item.message || item.title || '有新的短剧更新';
+    popup.appendChild(title); popup.appendChild(message); popup.classList.remove('is-hidden');
+    clearTimeout(notificationPopupTimer);
+    notificationPopupTimer = setTimeout(notificationHidePopup, 7000);
+  }
+  function flushNotificationPopup() {
+    if (!notificationCanPopup() || !notificationPopupQueue.length) return;
+    var item = notificationPopupQueue.shift();
+    notificationShowPopup(item);
+  }
+  function formatNotificationTime(stamp) {
+    if (!stamp) return '';
+    try { return new Date(stamp).toLocaleString(); } catch (ignored) { return ''; }
+  }
+  function renderFollowNotifications() {
+    renderNotificationBadge();
+    if (!followNotificationList) return;
+    followNotificationList.innerHTML = '';
+    if (!followNotificationItems.length) {
+      var empty = document.createElement('div'); empty.className = 'follow-notification-empty'; empty.textContent = '暂无更新提醒'; followNotificationList.appendChild(empty); return;
+    }
+    followNotificationItems.slice().reverse().forEach(function (item) {
+      var row = document.createElement('button'); row.type = 'button'; row.className = 'follow-notification-row' + (item.read ? '' : ' is-unread'); row.dataset.focus = 'follow-notice-' + item.id;
+      var copy = document.createElement('span'); var title = document.createElement('strong'); title.textContent = item.title || '短剧更新'; var message = document.createElement('span'); message.textContent = item.message || ''; copy.appendChild(title); copy.appendChild(message);
+      var time = document.createElement('time'); time.textContent = formatNotificationTime(item.created_at); row.appendChild(copy); row.appendChild(time);
+      row.addEventListener('click', function () { markNotificationRead(item.id, row); });
+      followNotificationList.appendChild(row);
+    });
+  }
+  function acceptNotificationData(data, showNew) {
+    var items = data && data.items || [];
+    followNotificationItems = items.slice();
+    followNotificationUnread = Number(data && data.unread_count) || followNotificationItems.filter(function (item) { return !item.read; }).length;
+    renderFollowNotifications();
+    if (!showNew) return;
+    var key = notificationAccountKey();
+    if (!key) return;
+    var seen = notificationSeenIDs();
+    var fresh = [];
+    followNotificationItems.forEach(function (item) {
+      if (!item.id || seen[item.id]) return;
+      seen[item.id] = true; fresh.push(item);
+    });
+    saveNotificationSeenIDs(seen);
+    fresh.forEach(function (item) { notificationPopupQueue.push(item); });
+    flushNotificationPopup();
+  }
+  function notificationCheck(force) {
+    if (!notificationAccountKey() || notificationCheckBusy || document.hidden || applicationInBackground) return Promise.resolve(false);
+    var now = Date.now();
+    if (!force && now - notificationLastCheck < 10 * 60 * 1000) { flushNotificationPopup(); return Promise.resolve(false); }
+    notificationLastCheck = now; notificationCheckBusy = true;
+    return fetchData('/api/v1/notifications').then(function (data) {
+      var key = notificationAccountKey(); var first = notificationKnownKey !== key; notificationKnownKey = key;
+      if (first) {
+        // An existing account should not receive a toast for every old item on
+        // first launch. Future server-generated IDs will still be surfaced.
+        var seen = notificationSeenIDs(); (data.items || []).forEach(function (item) { if (item.id) seen[item.id] = true; }); saveNotificationSeenIDs(seen);
+      }
+      acceptNotificationData(data, !first);
+      return true;
+    }).catch(function (error) { if (followNotificationViewOpen) showNotice('更新提醒暂时读取失败'); return false; })
+      .then(function (ok) { notificationCheckBusy = false; flushNotificationPopup(); return ok; });
+  }
+  function openFollowNotifications() {
+    followNotificationReturnFocus = document.activeElement;
+    followNotificationViewOpen = true;
+    if (followActions) followActions.classList.add('is-hidden');
+    followListView.classList.add('is-hidden'); followNotificationView.classList.remove('is-hidden');
+    renderFollowNotifications();
+    notificationCheck(true).then(function () { if (followNotificationViewOpen) goFocus(firstVisible('.follow-notification-row') || document.getElementById('follow-notifications-back')); });
+    goFocus(firstVisible('.follow-notification-row') || document.getElementById('follow-notifications-back'));
+  }
+  function closeFollowNotifications() {
+    followNotificationViewOpen = false; followNotificationView.classList.add('is-hidden'); followListView.classList.remove('is-hidden'); if (followActions) followActions.classList.remove('is-hidden');
+    var target = followNotificationReturnFocus; followNotificationReturnFocus = null;
+    goFocus(target && document.contains(target) && !target.disabled ? target : document.getElementById('follow-notifications-open'));
+  }
+  function markNotificationRead(id, row) {
+    if (!id) return;
+    var target = row && row.dataset.focus;
+    fetchData('/api/v1/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id }) }).then(function (data) {
+      acceptNotificationData(data, false);
+      if (target && followNotificationViewOpen) goFocus(document.querySelector('[data-focus="' + target.replace(/"/g, '') + '"]') || document.getElementById('follow-notifications-back'));
+    }).catch(function () { showNotice('更新提醒暂时无法标记'); });
   }
 
   function isPlaybackPage() { return pageMode() === 'recommend' || pageMode() === 'player'; }
@@ -1762,6 +1931,7 @@
     if (typeof danmakuScanOpen !== 'undefined' && danmakuScanOpen) { closeDanmakuScan(true); return true; }
     if (accountKeypadOpen()) { numericKeypad.close('back'); return true; }
     if (supportModalOpen) { closeSupportQR(); return true; }
+    if (followNotificationViewOpen) { closeFollowNotifications(); return true; }
     if (rankFilterOpen) { closeRankFilter(true); return true; }
     if (confirmOpen) closeConfirmation();
     else if (playerOptionsOpen) closePlayerOptions();
@@ -1810,6 +1980,8 @@
     applicationInBackground = false;
     updatePlaybackControls();
     if (pageMode() === 'account' && document.activeElement && document.activeElement.closest('#account-keypad-modal')) goFocus(firstContentFocus());
+    notificationCheck(false);
+    flushNotificationPopup();
   }
   function resetPlayerUI() {
     episodePrefetch.cancel(); cancelPlaybackPreparation();
@@ -2166,10 +2338,15 @@
     var owner = data.profile && data.profile.uid || '';
     var previousOwner = previous && previous.profile && previous.profile.uid || '';
     accountData = data;
+    updateFollowNotificationAccess();
     if (smsVerification) smsVerification.setSession(!data.logged_in && data.phase === 'mfa' && data.mfa_expires_at ? { key: String(data.mfa_expires_at) + ':' + (data.sms_number || '') + ':' + (data.sms_content || ''), expiresAt: data.mfa_expires_at } : null);
     accountCountdownUntil = Date.now() + (data.retry_after || 0) * 1000;
     if (owner !== previousOwner || owner !== (libraryData.owner_id || '')) {
       ++accountEpoch;
+      notificationKnownKey = '';
+      notificationLastCheck = 0;
+      notificationPopupQueue = [];
+      if (typeof notificationHidePopup === 'function') notificationHidePopup();
       recommendationSession = null;
       if (engagement) engagement.resetAccount();
       episodePrefetch.cancel();
@@ -2271,6 +2448,7 @@
       if (epoch !== accountEpoch || generation !== accountRequestGeneration || accountBusy) return;
       if (!payload.ok || !payload.data) throw new Error(payload.error || '账号状态读取失败');
       acceptAccountStatus(payload.data);
+      notificationCheck(false);
     }).catch(function (error) { if (pageMode() === 'account') setAccountMessage(error.message); })
       .then(function () { accountPollBusy = false; });
   }
@@ -3027,6 +3205,7 @@
 
   function startPlayer(item, returnFocus) {
     if (!item || !item.series_id) return;
+    if (typeof notificationHidePopup === 'function') notificationHidePopup();
     var recommendation = rememberRecommendation();
     allPagers.forEach(function (pager) { pager.cancel(); });
     if (!isPlaybackPage()) resetPlayerUI();
@@ -4327,6 +4506,7 @@
     pagePlaceholder.classList.add('is-hidden');
     hideWorkspacePages();
     if (item.dataset.page === 'recommend') {
+      if (typeof notificationHidePopup === 'function') notificationHidePopup();
       mainSurface.classList.remove('has-placeholder');
       pagePlaceholder.classList.add('is-hidden');
       document.getElementById('hero').classList.add('is-feed');
@@ -4355,8 +4535,10 @@
     } else if (item.dataset.page === 'follows') {
       mainSurface.classList.add('has-workspace');
       followPage.classList.remove('is-hidden');
+      if (!followNotificationViewOpen) { followListView.classList.remove('is-hidden'); followNotificationView.classList.add('is-hidden'); }
       if (!accountData || !accountData.logged_in) renderMessage(followGrid, 'list-empty', '登录红果账号后查看追更。');
       else if (!followPager.loaded) followPager.reset({}); else queueTailCheck();
+      notificationCheck(false);
     } else if (['history', 'favorites', 'likes'].indexOf(item.dataset.page) >= 0) {
       mainSurface.classList.add('has-workspace');
       libraryPage.classList.remove('is-hidden');
@@ -4538,6 +4720,16 @@
     button.addEventListener('click', function () { selectLibraryType(button.dataset.libraryType); });
   });
   document.getElementById('follow-refresh').addEventListener('click', function () { followPager.reset({}); });
+  document.getElementById('follow-notifications-open').addEventListener('click', openFollowNotifications);
+  document.getElementById('follow-notifications-back').addEventListener('click', closeFollowNotifications);
+  document.getElementById('follow-notifications-read-all').addEventListener('click', function () {
+    var target = document.activeElement;
+    fetchData('/api/v1/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ all: true }) }).then(function (data) {
+      acceptNotificationData(data, false);
+      if (followNotificationViewOpen) goFocus(target && target.id === 'follow-notifications-read-all' ? target : firstVisible('#follow-notifications-back'));
+    }).catch(function () { showNotice('更新提醒暂时无法标记'); });
+  });
+  document.getElementById('notification-popup').addEventListener('click', notificationHidePopup);
   document.getElementById('library-manage').addEventListener('click', function () {
     if (libraryError) { libraryReady = loadLibrary(); return; }
     libraryEditing = !libraryEditing;
@@ -4858,6 +5050,7 @@
   }
   appUpdates.refresh();
   setInterval(appUpdates.refresh, 1000);
+  updateFollowNotificationAccess();
   goFocus(document.querySelector('.side-item.is-active'));
   restorePlaybackPreferences();
   loadStatus();
