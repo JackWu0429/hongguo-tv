@@ -44,20 +44,20 @@
     <aside class="sidebar" aria-label="主导航">
       <div class="brand"><span class="brand-mark"><svg viewBox="0 0 24 24"><use href="#icon-play" xlink:href="#icon-play"></use></svg></span><span>红果短剧</span></div>
       <nav class="side-nav" id="side-nav" data-focus-zone="sidebar">
-        <button class="side-item is-active" data-page="recommend" data-focus="sidebar-recommend"><svg class="side-icon"><use href="#icon-recommend" xlink:href="#icon-recommend"></use></svg><span>推荐</span></button>
-        <button class="side-item" data-page="search" data-focus="sidebar-search"><svg class="side-icon"><use href="#icon-search" xlink:href="#icon-search"></use></svg><span>找剧</span></button>
-        <button class="side-item" data-page="rank" data-focus="sidebar-rank"><svg class="side-icon"><use href="#icon-rank" xlink:href="#icon-rank"></use></svg><span>排行榜</span></button>
-        <button class="side-item" data-page="new" data-focus="sidebar-new"><svg class="side-icon"><use href="#icon-new" xlink:href="#icon-new"></use></svg><span>新剧</span></button>
-        <button class="side-item" data-page="history" data-focus="sidebar-history"><svg class="side-icon"><use href="#icon-history" xlink:href="#icon-history"></use></svg><span>历史</span></button>
-        <button class="side-item" data-page="favorites" data-focus="sidebar-favorites"><svg class="side-icon"><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><span>收藏</span></button>
-        <button class="side-item" data-page="likes" data-focus="sidebar-likes"><svg class="side-icon"><use href="#icon-like" xlink:href="#icon-like"></use></svg><span>点赞</span></button>
-        <button class="side-item" data-page="follows" data-focus="sidebar-follows"><svg class="side-icon"><use href="#icon-bell" xlink:href="#icon-bell"></use></svg><span>追更</span></button>
-        <button class="side-item" data-page="reservations" data-focus="sidebar-reservations"><svg class="side-icon"><use href="#icon-reservation" xlink:href="#icon-reservation"></use></svg><span>预约</span></button>
-        <button class="side-item" data-page="support" data-focus="sidebar-support"><svg class="side-icon"><use href="#icon-heart" xlink:href="#icon-heart"></use></svg><span>打赏</span></button>
+        <button class="side-item is-active" data-page="recommend" data-focus="sidebar-recommend" aria-label="推荐"><svg class="side-icon"><use href="#icon-recommend" xlink:href="#icon-recommend"></use></svg><span>推荐</span></button>
+        <button class="side-item" data-page="search" data-focus="sidebar-search" aria-label="找剧"><svg class="side-icon"><use href="#icon-search" xlink:href="#icon-search"></use></svg><span>找剧</span></button>
+        <button class="side-item" data-page="rank" data-focus="sidebar-rank" aria-label="排行榜"><svg class="side-icon"><use href="#icon-rank" xlink:href="#icon-rank"></use></svg><span>排行榜</span></button>
+        <button class="side-item" data-page="new" data-focus="sidebar-new" aria-label="新剧"><svg class="side-icon"><use href="#icon-new" xlink:href="#icon-new"></use></svg><span>新剧</span></button>
+        <button class="side-item" data-page="history" data-focus="sidebar-history" aria-label="历史"><svg class="side-icon"><use href="#icon-history" xlink:href="#icon-history"></use></svg><span>历史</span></button>
+        <button class="side-item" data-page="favorites" data-focus="sidebar-favorites" aria-label="收藏"><svg class="side-icon"><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><span>收藏</span></button>
+        <button class="side-item" data-page="likes" data-focus="sidebar-likes" aria-label="点赞"><svg class="side-icon"><use href="#icon-like" xlink:href="#icon-like"></use></svg><span>点赞</span></button>
+        <button class="side-item" data-page="follows" data-focus="sidebar-follows" aria-label="追更"><svg class="side-icon"><use href="#icon-bell" xlink:href="#icon-bell"></use></svg><span>追更</span></button>
+        <button class="side-item" data-page="reservations" data-focus="sidebar-reservations" aria-label="预约"><svg class="side-icon"><use href="#icon-reservation" xlink:href="#icon-reservation"></use></svg><span>预约</span></button>
+        <button class="side-item" data-page="support" data-focus="sidebar-support" aria-label="打赏"><svg class="side-icon"><use href="#icon-heart" xlink:href="#icon-heart"></use></svg><span>打赏</span></button>
       </nav>
       <div class="sidebar-bottom">
-        <button class="side-item side-item-secondary" data-page="account" data-focus="sidebar-account"><svg class="side-icon"><use href="#icon-user" xlink:href="#icon-user"></use></svg><span>我的</span></button>
-        <button class="side-item side-item-secondary" data-page="settings" data-focus="sidebar-settings"><svg class="side-icon"><use href="#icon-settings" xlink:href="#icon-settings"></use></svg><span>设置</span></button>
+        <button class="side-item side-item-secondary" data-page="account" data-focus="sidebar-account" aria-label="我的"><svg class="side-icon"><use href="#icon-user" xlink:href="#icon-user"></use></svg><span>我的</span></button>
+        <button class="side-item side-item-secondary" data-page="settings" data-focus="sidebar-settings" aria-label="设置"><svg class="side-icon"><use href="#icon-settings" xlink:href="#icon-settings"></use></svg><span>设置</span></button>
       </div>
     </aside>
 
@@ -222,6 +222,12 @@
 
       <section class="settings-page page-workspace is-hidden" id="settings-page" aria-labelledby="settings-title">
         <div class="settings-heading"><h1 id="settings-title">设置</h1></div>
+        <div class="settings-card app-update-card" id="sidebar-display-settings">
+          <h2>侧边栏显示</h2>
+          <p>选择导航栏的显示方式。默认显示菜单文字，也可以只显示图标以扩大内容区域。</p>
+          <div class="app-update-actions"><button class="sidebar-display-action account-action" id="sidebar-display-expanded" data-mode="expanded" data-focus="sidebar-display-expanded" aria-pressed="false">展开显示</button><button class="sidebar-display-action account-action" id="sidebar-display-icons" data-mode="icons" data-focus="sidebar-display-icons" aria-pressed="false">仅显示图标</button></div>
+          <p id="sidebar-display-state" role="status" aria-live="polite"></p>
+        </div>
         <div class="settings-card app-update-card" id="app-update-card">
           <h2>版本更新</h2>
           <p>当前版本 <strong id="app-current-version">读取中…</strong></p>
@@ -336,6 +342,7 @@
   <script src="/playback-diagnostics.js"></script>
   <script src="/native-player.js"></script>
   <script src="/playback-settings.js"></script>
+  <script src="/sidebar-settings.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

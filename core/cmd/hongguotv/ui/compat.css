@@ -32,6 +32,8 @@
 .legacy-flex-gap .brand-mark { margin-right: 11px; }
 .legacy-flex-gap .side-item + .side-item { margin-top: 5px; }
 .legacy-flex-gap .side-icon { margin-right: 15px; }
+.legacy-flex-gap .app-shell.sidebar-icons .brand-mark,
+.legacy-flex-gap .app-shell.sidebar-icons .side-icon { margin-right: 0; }
 .legacy-flex-gap .channel-tab + .channel-tab { margin-left: 4px; }
 .legacy-flex-gap .hero-top-copy > * + *, .legacy-flex-gap .hero-top-right > * + * { margin-top: 6px; }
 .legacy-flex-gap .catalog-card + .catalog-card { margin-left: 10px; }

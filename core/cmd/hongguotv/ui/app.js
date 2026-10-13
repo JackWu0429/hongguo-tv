@@ -42,6 +42,7 @@
     accountKeypad: '.account-keypad-key',
     accountActions: '.account-action',
     appUpdates: '.app-update-action',
+    sidebarDisplay: '.sidebar-display-action',
     playbackModes: '.playback-mode-action',
     support: '.support-card, .support-close',
     rankModal: '.rank-filter-option, .rank-filter-close, .rank-filter-apply',
@@ -59,6 +60,22 @@
   var status = document.getElementById('core-status');
   var notice = document.getElementById('action-notice');
   var shell = document.querySelector('.app-shell');
+  var sidebarStorage;
+  try { sidebarStorage = window.localStorage; } catch (ignoredStorage) {}
+  var sidebarSettings = window.HongguoSidebarSettings.create({
+    storage: sidebarStorage,
+    bridge: window.HongguoTVPreferences,
+    render: function (data) {
+      shell.classList.toggle('sidebar-icons', data.mode === 'icons');
+      document.querySelectorAll('.sidebar-display-action').forEach(function (button) {
+        var selected = button.getAttribute('data-mode') === data.mode;
+        button.classList.toggle('account-primary', selected);
+        button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      });
+      document.getElementById('sidebar-display-state').textContent = '当前：' + (data.mode === 'icons' ? '仅显示图标' : '展开显示');
+      syncNativePlayerBounds();
+    }
+  });
   var androidShell = /HongguoTV-Android/.test(navigator.userAgent);
   var numericKeypad;
   var accountNumberScan;
@@ -711,6 +728,7 @@
     if (element.classList.contains('library-remove')) return 'libraryRemovals';
     if (element.classList.contains('account-input')) return 'accountInputs';
     if (element.classList.contains('app-update-action')) return 'appUpdates';
+    if (element.classList.contains('sidebar-display-action')) return 'sidebarDisplay';
     if (element.classList.contains('playback-mode-action')) return 'playbackModes';
     if (element.classList.contains('account-action')) return 'accountActions';
     if (element.classList.contains('confirm-button')) return 'confirmation';
@@ -744,9 +762,9 @@
     // Older WebViews may focus an action without scrolling its workspace.
     if ((pageMode() === 'account' || pageMode() === 'settings') && element.closest &&
         element.closest(pageMode() === 'settings' ? '#settings-page' : '#account-page')) {
-      // Keep both MPV choices and their status above the viewport edge,
+      // Keep settings choices and their status above the viewport edge,
       // including old WebViews without scroll-margin support.
-      var scrollTarget = element.closest('#mpv-playback-settings') || element;
+      var scrollTarget = element.closest('.settings-card') || element;
       try { scrollTarget.scrollIntoView(false); } catch (ignored) {}
     }
     if (!scanModalOpen() && !accountKeypadOpen() && !detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zoneOf(element) !== 'sidebar') {
@@ -764,7 +782,7 @@
     if (remembered && focusables().indexOf(remembered) >= 0) return remembered;
     if (pageMode() === 'search') return searchInput || document.querySelector('.search-submit');
     if (pageMode() === 'account') return firstVisible('.account-input') || firstVisible('.account-action');
-    if (pageMode() === 'settings') return firstVisible('.app-update-action') || firstVisible('.playback-mode-action') || activeSidebar();
+    if (pageMode() === 'settings') return selectedSidebarDisplay() || firstVisible('.app-update-action') || firstVisible('.playback-mode-action') || activeSidebar();
     if (pageMode() === 'support') return firstVisible('.support-card');
     if (isLibraryPage()) return firstVisible('.library-card') || firstVisible('.history-filter.is-active') || firstVisible('[data-action="library-discover"]') || firstVisible('.library-toolbar-button');
     if (pageMode() === 'rank') return firstVisible('.rank-tab.is-active') || firstRankTab();
@@ -776,6 +794,10 @@
 
   function activeSidebar() {
     return document.querySelector('.side-item.is-active') || document.querySelector('.side-item');
+  }
+
+  function selectedSidebarDisplay() {
+    return firstVisible('.sidebar-display-action[aria-pressed="true"]') || firstVisible('.sidebar-display-action');
   }
 
   function activeChannel() {
@@ -1133,15 +1155,21 @@
       if (direction === 'down') return moveGrid('.follow-card', current, direction) || listBoundary(followPager, current, direction);
       return null;
     }
-    if (zone === 'appUpdates') {
+    if (zone === 'sidebarDisplay') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
       if (direction === 'up') return activeSidebar();
+      if (direction === 'down') return firstVisible('.app-update-action') || firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
+      return null;
+    }
+    if (zone === 'appUpdates') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'up') return selectedSidebarDisplay() || activeSidebar();
       if (direction === 'down') return firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
       return null;
     }
     if (zone === 'playbackModes') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstVisible('.app-update-action') || activeSidebar();
+      if (direction === 'up') return firstVisible('.app-update-action') || selectedSidebarDisplay() || activeSidebar();
       return null;
     }
     if (zone === 'accountInputs' || zone === 'accountActions') {
@@ -2396,7 +2424,7 @@
     var phoneInput = document.getElementById('account-phone');
     document.querySelectorAll('.account-input').forEach(function (node) { node.disabled = accountBusy; renderAccountNumber(node); });
     phoneInput.disabled = accountBusy || data.phase === 'code' && /^1[3-9]\d{9}$/.test(phoneInput.value) && !(accountKeypadOpen() && numericKeypad.snapshot().kind === 'phone');
-    document.querySelectorAll('.account-action:not(.app-update-action):not(.playback-mode-action)').forEach(function (node) { node.disabled = accountBusy; });
+    document.querySelectorAll('#account-page .account-action').forEach(function (node) { node.disabled = accountBusy; });
     document.getElementById('account-cancel').disabled = false;
     document.getElementById('account-verify').disabled = accountBusy || mfaExpired || verification.state === 'waiting';
     document.getElementById('account-verify').textContent = verification.state === 'waiting' ? '等待确认…' : verification.state === 'timeout' ? '再次查询' : '我已发送';
@@ -5012,6 +5040,11 @@
     }
   });
 
+  document.querySelectorAll('.sidebar-display-action').forEach(function (button) {
+    button.addEventListener('click', function () {
+      if (!sidebarSettings.choose(button.getAttribute('data-mode'))) showNotice('设置未能保存，请重试。');
+    });
+  });
   var appUpdates = window.HongguoAppUpdates.create({
     bridge: window.HongguoTVUpdates,
     canPrompt: canShowAppUpdate,
