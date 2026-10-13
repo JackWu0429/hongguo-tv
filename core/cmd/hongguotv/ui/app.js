@@ -10,7 +10,7 @@
     feed: '.hero-feed-focus',
     catalog: '.catalog-card',
     actions: '.round-action',
-    controls: '.playback-buttons .control-button, #player-retry',
+    controls: '.playback-buttons .control-button, #player-retry, #player-failure-diagnostics',
     timeline: '#control-progress',
     searchInput: '#search-input',
     searchActions: '.search-action',
@@ -1376,6 +1376,7 @@
     text.classList.toggle('is-hidden', !copy);
     panel.querySelector('.player-spinner').classList.toggle('is-hidden', !!failed);
     document.getElementById('player-retry').classList.toggle('is-hidden', !failed);
+    document.getElementById('player-failure-diagnostics').classList.toggle('is-hidden', !failed);
     if (failed) {
       revealControls();
       if (zoneOf(document.activeElement) === 'feed') goFocus(document.getElementById('player-retry'));
