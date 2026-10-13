@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -27,13 +30,18 @@ var version = "desktop-dev"
 
 type desktopApp struct {
 	core          *coreHost
+	updater       *desktopUpdater
 	ctx           context.Context
 	exitConfirmed atomic.Bool
 	exitPending   atomic.Bool
 }
 
-func (a *desktopApp) startup(ctx context.Context)  { a.ctx = ctx; a.core.start() }
-func (a *desktopApp) shutdown(ctx context.Context) { a.core.stop() }
+func (a *desktopApp) startup(ctx context.Context) {
+	a.ctx = ctx
+	a.core.start()
+	go a.updater.automatic()
+}
+func (a *desktopApp) shutdown(ctx context.Context) { a.updater.close(); a.core.stop() }
 func (a *desktopApp) SetFullscreen(enabled bool) {
 	if enabled {
 		wruntime.WindowFullscreen(a.ctx)
@@ -44,6 +52,35 @@ func (a *desktopApp) SetFullscreen(enabled bool) {
 func (a *desktopApp) OpenDownloads() {
 	wruntime.BrowserOpenURL(a.ctx, "https://github.com/aston314/hongguo-tv/releases")
 }
+func (a *desktopApp) GetUpdateStatus() string {
+	b, _ := json.Marshal(a.updater.snapshot())
+	return string(b)
+}
+func (a *desktopApp) CheckUpdate()    { a.updater.check() }
+func (a *desktopApp) DownloadUpdate() { a.updater.download() }
+func (a *desktopApp) OpenUpdateFolder() {
+	status := a.updater.snapshot()
+	if status.State != "ready" || status.File == "" {
+		return
+	}
+	// The folder opener only receives a path produced by this updater.
+	directory := filepath.Dir(status.File)
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("explorer.exe", directory)
+	} else {
+		cmd = exec.Command("/usr/bin/open", directory)
+	}
+	configureProcess(cmd)
+	go func() {
+		if err := cmd.Run(); err != nil {
+			a.updater.mu.Lock()
+			a.updater.status.Message = "无法打开文件夹，ZIP 已保存在下载目录。"
+			a.updater.mu.Unlock()
+		}
+	}()
+}
+
 func (a *desktopApp) FinishExit() {
 	if !a.exitConfirmed.Swap(true) {
 		wruntime.Quit(a.ctx)
@@ -78,7 +115,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	app := &desktopApp{core: newCoreHost()}
+	downloads, err := downloadDirectory()
+	if err != nil {
+		log.Fatal(err)
+	}
+	code, err := strconv.Atoi(desktopVersionCode)
+	if err != nil {
+		log.Fatal(err)
+	}
+	app := &desktopApp{core: newCoreHost(), updater: newDesktopUpdater(code, dataDir, downloads, desktopPlatform())}
 	err = wails.Run(&options.App{
 		Title: "红果短剧", Width: 1280, Height: 800, MinWidth: 960, MinHeight: 540,
 		BackgroundColour: options.NewRGB(12, 13, 18),

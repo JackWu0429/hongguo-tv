@@ -340,7 +340,7 @@ func (h *coreHost) proxy(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, resp.Body)
 }
 func (h *coreHost) writePage(w http.ResponseWriter, html string) {
-	config, _ := json.Marshal(map[string]string{"platform": runtime.GOOS, "version": version, "mediaBase": h.target()})
+	config, _ := json.Marshal(map[string]string{"platform": runtime.GOOS, "version": desktopVersion, "mediaBase": h.target()})
 	html = strings.Replace(html, "<head>", "<head><script>window.HongguoDesktop="+string(config)+";</script>", 1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = fmt.Fprint(w, html)

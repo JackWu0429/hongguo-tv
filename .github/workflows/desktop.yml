@@ -1,17 +1,21 @@
-name: Desktop preview
+name: Desktop release
 
 on:
   workflow_dispatch:
     inputs:
-      preview_number:
-        description: Private desktop preview number (separate from Android release)
-        default: "1"
+      publish_public:
+        description: Publish verified macOS / Windows ZIPs and desktop update channel
+        type: boolean
+        default: true
         required: true
   push:
     branches: ["codex/dual-player-editions"]
-    paths: ["desktop/**", "core/**", "scripts/build_desktop.sh", "docs/desktop*", ".github/workflows/desktop.yml"]
+    paths: ["desktop/**", "core/**", "scripts/*desktop*", "tests/test_desktop_release.py", "docs/desktop*", ".github/workflows/desktop.yml"]
   pull_request:
-    paths: ["desktop/**", "core/**", "scripts/build_desktop.sh", "docs/desktop*", ".github/workflows/desktop.yml"]
+    paths: ["desktop/**", "core/**", "scripts/*desktop*", "tests/test_desktop_release.py", "docs/desktop*", ".github/workflows/desktop.yml"]
+
+env:
+  PYTHONUTF8: "1"
 
 permissions:
   contents: read
@@ -29,22 +33,20 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-      - name: Prepare private draft preview
+      - name: Prepare private draft desktop release
         id: release
         if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
-          PREVIEW_NUMBER: ${{ inputs.preview_number }}
         run: |
-          [[ "$PREVIEW_NUMBER" =~ ^[1-9][0-9]*$ ]]
-          python3 scripts/release_metadata.py --github-env "$GITHUB_ENV"
-          APP_VERSION=$(python3 -c 'import scripts.release_metadata as m; from pathlib import Path; print(m.metadata(Path("."))[0])')
-          tag="desktop-v$APP_VERSION-preview.$PREVIEW_NUMBER"
+          python3 scripts/desktop_metadata.py --github-env "$GITHUB_ENV"
+          APP_VERSION=$(python3 -c 'import scripts.desktop_metadata as m; from pathlib import Path; print(m.metadata(Path("."))[0])')
+          tag="desktop-v$APP_VERSION"
           if gh release view "$tag" --json isDraft >/dev/null 2>&1; then
             [[ "$(gh release view "$tag" --json isDraft --jq .isDraft)" == true ]]
             [[ "$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)" == "$GITHUB_SHA" ]]
           else
-            gh release create "$tag" --draft --prerelease --target "$GITHUB_SHA" --title "红果短剧桌面测试版 $APP_VERSION · preview $PREVIEW_NUMBER" --notes-file docs/desktop-preview-release.md
+            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "红果短剧桌面版 $APP_VERSION" --notes-file docs/desktop-release.md
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
@@ -74,13 +76,14 @@ jobs:
           node-version: 22
       - name: Read shared version
         shell: bash
-        run: python3 scripts/release_metadata.py --github-env "$GITHUB_ENV"
+        run: python3 scripts/desktop_metadata.py --github-env "$GITHUB_ENV"
       - name: Test core and shared desktop UI
         shell: bash
         run: |
           go test ./core/...
           node --check core/cmd/hongguotv/ui/desktop.js
           node --test tests/*.test.cjs
+          python3 -m unittest discover -s tests -p "test_*.py"
           node desktop/frontend/build.mjs
           cd desktop
           go test ./...
@@ -117,7 +120,7 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Verify complete package set and publish private prerelease
+      - name: Verify complete desktop package set and publish private release
         env:
           GH_TOKEN: ${{ github.token }}
           PREVIEW_TAG: ${{ needs.prepare.outputs.tag }}
@@ -125,4 +128,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/desktop-release"
           gh release download "$PREVIEW_TAG" --dir "$RUNNER_TEMP/desktop-release"
           python3 scripts/verify_desktop_packages.py "$RUNNER_TEMP/desktop-release"
-          gh release edit "$PREVIEW_TAG" --draft=false --prerelease --latest=false
+          python3 scripts/publish_desktop_release.py --directory "$RUNNER_TEMP/desktop-release" --notes docs/desktop-release.md --generate-only
+          gh release upload "$PREVIEW_TAG" "$RUNNER_TEMP/desktop-release/desktop-update.json"
+          gh release edit "$PREVIEW_TAG" --draft=false --prerelease=false --latest=false
+      - name: Mirror desktop ZIPs and update public download instructions
+        if: inputs.publish_public
+        env:
+          GH_TOKEN: ${{ secrets.HONGGUO_RELEASES_TOKEN }}
+        run: |
+          test -n "$GH_TOKEN" || { echo "Configure HONGGUO_RELEASES_TOKEN" >&2; exit 1; }
+          python3 scripts/publish_desktop_release.py --directory "$RUNNER_TEMP/desktop-release" --notes docs/desktop-release.md --readme docs/public-download-readme.md

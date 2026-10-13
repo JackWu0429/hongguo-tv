@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 : "${GITHUB_ACTIONS:?Desktop packages are built on GitHub Actions}"
 : "${HONGGUO_CORE_VERSION:?Set the exact version and commit}"
 : "${APP_VERSION:?Set the product version}"
+: "${DESKTOP_VERSION_CODE:?Set the desktop update code}"
 : "${DESKTOP_PLATFORM:?darwin/universal or windows/amd64}"
 cd "$ROOT_DIR"
 mkdir -p desktop/build/darwin desktop/build/sidecar desktop/dist
@@ -27,7 +28,7 @@ fi
 cd desktop
 export PATH="$(go env GOPATH)/bin:$PATH"
 node frontend/build.mjs
-wails build -clean -platform "$DESKTOP_PLATFORM" -webview2 browser -ldflags "-s -w -X main.version=$HONGGUO_CORE_VERSION"
+wails build -clean -platform "$DESKTOP_PLATFORM" -webview2 browser -ldflags "-s -w -X main.version=$HONGGUO_CORE_VERSION -X main.desktopVersion=$APP_VERSION -X main.desktopVersionCode=$DESKTOP_VERSION_CODE"
 if [[ "$DESKTOP_PLATFORM" == darwin/universal ]]; then
   app="build/bin/hongguo-desktop.app"
   cp build/sidecar/hongguo-tv-core "$app/Contents/MacOS/"

@@ -41,15 +41,31 @@
     });
     var help = doc.querySelector('.account-input-help');
     if (help) help.textContent = '直接输入或粘贴手机号和验证码；按 Tab 切换，按 Enter 提交。';
-    win.HongguoTVUpdates = {
-      getStatus: function () { return JSON.stringify({ supported: config.platform !== 'preview', state: 'desktop', current_version: config.version,
-        message: '桌面测试版：下载页可查看后续版本，更新应用不会清除账号和观看记录。' }); },
-      setPromptAllowed: function () {},
-      check: function () {
-        var app = win.go && win.go.main && win.go.main.desktopApp;
-        if (app) app.OpenDownloads();
-      }
+    win.HongguoTVUpdates = createUpdateBridge(win, config);
+  }
+  function createUpdateBridge(win, config) {
+    var status = { supported: config.platform !== 'preview', desktop: true, state: 'idle', current_version: config.version,
+      message: '每天自动检查一次；下载 ZIP 后请自行解压替换。' };
+    var pending = false, allowed = false;
+    function app() { return win.go && win.go.main && win.go.main.desktopApp; }
+    function poll() {
+      if (pending || !app()) return;
+      pending = true;
+      Promise.resolve(app().GetUpdateStatus()).then(function (value) {
+        var next = JSON.parse(value); next.prompt_allowed = allowed; status = next;
+      }).catch(function () { status.message = '更新状态暂时不可用，请稍后重试。'; }).then(function () { pending = false; });
+    }
+    function invoke(method) {
+      var bridge = app(); if (!bridge) return;
+      Promise.resolve(bridge[method]()).then(poll).catch(function () { status.message = '更新操作未能完成，请重试。'; });
+    }
+    return {
+      getStatus: function () { poll(); return JSON.stringify(status); },
+      setPromptAllowed: function (value) { allowed = !!value; status.prompt_allowed = allowed; },
+      check: function () { invoke('CheckUpdate'); },
+      download: function () { invoke('DownloadUpdate'); },
+      openFolder: function () { invoke('OpenUpdateFolder'); }
     };
   }
-  return { mediaSource: mediaSource, editing: editing, install: install };
+  return { mediaSource: mediaSource, editing: editing, install: install, createUpdateBridge: createUpdateBridge };
 }));

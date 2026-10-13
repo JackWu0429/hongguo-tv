@@ -5063,6 +5063,7 @@
       if (!sidebarSettings.choose(button.getAttribute('data-mode'))) showNotice('设置未能保存，请重试。');
     });
   });
+  var desktopUpdateNotifiedCode = 0;
   var appUpdates = window.HongguoAppUpdates.create({
     bridge: window.HongguoTVUpdates,
     canPrompt: canShowAppUpdate,
@@ -5075,10 +5076,30 @@
       // Keep the active TV focus node alive while native checking/download runs.
       check.disabled = !data.supported;
       check.setAttribute('aria-disabled', data.state === 'checking' || data.state === 'downloading' ? 'true' : 'false');
-      check.textContent = data.state === 'desktop' ? '查看桌面版本' : data.state === 'checking' ? '检查中…' : data.state === 'available' || data.state === 'ready' ? '查看更新 ' + data.latest_version : '检查更新';
+      check.textContent = data.state === 'checking' ? '检查中…' : !data.desktop && (data.state === 'available' || data.state === 'ready') ? '查看更新 ' + data.latest_version : '检查更新';
+      if (data.desktop) {
+        var downloading = data.state === 'downloading';
+        var download = document.getElementById('desktop-download-update');
+        download.classList.toggle('is-hidden', !(data.state === 'available' || downloading || data.state === 'error' && data.latest_code));
+        download.setAttribute('aria-disabled', downloading || data.state === 'checking' ? 'true' : 'false');
+        download.textContent = downloading ? '下载中 ' + (data.total ? Math.floor(data.downloaded * 100 / data.total) : 0) + '%' : '下载更新 ZIP';
+        var folder = document.getElementById('desktop-open-update-folder');
+        folder.classList.toggle('is-hidden', data.state !== 'ready');
+        if (document.activeElement === download && data.state === 'ready') goFocus(folder);
+        else if (document.activeElement === download && download.classList.contains('is-hidden')) goFocus(check);
+        var notes = document.getElementById('desktop-update-notes');
+        notes.classList.toggle('is-hidden', !data.release_notes);
+        notes.textContent = data.release_notes ? '版本 ' + data.latest_version + '\n' + data.release_notes : '';
+        if (data.state === 'available' && data.latest_code > desktopUpdateNotifiedCode && data.prompt_allowed && canShowAppUpdate()) {
+          desktopUpdateNotifiedCode = data.latest_code;
+          showNotice('发现新版本 ' + data.latest_version + '，可在设置中下载更新。');
+        }
+      }
     }
   });
   document.getElementById('app-check-update').addEventListener('click', appUpdates.check);
+  document.getElementById('desktop-download-update').addEventListener('click', function () { if (desktopShell) window.HongguoTVUpdates.download(); });
+  document.getElementById('desktop-open-update-folder').addEventListener('click', function () { if (desktopShell) window.HongguoTVUpdates.openFolder(); });
   var playbackSettings = window.HongguoPlaybackSettings.create({
     bridge: window.HongguoNativePlayer,
     render: function (data) {

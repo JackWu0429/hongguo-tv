@@ -740,3 +740,5 @@ html.native-playback .hero-video { display: none !important; }
 @media (max-width: 1400px) { .follow-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 @media (max-width: 1080px) { .follow-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } .detail-related-list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .follow-heading, .follow-notification-heading { align-items: flex-start; flex-direction: column; } .follow-actions, .follow-notification-heading > div { width: 100%; } .follow-actions .follow-action { flex: 1 1 auto; } .follow-notification-heading > div { justify-content: space-between; } .notification-popup { right: 14px; bottom: 14px; width: calc(100% - 28px); } }
+
+.desktop-update-notes { max-width: 70rem; margin: 1rem 0; white-space: pre-wrap; overflow-wrap: break-word; font: inherit; color: #bfc1ce; line-height: 1.6; }
