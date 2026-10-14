@@ -5,6 +5,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/native-player.js'), 'utf8');
 const mpvBridgeSource = fs.readFileSync(require.resolve('../android/app/src/mpv/java/rocks/aston/hongguotv/MpvPlayerBridge.java'), 'utf8');
+const mpvTransitionSource = fs.readFileSync(require.resolve('../android/app/src/mpv/java/rocks/aston/hongguotv/MpvTransitionState.java'), 'utf8');
 
 function fixture(engine = 'webview_media3') {
   const listeners = {};
@@ -200,7 +201,8 @@ test('MPV bridge keeps the last rapid source request and carries pause intent ac
   assert.match(play, /if \(stopFence\.isActive\(\)\)[\s\S]*transition\.queue\(new Session/);
   assert.match(mpvBridgeSource, /if \(stopFence\.isActive\(\)\) \{ transition\.setPlayIntent\(false\); return; \}/);
   assert.match(mpvBridgeSource, /if \(stopFence\.isActive\(\)\) \{ transition\.setPlayIntent\(true\); return; \}/);
-  assert.match(finish, /Session next = transition\.takePendingSession\(\);[\s\S]*if \(next != null\) installSession\(next\);/);
+  assert.match(finish, /installPendingSessionIfReady\(\);/);
+  assert.match(mpvTransitionSource, /T takePendingSessionWhenReady\(boolean ready\)[\s\S]*return ready \? takePendingSession\(\) : null;/);
   assert.match(mpvBridgeSource, /Boolean playIntent = transition\.takePlayIntent\(\);/);
 });
 
@@ -209,9 +211,14 @@ test('MPV bridge retires a fenced client on timeout or surface loss before insta
   const surface = bridge.slice(bridge.indexOf('@Override public void surfaceDestroyed'), bridge.indexOf('private void dispose('));
   const stop = bridge.slice(bridge.indexOf('private void requestStop('), bridge.indexOf('private void retire('));
   assert.match(stop, /stopTimeout = \(\) -> \{[\s\S]*stopFence\.onTimeout\(\)[\s\S]*finishStopBoundary\(false\);/);
-  assert.match(surface, /if \(stopFence\.isActive\(\)\) \{[\s\S]*retire\(stoppingPlayer\);[\s\S]*finishStopBoundary\(false\);/);
+  assert.match(surface, /surfaceReady = false;[\s\S]*MpvSurfaceLifecyclePolicy\.onDestroyed\([\s\S]*if \(action == MpvSurfaceLifecyclePolicy\.Action\.DEFER_STOPPING_SESSION\) \{\s*finishStopBoundary\(false\);/);
+  assert.doesNotMatch(surface, /retire\(stoppingPlayer\)/);
+  assert.match(surface, /MpvSurfaceLifecyclePolicy\.Action\.RECREATE_ACTIVE_SESSION\) guarded\(s/);
+  assert.match(surface, /MpvSurfaceLifecyclePolicy\.Action\.RETIRE_ORPHAN/);
   assert.match(bridge, /private void finishStopBoundary\(boolean reusable\)[\s\S]*if \(!reusable\) retire\(stopped\);/);
-  assert.match(bridge, /surfaceCreated\(SurfaceHolder surfaceHolder\)[\s\S]*start\(target\);/);
+  assert.match(bridge, /surfaceCreated\(SurfaceHolder surfaceHolder\)[\s\S]*installPendingSessionIfReady\(\)[\s\S]*start\(target\);/);
+  assert.match(bridge, /surfaceChanged\(SurfaceHolder surfaceHolder, int format, int w, int h\)[\s\S]*installPendingSessionIfReady\(\)/);
+  assert.match(bridge, /private boolean installPendingSessionIfReady\(\)[\s\S]*stopFence\.isActive\(\)[\s\S]*takePendingSessionWhenReady\(surfaceAvailable\(\)\)[\s\S]*installSession\(pending\)/);
   assert.match(bridge, /MpvStartPolicy\.mayStart\(current\(target\), target\.player != null,[\s\S]*getSurface\(\)\.isValid\(\)\)/);
 });
 

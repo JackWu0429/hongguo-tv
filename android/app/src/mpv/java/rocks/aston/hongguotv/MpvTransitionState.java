@@ -13,6 +13,10 @@ final class MpvTransitionState<T> {
         return next;
     }
 
+    T takePendingSessionWhenReady(boolean ready) {
+        return ready ? takePendingSession() : null;
+    }
+
     void setPlayIntent(boolean wantsPlay) { playIntent = wantsPlay; }
 
     Boolean takePlayIntent() {

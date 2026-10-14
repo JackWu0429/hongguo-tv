@@ -84,6 +84,15 @@ public final class MpvStopFenceTest {
         assertNull(transition.takePendingSession());
     }
 
+    @Test public void pendingSessionIsPreservedUntilSurfaceIsReady() {
+        MpvTransitionState<String> transition = new MpvTransitionState<>();
+        transition.queue("episode-C");
+
+        assertNull(transition.takePendingSessionWhenReady(false));
+        assertEquals("episode-C", transition.takePendingSessionWhenReady(true));
+        assertNull(transition.takePendingSessionWhenReady(true));
+    }
+
     @Test public void latestPauseOrResumeIntentIsAppliedOnceAfterTheFence() {
         MpvTransitionState<String> transition = new MpvTransitionState<>();
         transition.queue("episode-C");

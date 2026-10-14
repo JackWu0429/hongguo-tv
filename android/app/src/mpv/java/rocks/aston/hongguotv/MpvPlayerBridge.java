@@ -34,7 +34,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     private long stopCommandSequence;
     private Runnable stopTimeout;
     private volatile long generation;
-    private boolean destroyed, background;
+    private boolean destroyed, background, surfaceReady;
     private double volume = 1, speed = 1;
     private boolean muted = true;
     private float left, top, width, height;
@@ -471,6 +471,8 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         holder.setLayoutParams(layout); return true;
     }
     @Override public void surfaceCreated(SurfaceHolder surfaceHolder) {
+        surfaceReady = true;
+        if (installPendingSessionIfReady()) return;
         Session target = session;
         if (target == null || !current(target)) return;
         armTimeout(target);
@@ -482,17 +484,23 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             target.player.setPropertyString("android-surface-size", w + "x" + h);
     }
     @Override public void surfaceChanged(SurfaceHolder surfaceHolder, int format, int w, int h) {
+        surfaceReady = true;
+        if (installPendingSessionIfReady()) return;
         Session target = session;
         if (target != null) guarded(target, () -> { surfaceSize(target, w, h); rendered(target); });
     }
     @Override public void surfaceDestroyed(SurfaceHolder surfaceHolder) {
-        if (stopFence.isActive()) {
-            retire(stoppingPlayer);
+        surfaceReady = false;
+        Session s = session;
+        boolean sessionOwnsPlayer = s != null && s.player != null;
+        boolean currentSession = current(s);
+        MpvSurfaceLifecyclePolicy.Action action = MpvSurfaceLifecyclePolicy.onDestroyed(
+            stopFence.isActive(), sessionOwnsPlayer, currentSession, player != null);
+        if (action == MpvSurfaceLifecyclePolicy.Action.DEFER_STOPPING_SESSION) {
             finishStopBoundary(false);
             return;
         }
-        Session s = session;
-        if (s != null && s.player != null && s.output.attached) guarded(s, () -> {
+        if (action == MpvSurfaceLifecyclePolicy.Action.RECREATE_ACTIVE_SESSION) guarded(s, () -> {
             Double position = s.player.getPropertyDouble("time-pos");
             if (position != null && finite(position)) s.position = Math.max(0, Math.round(position * 1000));
             // libmpv's Android VO captures ANativeWindow at initialization.
@@ -504,11 +512,16 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             s.output.surfaceWidth = 0; s.output.surfaceHeight = 0;
             event(s, "buffering", null);
         });
-        else if (player != null) {
-            // No active session owns the surface, but the shared native client
-            // still must not retain a dead ANativeWindow.
-            MPVLib old = player; player = null; playerSurfaceAttached = false; playerQuiescent = true;
-            try { old.destroy(); } catch (RuntimeException ignored) {}
+        else if (action == MpvSurfaceLifecyclePolicy.Action.RETIRE_ORPHAN) {
+            MPVLib stale = s != null && s.player != null ? s.player : player;
+            if (s != null && s.player == stale) {
+                s.player = null;
+                s.output.attached = false;
+                s.output.loaded = false;
+                s.outputReady = false;
+                if (session == s && !current(s)) session = null;
+            }
+            retire(stale);
         }
     }
     private void dispose(Session target) {
@@ -565,8 +578,18 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         MPVLib stopped = stoppingPlayer; stoppingPlayer = null;
         if (!reusable) retire(stopped);
         else playerQuiescent = true;
-        Session next = transition.takePendingSession();
-        if (next != null) installSession(next);
+        installPendingSessionIfReady();
+    }
+    private boolean installPendingSessionIfReady() {
+        if (stopFence.isActive()) return false;
+        Session pending = transition.takePendingSessionWhenReady(surfaceAvailable());
+        if (pending == null) return false;
+        installSession(pending);
+        return true;
+    }
+    private boolean surfaceAvailable() {
+        try { return surfaceReady && surface.getHolder().getSurface().isValid(); }
+        catch (RuntimeException ignored) { return false; }
     }
     @Override public void onPause() {
         background = true; Session s = session;
@@ -586,6 +609,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         stopFence.clear(); stoppingPlayer = null; stopTimeout = null;
         surface.getHolder().removeCallback(this);
         MPVLib old = player; player = null; playerSurfaceAttached = false;
+        surfaceReady = false;
         if (old != null) { try { old.destroy(); } catch (RuntimeException ignored) {} }
         holder.setAlpha(0f); holder.setVisibility(View.GONE);
     }
