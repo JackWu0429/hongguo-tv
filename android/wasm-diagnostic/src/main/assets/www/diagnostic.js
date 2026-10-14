@@ -95,7 +95,8 @@
       'WebView：' + info.viewport + ' CSS px，DPR ' + info.dpr,
       'UA：' + ua,
       '能力：' + capabilitiesNode.innerText.replace(/\s+/g, ' ').trim(),
-      'Range 请求：' + rangeCount(),
+      'HTTP 206 Range：' + rangeCount() + ' 次',
+      '本地服务最近请求：' + lastRequest(),
       '测试：' + (latest.length ? latest.join('；') : '尚未运行')
     ];
     reportNode.value = lines.join('\n');
@@ -109,6 +110,15 @@
       }
     } catch (ignored) {}
     return 0;
+  }
+
+  function lastRequest() {
+    try {
+      if (window.HongguoWasmDiag && window.HongguoWasmDiag.getLastRequest) {
+        return window.HongguoWasmDiag.getLastRequest();
+      }
+    } catch (ignored) {}
+    return '不可读取';
   }
 
   function makeWebGL(canvas) {

@@ -6,6 +6,7 @@
     <application
         android:allowBackup="false"
         android:label="HEVC 播放诊断"
+        android:usesCleartextTraffic="true"
         android:theme="@style/DiagnosticTheme">
         <activity
             android:name=".WasmDiagnosticActivity"
