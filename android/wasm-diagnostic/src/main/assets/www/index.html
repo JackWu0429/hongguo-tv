@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>HEVC 播放诊断</title>
+  <link rel="stylesheet" href="/diagnostic.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">设备兼容性测试</p>
+        <h1>HEVC · WASM</h1>
+      </div>
+      <p id="overall" class="overall">正在读取设备信息</p>
+    </header>
+
+    <section class="device-section" aria-labelledby="device-title">
+      <h2 id="device-title">设备与 WebView</h2>
+      <div id="device" class="device-grid"></div>
+      <div id="capabilities" class="capability-row"></div>
+    </section>
+
+    <section class="test-section" aria-labelledby="test-title">
+      <div class="section-heading">
+        <h2 id="test-title">软解与画面测试</h2>
+        <span id="range-state">Range 尚未测试</span>
+      </div>
+      <div class="test-buttons">
+        <button data-size="360" data-renderer="2d">360p · Canvas</button>
+        <button data-size="720" data-renderer="2d">720p · Canvas</button>
+        <button data-size="720" data-renderer="webgl">720p · WebGL2</button>
+        <button data-size="1080" data-renderer="webgl">1080p · WebGL2</button>
+      </div>
+      <p id="status" role="status">选择一项开始测试，测试期间请不要离开此页面。</p>
+      <div id="screen" class="screen" aria-label="解码画面"></div>
+      <div id="results" class="results" aria-live="polite"></div>
+    </section>
+
+    <section class="report-section" aria-labelledby="report-title">
+      <div class="section-heading">
+        <h2 id="report-title">诊断结果</h2>
+        <button id="refresh" class="secondary">刷新设备信息</button>
+      </div>
+      <textarea id="report" readonly aria-label="可截图的诊断结果"></textarea>
+      <p class="note">样片为本地合成视频，无音轨、无账号信息。测试结果只反映当前设备的 WebView 与软解性能。</p>
+    </section>
+  </main>
+  <script src="/diagnostic.js"></script>
+</body>
+</html>

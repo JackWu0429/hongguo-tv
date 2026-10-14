@@ -1,0 +1,52 @@
+name: Temporary HEVC WebView diagnostic APK
+
+on:
+  push:
+    branches:
+      - codex/hevc-wasm-android-diagnostic
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+      - name: Build isolated diagnostic APK
+        run: gradle -p android :wasm-diagnostic:assembleDebug
+      - name: Verify APK package and API floor
+        run: |
+          apk="android/wasm-diagnostic/build/outputs/apk/debug/wasm-diagnostic-debug.apk"
+          test -s "$apk"
+          unzip -t "$apk" >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | tee "$RUNNER_TEMP/wasm-diagnostic-badging.txt"
+          grep -q "package: name='rocks.aston.hongguowasmdiag'" "$RUNNER_TEMP/wasm-diagnostic-badging.txt"
+          grep -q "sdkVersion:'23'" "$RUNNER_TEMP/wasm-diagnostic-badging.txt"
+          sha256sum "$apk"
+      - name: Publish temporary private draft download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK_PATH: android/wasm-diagnostic/build/outputs/apk/debug/wasm-diagnostic-debug.apk
+          RUN_TAG: hevc-wasm-diagnostic-${{ github.run_id }}
+        run: |
+          gh release create "$RUN_TAG" "$APK_PATH#HEVC-WASM-Diagnostic.apk" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --draft \
+            --title "Temporary HEVC WebView diagnostic APK" \
+            --notes "Private, temporary device-test package. This is not a Red Fruit release. Delete the draft release after downloading the APK."
