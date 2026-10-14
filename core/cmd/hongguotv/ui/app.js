@@ -1382,17 +1382,30 @@
       else goFocus(direction === 'up' ? document.getElementById('hero-feed-focus') : lastPlaybackControl || firstVisible('.playback-buttons .control-button'));
       event.preventDefault(); event.stopPropagation(); return;
     }
+    if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && pageMode() === 'recommend' && zoneOf(current) === 'feed' &&
+      shell.classList.contains('is-cinema') && (direction === 'up' || direction === 'down')) {
+      if (!event.repeat) switchPlayerEpisode(direction === 'up' ? -1 : 1);
+      event.preventDefault(); event.stopPropagation(); return;
+    }
     if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && pageMode() === 'recommend' && zoneOf(current) === 'feed' && (direction === 'up' || direction === 'down')) {
       if (!event.repeat) switchRecommendation(direction === 'up' ? -1 : 1);
       event.preventDefault();
       event.stopPropagation();
       return;
     }
-    if (isPlaybackPage() && !detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && (direction !== 'left' || shell.classList.contains('is-cinema') || zoneOf(current) !== 'feed')) revealControls();
-    if (zoneOf(current) === 'feed' && pageMode() === 'player' && (direction === 'up' || direction === 'down')) {
-      goFocus(firstVisible('.playback-buttons .control-button'));
+    if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && zoneOf(current) === 'feed' && pageMode() === 'player' && (direction === 'up' || direction === 'down')) {
+      if (!event.repeat) switchPlayerEpisode(direction === 'up' ? -1 : 1);
       event.preventDefault(); event.stopPropagation(); return;
     }
+    if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen &&
+      (pageMode() === 'player' || pageMode() === 'recommend' && shell.classList.contains('is-cinema')) &&
+      zoneOf(current) === 'feed' && (direction === 'left' || direction === 'right') &&
+      (shell.classList.contains('is-cinema') || shell.classList.contains('is-controls-hidden'))) {
+      var seeked = seekBy(direction === 'left' ? -10 : 10, false);
+      if (!seeked) showNotice('视频准备好后才能快进或后退');
+      event.preventDefault(); event.stopPropagation(); return;
+    }
+    if (isPlaybackPage() && !detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && (direction !== 'left' || shell.classList.contains('is-cinema') || zoneOf(current) !== 'feed')) revealControls();
     var target = moveFrom(current, direction);
     if (target) {
       goFocus(target);
@@ -1408,6 +1421,42 @@
     var handled = false;
     handleKey({ keyCode: keyCode, repeat: !!repeat, preventDefault: function () { handled = true; }, stopPropagation: function () {} });
     return handled;
+  }
+
+  function switchPlayerEpisode(step) {
+    var playerMode = pageMode() === 'player';
+    var fullscreenRecommendation = pageMode() === 'recommend' && shell.classList.contains('is-cinema');
+    if ((!playerMode && !fullscreenRecommendation) || zoneOf(document.activeElement) !== 'feed' ||
+      detailModalOpen || playerOptionsOpen || confirmOpen || discussionOpen) return false;
+    step = Number(step);
+    if (step !== -1 && step !== 1) return false;
+
+    var playback = activePlayback;
+    var request = playbackRequest;
+    var item = playback && playback.item || feedItems[feedIndex] || featuredItem;
+    var current = playback && Number(playback.episode) || request && request.index === feedIndex && Number(request.episode) ||
+      featuredItem && Number(featuredItem.start_episode) || 0;
+    if (!current) {
+      showNotice('正在读取当前集数');
+      return true;
+    }
+    current = Math.max(1, Math.floor(current));
+    var target = current + step;
+    if (target < 1) {
+      showNotice('已经是第一集');
+      return true;
+    }
+    var total = Number(item && item.episode_count) || Number(featuredItem && featuredItem.episode_count) || 0;
+    if (total > 0 && target > total) {
+      showNotice('已经是本季最后一集');
+      return true;
+    }
+
+    // Keep the video area focused while playFeedItem cancels the old request,
+    // resolves the new episode, and restores the existing transition/loading UI.
+    playFeedItem(feedIndex, target, 0);
+    goFocus(document.getElementById('hero-feed-focus'));
+    return true;
   }
 
   function showNotice(message) {
@@ -1935,14 +1984,14 @@
     document.getElementById('player-options').classList.remove('is-hidden');
     goFocus(list.querySelector('.is-selected') || list.querySelector('.player-option'));
   }
-  function seekTo(position) {
+  function seekTo(position, reveal) {
     var video = document.getElementById('hero-video');
     if (!activePlayback || !Number.isFinite(position) || !Number.isFinite(video.duration) || video.duration <= 0) return false;
     video.currentTime = Math.max(0, Math.min(position, Math.max(0, video.duration - .25)));
-    updatePlaybackControls(); revealControls();
+    updatePlaybackControls(); if (reveal !== false) revealControls();
     return true;
   }
-  function seekBy(delta) { return seekTo(document.getElementById('hero-video').currentTime + delta); }
+  function seekBy(delta, reveal) { return seekTo(document.getElementById('hero-video').currentTime + delta, reveal); }
   function syncNativePlayerBounds() {
     var adapter = window.HongguoNativePlaybackAdapter;
     if (adapter && typeof adapter.syncBounds === 'function') adapter.syncBounds();
@@ -4630,6 +4679,14 @@
       if (!event.target.closest('#account-keypad-modal')) { goFocus(accountKeypadFocus()); return; }
       var keyIndex = Array.prototype.indexOf.call(document.querySelectorAll('.account-keypad-key'), event.target);
       if (keyIndex >= 0 && keyIndex !== numericKeypad.snapshot().index) numericKeypad.choose(keyIndex);
+    }
+    // Some Android TV IMEs temporarily move window focus away from the
+    // WebView while the DOM search input remains active. Tell the native
+    // shell so it can keep forwarding vertical D-pad navigation to this
+    // page; desktop and browser previews keep their existing behavior.
+    if (androidShell && event.target && event.target.id === 'search-input' &&
+        window.HongguoTVInput && typeof window.HongguoTVInput.startSearchEditing === 'function') {
+      window.HongguoTVInput.startSearchEditing();
     }
     markFocus(event.target);
     queueTailCheck();

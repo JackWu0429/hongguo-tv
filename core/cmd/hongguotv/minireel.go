@@ -1194,7 +1194,16 @@ func renameEncryptedSampleEntry(data []byte, stbl mp4Box) error {
 		}
 		typ := string(data[p+4 : p+8])
 		if typ == "encv" {
-			copy(data[p+4:p+8], []byte("hvc1"))
+			format := encryptedVideoSampleEntryFormat(data, mp4Box{
+				Start: p, Size: size, Header: 8, Type: typ, Payload: p + 8, End: p + size,
+			})
+			if format == "" {
+				// Preserve the established HEVC fallback when frma is absent or
+				// malformed. Existing red-fruit media is HEVC, so this keeps the
+				// current playback path unchanged while allowing confirmed AVC.
+				format = "hvc1"
+			}
+			copy(data[p+4:p+8], []byte(format))
 		}
 		if typ == "enca" {
 			copy(data[p+4:p+8], []byte("mp4a"))
@@ -1202,6 +1211,40 @@ func renameEncryptedSampleEntry(data []byte, stbl mp4Box) error {
 		p += size
 	}
 	return nil
+}
+
+const visualSampleEntryHeaderSize = 78
+
+// encryptedVideoSampleEntryFormat returns the original codec stored in the
+// encrypted sample entry's sinf/frma boxes. A blank result deliberately means
+// "use the legacy HEVC fallback"; unknown codecs are not passed to players.
+func encryptedVideoSampleEntryFormat(data []byte, entry mp4Box) string {
+	if entry.Type != "encv" || entry.Payload < 0 || entry.Payload > entry.End || entry.End > len(data) {
+		return ""
+	}
+	childrenStart := entry.Payload + visualSampleEntryHeaderSize
+	if childrenStart < entry.Payload || childrenStart > entry.End {
+		return ""
+	}
+	children, err := parseMP4Boxes(data, childrenStart, entry.End)
+	if err != nil {
+		return ""
+	}
+	sinf, ok := firstMP4Box(children, "sinf")
+	if !ok {
+		return ""
+	}
+	frma, ok := findMP4Child(data, sinf, "frma")
+	if !ok || frma.Payload < 0 || frma.Payload+4 > frma.End || frma.Payload+4 > len(data) {
+		return ""
+	}
+	format := string(data[frma.Payload : frma.Payload+4])
+	switch format {
+	case "avc1", "hvc1", "hev1":
+		return format
+	default:
+		return ""
+	}
 }
 
 func nestedMiniReelValue(root map[string]any, path ...string) any {
