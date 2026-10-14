@@ -54,6 +54,10 @@ Go 测试覆盖账号/API 转发、外部 origin 拒绝、共享页面、Range�
 参考已分析的 Mac 应用记录见 `docs/hongguo-macos-v1.1.8-analysis.md`，不把其无源码
 二进制的播放实现当成当前应用的实测证据。
 
+## 0.2.63 桌面版本
+
+桌面版本独立于 Android APK 版本。`0.2.63` 同步共享 Web UI 的播放焦点和切集行为；macOS/Windows 仍使用各自系统 WebView 和普通键盘输入，不启用 Android 的扫码/系统输入法桥接。
+
 ## 0.2.62 桌面名称迁移
 
 macOS bundle 目录及 Windows 启动程序分别为 `红果短剧.app` / `红果短剧.exe`。只设置 CFBundleDisplayName 不保证 Finder/Launchpad 显示中文。0.2.59/0.2.60 更新器校验英文目录，因此旧 `desktop-update.json` 保持在 0.2.60；需手动下载一次 0.2.62，随后使用 `desktop-update-v2.json`。bundle ID、应用单实例标识、数据目录和账号/history 契约不变。
