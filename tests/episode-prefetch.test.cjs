@@ -1,6 +1,6 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const {create} = require('../core/cmd/hongguotv/ui/episode-prefetch.js');
+const {create,nextUnlockedEpisodes} = require('../core/cmd/hongguotv/ui/episode-prefetch.js');
 const deferred = () => {let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 const tick = () => new Promise(r=>setImmediate(r));
 const info = (extra={}) => ({series_id:'123',vid:'111',episode:1,quality:'720P',generation:3,owner:2,
@@ -17,6 +17,23 @@ test('starts once after five stable playback seconds, early in a long episode', 
   await tick();assert.equal(f.calls.length,0);
   f.p.maybe(info());f.p.maybe(info({position:90}));await tick();assert.equal(f.calls.length,1);
   const g=fixture();g.p.maybe(info({duration:600,position:2.5}));await tick();assert.equal(g.calls.length,1);
+});
+test('collects at most four future unlocked VIDs without crossing the current episode',()=>{
+  const detail={vid_list:['10','11','12','13','14','15','16'],episodes:[
+    {video_id:'10',locked:false},{video_id:'11',locked:false},{video_id:'12',locked:true},
+    {video_id:'13',locked:false},{video_id:'14',locked:false},{video_id:'15',locked:false},{video_id:'16',locked:false}
+  ]};
+  assert.deepEqual(nextUnlockedEpisodes(detail,1,8),[
+    {episode:2,vid:'11'},{episode:4,vid:'13'},{episode:5,vid:'14'},{episode:6,vid:'15'}
+  ]);
+  assert.deepEqual(nextUnlockedEpisodes(detail,1,2),[
+    {episode:2,vid:'11'},{episode:4,vid:'13'}
+  ]);
+});
+test('uses accessible count when episode lock flags are unavailable and rejects invalid VIDs',()=>{
+  assert.deepEqual(nextUnlockedEpisodes({vid_list:['1','bad','3','4'],accessible_episode_cnt:3},0,4),[
+    {episode:1,vid:'1'},{episode:3,vid:'3'}
+  ]);
 });
 test('seek and resume position alone do not bypass the stable interval',async()=>{
   const f=fixture();f.p.maybe(info({position:119,stable_seconds:0}));await tick();assert.equal(f.calls.length,0);

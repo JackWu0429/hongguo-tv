@@ -69,6 +69,8 @@
     add('播放时钟', clock(video.position) + ' / ' + (video.duration ? clock(video.duration) : '未知时长') + ' · 已缓冲 ' + Math.floor(video.buffered) + ' 秒');
     add('媒体状态', 'R' + video.ready + ' ' + (readyNames[video.ready] || '未知') + ' / N' + video.network + ' ' + (networkNames[video.network] || '未知'));
     add('播放状态', (video.ended ? '已结束' : video.paused ? '暂停' : '播放中') + (video.seeking ? ' · 定位中' : '') + (flags.background ? ' · 后台' : ''));
+    if (flags.rangeRequested || flags.playbackMode) add('读取模式', (flags.rangeRequested ? 'WebView 自动按需读取' : '标准播放') + (flags.playbackMode ? ' · 当前源：' + text(flags.playbackMode, 12) : ''));
+    if (flags.rangeFallback) add('播放回退', text(flags.rangeFallback, 72));
     if (native.state || native.surface || native.error_kind) {
       var nativeState = text(native.state, 24) || '未知';
       var nativeCodec = [text(native.video_decoder, 48), text(native.video_mime, 32)].filter(Boolean).join(' / ');
@@ -108,7 +110,7 @@
     add('画面保护', (flags.loading || flags.preparing ? '加载层显示' : '加载层已撤下') + visibility + (flags.waiting ? ' · 等待数据' : ''));
     add('声音状态', (flags.audioHeld ? '临时静音保护' : video.muted || !video.volume ? '播放器静音' : '已解除静音') + ' · 应用音量 ' + Math.round(video.volume * 100) + '%');
     var request = flags.failed ? '准备失败' : flags.source ? '播放源已返回' : flags.resolving ? '正在准备播放源' : '未开始请求';
-    if (flags.source && core.media_prepared) request += ' · MP4 就绪 ' + (num(core.media_bytes) / 1048576).toFixed(1) + ' MB';
+    if (flags.source && core.media_prepared) request += core.media_mode === 'range' ? ' · Range 索引就绪 ' + (num(core.media_bytes) / 1024).toFixed(0) + ' KB' : ' · MP4 就绪 ' + (num(core.media_bytes) / 1048576).toFixed(1) + ' MB';
     request += flags.source && core.media_http_status ? ' · HTTP ' + num(core.media_http_status) + '（' + num(core.media_age_seconds) + '秒前）' : core.unavailable ? ' · 核心诊断读取失败' : ' · 尚无媒体请求记录';
     add('本次请求', request);
     add('最近错误', native.error_kind ? playerName + ' ' + text(native.error_kind, 24) + (errorCode(native.error_code) ? '（' + errorCode(native.error_code) + '）' : '') : video.error ? (errorNames[video.error] || '未知媒体错误') + '（' + video.error + '）' : flags.failed ? '播放准备失败（重试按钮已显示）' : flags.source && core.media_http_status >= 400 ? '本机媒体 HTTP ' + num(core.media_http_status) : '未报告播放错误');

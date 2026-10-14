@@ -349,7 +349,12 @@ func (s *server) playInfo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := s.hongguo.PlayInfoQuality(r.Context(), r.URL.Query().Get("series_id"), r.URL.Query().Get("vid"), quality, r.URL.Query().Get("fallback") == "1")
+	var result PlayInfo
+	if r.URL.Query().Get("mode") == "range" {
+		result, err = s.hongguo.PlayInfoRangeQuality(r.Context(), r.URL.Query().Get("series_id"), r.URL.Query().Get("vid"), quality, r.URL.Query().Get("fallback") == "1", r.URL.Query().Get("prefetch") != "1")
+	} else {
+		result, err = s.hongguo.PlayInfoQuality(r.Context(), r.URL.Query().Get("series_id"), r.URL.Query().Get("vid"), quality, r.URL.Query().Get("fallback") == "1")
+	}
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return

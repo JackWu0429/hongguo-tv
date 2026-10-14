@@ -237,6 +237,8 @@
   var diagnosticEpoch = 0;
   var diagnosticRequest = null;
   var controlsTimer = null;
+  var rangeTransitionTimer = null;
+  var rangeStallTimer = null;
   var lastPlaybackControl = null;
   var nativeFullscreen = false;
   var fullscreenExitKeepsHidden = false;
@@ -260,8 +262,9 @@
   var episodePrefetch = HongguoEpisodePrefetch.create({
     lookup: function (info, signal) {
       return getDetail(info.item, signal).then(function (detail) {
-        var vid = detail.vid_list && detail.vid_list[info.episode];
-        return vid ? { series_id: info.series_id, vid: vid, quality: info.quality || '', fallback: '1' } : null;
+        var candidates = HongguoEpisodePrefetch.nextUnlockedEpisodes(detail, info.episode, 4);
+        var next = candidates.length && candidates[0].episode === info.episode + 1 ? candidates[0] : null;
+        return next ? { series_id: info.series_id, vid: next.vid, quality: info.quality || '', fallback: '1', mode: info.mode || '' } : null;
       });
     },
     prepare: function (target, signal) {
@@ -271,6 +274,10 @@
   var applicationInBackground = false;
   var playbackPreferences = { speed: 1, volume: 100, quality: '', danmaku: false };
   var playbackSpeeds = [.5, .75, 1, 1.25, 1.5, 2];
+  function rangePlaybackEnabled() {
+    try { return !(window.HongguoNativePlayer && window.HongguoNativePlayer.engine && window.HongguoNativePlayer.engine() === 'mpv'); }
+    catch (ignored) { return true; }
+  }
   var keyNames = {
     // WebView delivers DOM key codes, not Android KeyEvent constants.
     // Chromium 44 may omit event.key entirely.
@@ -1831,6 +1838,8 @@
       quality: playbackQuality,
       flags: { preparing: hero.classList.contains('is-preparing-video'), resolving: !!playbackInfoRequest,
         loading: !document.getElementById('player-status').classList.contains('is-hidden'),
+        rangeFallback: activePlayback && activePlayback.rangeFallback || '',
+        playbackMode: activePlayback && activePlayback.mode || '', rangeRequested: rangePlaybackEnabled(),
         source: !!source, waiting: !!(presentation && presentation.waiting), audioHeld: !!playbackAudioHold,
         failed: !!(presentation && presentation.failed) || !document.getElementById('player-retry').classList.contains('is-hidden'),
         videoVisible: style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity) > 0,
@@ -1892,15 +1901,19 @@
     var epoch = ++qualityEpoch; var generation = feedGeneration;
     qualityPrevious = { playback: playback, playing: !video.paused && !video.ended };
     var previous = qualityPrevious; var position = video.currentTime;
+    clearRangeStallTimer();
     video.pause(); document.getElementById('player-options-message').textContent = '正在准备 ' + (value || '自动清晰度') + '…';
     qualityRequest = typeof AbortController === 'function' ? new AbortController() : null;
     var q = new URLSearchParams({ series_id: playback.item.series_id, vid: playback.vid, quality: value });
+    if (rangePlaybackEnabled()) q.set('mode', 'range');
     fetchData('/api/v1/play/info?' + q, qualityRequest ? { signal: qualityRequest.signal } : {}).then(function (data) {
       if (epoch !== qualityEpoch || generation !== feedGeneration || activePlayback !== playback || !playerOptionsOpen) return;
       if (!data.path) throw new Error('服务没有返回视频地址');
       qualityPrevious = null; qualityRequest = null;
       playback.position = position; playback.started = false; playback.completed = false;
       playbackQuality = data.quality || ''; playbackQualities = data.qualities || [];
+      playback.mode = data.mode || 'full';
+      playback.rangeFallback = data.range_fallback || '';
       playbackPreferences.quality = value; savePlaybackPreferences();
       if (playbackRequest) playbackRequest.position = position;
       bindPlaybackPresentation(playback, data.path);
@@ -2089,6 +2102,8 @@
   function resetPlayerUI() {
     episodePrefetch.cancel(); cancelPlaybackPreparation();
     if (document.getElementById('hero-video').paused) releasePlaybackAudio();
+    clearRangeTransitionHint();
+    document.getElementById('hero').classList.remove('is-range-transition');
     closeDiscussion(false); resetDanmaku();
     closePlayerOptions(false); clearTimeout(controlsTimer);
     shell.classList.remove('is-controls-hidden'); exitCinema();
@@ -3020,15 +3035,41 @@
   }
 
   function cancelPlaybackPreparation() {
+    clearRangeTransitionHint();
+    clearRangeStallTimer();
     if (playbackInfoRequest) playbackInfoRequest.abort(); playbackInfoRequest = null;
     if (playbackPrefetchHandoff) playbackPrefetchHandoff.cancel(); playbackPrefetchHandoff = null;
     interruptPlaybackPresentation(activePlayback);
+  }
+  function clearRangeTransitionHint() {
+    clearTimeout(rangeTransitionTimer);
+    rangeTransitionTimer = null;
+    document.getElementById('hero').classList.remove('is-range-transition-loading');
+  }
+  function scheduleRangeStallFallback(playback) {
+    var video = document.getElementById('hero-video');
+    if (!playback || playback !== activePlayback || playback.mode !== 'range' || playback.rangeFallbackAttempted ||
+        playback.generation !== feedGeneration || video.paused || video.seeking || applicationInBackground || applicationHidden() || rangeStallTimer) return;
+    var generation = playback.generation;
+    var lastPosition = Math.max(0, Number(video.currentTime) || 0);
+    rangeStallTimer = setTimeout(function () {
+      rangeStallTimer = null;
+      if (activePlayback !== playback || generation !== feedGeneration || playback.mode !== 'range' ||
+          playback.rangeFallbackAttempted || video.paused || video.seeking || applicationInBackground || applicationHidden()) return;
+      var position = Math.max(0, Number(video.currentTime) || 0);
+      if (position > lastPosition + .25) {
+        scheduleRangeStallFallback(playback);
+        return;
+      }
+      fallbackRangePlayback(playback);
+    }, 45000);
   }
   function maybePrefetchNextEpisode(video) {
     var playback = activePlayback;
     if (!playback) return;
     episodePrefetch.maybe({ item: playback.item, series_id: playback.item.series_id, vid: playback.vid,
       episode: playback.episode, quality: playbackPreferences.quality, generation: playback.generation, owner: accountEpoch,
+      mode: (typeof rangePlaybackEnabled === 'function' && rangePlaybackEnabled()) ? 'range' : '',
       duration: Number(video.duration), position: Number(video.currentTime), paused: video.paused, ended: video.ended,
       stable_seconds: playback.stableSince ? Math.max(0, Date.now() - playback.stableSince) / 1000 : 0,
       started: playback.started, active: playback.generation === feedGeneration && isPlaybackPage() && !applicationInBackground && !applicationHidden() && !qualityPrevious });
@@ -3038,6 +3079,11 @@
     if (!playbackAudioHold) playbackAudioHold = { muted: video.muted, generation: generation };
     playbackAudioHold.generation = generation;
     video.muted = true;
+  }
+  function clearRangeStallTimer() {
+    if (typeof rangeStallTimer === 'undefined') return;
+    clearTimeout(rangeStallTimer);
+    rangeStallTimer = null;
   }
   function setPlaybackMuted(muted) {
     if (playbackAudioHold) playbackAudioHold.muted = !!muted;
@@ -3114,6 +3160,7 @@
     var video = document.getElementById('hero-video');
     var presentation = playback && playback.presentation;
     if (!playbackVideoReady(playback, presentation, video)) return;
+    clearRangeStallTimer();
     if (!hero.classList.contains('is-preparing-video')) { releasePresentedAudio(playback, presentation, video); return; }
     if (presentation.pending) return;
     // Reveal the video underneath the opaque cover before removing that
@@ -3125,7 +3172,8 @@
       if (playback.presentation !== presentation || presentation.epoch !== epoch) return;
       presentation.pending = false;
       if (!painted || !playbackVideoReady(playback, presentation, video)) return;
-      hero.classList.remove('is-preparing-video', 'is-starting-video', 'is-episode-transition');
+      if (typeof clearRangeTransitionHint === 'function') clearRangeTransitionHint();
+      hero.classList.remove('is-preparing-video', 'is-starting-video', 'is-episode-transition', 'is-range-transition');
       setPlayerStatus('');
       releasePresentedAudio(playback, presentation, video);
     });
@@ -3136,6 +3184,7 @@
     if (applicationInBackground || applicationHidden()) { video.pause(); return; }
     if (!presentation || presentation.failed) return;
     if (!currentPlaybackPresentation(playback, presentation, video) || video.paused || video.ended || video.seeking || video.readyState < 2) return;
+    clearRangeStallTimer();
     presentation.waiting = false;
     playback.started = true;
     playback.stableSince = Date.now();
@@ -3159,12 +3208,63 @@
     var advancing = position > presentation.position + .001 && !video.seeking && !video.paused && !video.ended && video.readyState >= 2;
     presentation.position = position;
     if (advancing) {
+      clearRangeStallTimer();
       presentation.waiting = false;
       if (!playback.started) markPlaybackStarted(playback);
       else if (!playback.stableSince) playback.stableSince = Date.now();
       if (!document.getElementById('hero').classList.contains('is-preparing-video')) setPlayerStatus('');
     }
     finishPlaybackPreparation(playback);
+  }
+  function fallbackRangePlayback(playback) {
+    if (!playback || playback !== activePlayback || playback.mode !== 'range' || playback.rangeFallbackAttempted || playback.generation !== feedGeneration) return false;
+    var video = document.getElementById('hero-video');
+    var hero = document.getElementById('hero');
+    var position = Math.max(0, Number(video.currentTime) || Number(playback.position) || 0);
+    clearRangeStallTimer();
+    var generation = playback.generation;
+    var request = typeof AbortController === 'function' ? new AbortController() : null;
+    playback.rangeFallbackAttempted = true;
+    playback.rangeFallback = '分段读取失败，正在准备标准播放';
+    playback.position = position;
+    playback.started = false;
+    playback.stableSince = 0;
+    saveProgress(true);
+    holdPlaybackAudio(generation);
+    hero.classList.add('is-preparing-video');
+    hero.classList.remove('is-starting-video');
+    setPlayerStatus(episodeLoadingText(playback.episode));
+    video.pause();
+    var painted = waitForPlaybackPaint(generation, request && request.signal);
+    var params = new URLSearchParams({ series_id: playback.item.series_id, vid: playback.vid, quality: playbackPreferences.quality, fallback: '1' });
+    var preparing = fetchData('/api/v1/play/info?' + params, request ? { signal: request.signal } : {});
+    playbackInfoRequest = request;
+    Promise.all([painted, preparing]).then(function (values) {
+      if (playback !== activePlayback || generation !== feedGeneration || !values[0] || !values[1] || !values[1].path) return;
+      video.classList.remove('has-source');
+      video.removeAttribute('src');
+      video.load();
+      playback.mode = values[1].mode || 'full';
+      playback.rangeFallback = '分段读取失败，已回退标准播放';
+      playback.position = position;
+      playback.started = false;
+      playbackQuality = values[1].quality || '';
+      playbackQualities = values[1].qualities || [];
+      playbackInfoRequest = null;
+      playback.timing.ready_at = Date.now();
+      bindPlaybackPresentation(playback, values[1].path);
+      video.src = values[1].path;
+      video.classList.add('has-source');
+      video.load();
+      setPlayerStatus(episodeLoadingText(playback.episode));
+      if (!applicationHidden() && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus('标准播放也未能启动', true); });
+    }).catch(function () {
+      if (playback !== activePlayback || generation !== feedGeneration) return;
+      playbackInfoRequest = null;
+      playback.rangeFallback = '分段读取和标准播放准备均失败';
+      setPlayerStatus('这集未能正常播放', true);
+    });
+    return true;
   }
   function playFeedItem(index, forcedEpisode, forcedPosition, continuation, resumeCheckpoint) {
     closePlayerOptions(false);
@@ -3191,7 +3291,8 @@
     cancelPlaybackPreparation();
     var request = new AbortController();
     playbackInfoRequest = request;
-    episodePrefetch.keepFor(item.series_id, forcedEpisode, playbackPreferences.quality, accountEpoch);
+    var playbackMode = (typeof rangePlaybackEnabled === 'function' && rangePlaybackEnabled()) ? 'range' : '';
+    episodePrefetch.keepFor(item.series_id, forcedEpisode, playbackPreferences.quality, accountEpoch, playbackMode);
     // ended has already queued the completed episode. Keep that write alive,
     // but do not queue it twice or make the next source wait for its fsync.
     if (!fastContinuation) saveProgress(true);
@@ -3204,12 +3305,14 @@
     var hero = document.getElementById('hero');
     var video = document.getElementById('hero-video');
     var placeholder = document.getElementById('hero-placeholder');
+    var keepRangeFrame = sameSeries && playbackMode === 'range' && !!video.getAttribute('src');
     var generation = ++feedGeneration;
     holdPlaybackAudio(generation);
     clearTimeout(controlsTimer);
     hero.classList.add('is-feed', 'is-preparing-video');
     hero.classList.remove('is-catalog-loading', 'is-starting-video');
     hero.classList.toggle('is-episode-transition', sameSeries);
+    hero.classList.toggle('is-range-transition', keepRangeFrame);
     placeholder.classList.add('is-hidden');
     updateFeedCounter();
     var incomingResume = resumeCheckpoint && recommendationResume(resumeCheckpoint, libraryEntry(item.series_id), item);
@@ -3217,12 +3320,23 @@
     setFeatured(Object.assign({}, item, { start_episode: incomingEpisode }), !incomingEpisode);
     updateSeriesRows();
     setPlayerStatus(episodeLoadingText(incomingEpisode));
+    if (keepRangeFrame) {
+      rangeTransitionTimer = setTimeout(function () {
+        if (generation === feedGeneration && hero.classList.contains('is-preparing-video') && hero.classList.contains('is-range-transition')) {
+          hero.classList.add('is-range-transition-loading');
+        }
+      }, 320);
+    }
     // Keep the cover painted during native source reset. CSS visibility alone
     // did not prevent a grey hardware-video flash on the user's Android 6 TV.
-    video.classList.remove('has-source');
+    if (!keepRangeFrame) video.classList.remove('has-source');
     var coveredReset = waitForPlaybackPaint(generation, request.signal).then(function (painted) {
       if (!painted) return false;
       video.pause();
+      if (keepRangeFrame) {
+        updatePlaybackControls();
+        return true;
+      }
       video.removeAttribute('src');
       video.load();
       updatePlaybackControls();
@@ -3246,11 +3360,12 @@
         if (!vid) throw new Error('第' + episode + '集暂无视频数据');
         var playing = Object.assign({}, item, detail, { start_episode: episode, vid: vid });
         activePlayback = { item: playing, episode: episode, vid: vid, position: position, generation: generation, owner: accountEpoch, started: false, stableSince: 0, lastWrite: 0, completed: false,
+          mode: '', rangeFallback: '', rangeFallbackAttempted: false,
           timing: { episode: episode, automatic_next: fastContinuation, started_at: switchStartedAt, ready_at: 0, prefetch_ms: null, prepared_before_switch: false, reported: false } };
         setFeatured(playing);
         updateDetailProgress();
         setPlayerStatus(episodeLoadingText(episode));
-        var target = { series_id: item.series_id, vid: vid, episode: episode, quality: playbackPreferences.quality, owner: accountEpoch };
+        var target = { series_id: item.series_id, vid: vid, episode: episode, quality: playbackPreferences.quality, owner: accountEpoch, mode: playbackMode };
         var handoff = episodePrefetch.consume(target);
         playbackPrefetchHandoff = handoff;
         return (handoff ? handoff.promise : Promise.resolve()).then(function () {
@@ -3262,7 +3377,7 @@
           }
           // Revalidate the prepared cache entry; the core reuses the same file
           // and retries a failed speculative job through the normal resolver.
-          var params = { series_id: item.series_id, vid: vid, quality: playbackPreferences.quality, fallback: '1' };
+          var params = { series_id: item.series_id, vid: vid, quality: playbackPreferences.quality, fallback: '1', mode: playbackMode };
           return fetchData('/api/v1/play/info?' + new URLSearchParams(params), { signal: request.signal });
         });
       });
@@ -3272,7 +3387,15 @@
         if (!data) return;
         playbackInfoRequest = null;
         if (!data.path) throw new Error('播放服务没有返回地址');
+        if (keepRangeFrame) {
+          video.classList.remove('has-source');
+          video.pause();
+          video.removeAttribute('src');
+          video.load();
+        }
         activePlayback.timing.ready_at = Date.now();
+        activePlayback.mode = data.mode || 'full';
+        activePlayback.rangeFallback = data.range_fallback || '';
         bindPlaybackPresentation(activePlayback, data.path);
         video.src = data.path;
         playbackQuality = data.quality || '';
@@ -3289,7 +3412,12 @@
       .catch(function (error) {
         if (generation !== feedGeneration || (pageMode() !== 'recommend' && pageMode() !== 'player')) return;
         playbackInfoRequest = null; playbackPrefetchHandoff = null;
-        if (error.name !== 'AbortError') setPlayerStatus('暂时无法播放这集', true);
+        if (error.name !== 'AbortError') {
+          clearRangeTransitionHint();
+          hero.classList.remove('is-range-transition');
+          video.classList.remove('has-source');
+          setPlayerStatus('暂时无法播放这集', true);
+        }
       });
   }
 
@@ -4953,7 +5081,9 @@
     interruptPlaybackPresentation(activePlayback);
     if (activePlayback.presentation) activePlayback.presentation.waiting = true;
     setPlayerStatus(document.getElementById('hero').classList.contains('is-preparing-video') || !activePlayback.started ? episodeLoadingText(activePlayback.episode) : '正在缓冲…');
+    if (activePlayback.mode === 'range' && !activePlayback.rangeFallbackAttempted) scheduleRangeStallFallback(activePlayback);
   });
+  media.addEventListener('stalled', function () { if (activePlayback && activePlayback.mode === 'range') scheduleRangeStallFallback(activePlayback); });
   media.addEventListener('seeking', function () { if (activePlayback) activePlayback.stableSince = 0; interruptPlaybackPresentation(activePlayback); });
   media.addEventListener('seeked', function () {
     if (activePlayback && activePlayback.started && !media.paused && !media.ended) activePlayback.stableSince = Date.now();
@@ -4961,8 +5091,14 @@
     checkPlaybackData(); resetDanmaku(); tickDanmaku(); updatePlaybackControls(); saveProgress(true);
     if (media.paused) setPlayerStatus('');
   });
-  media.addEventListener('error', function () { if (activePlayback && media.getAttribute('src')) setPlayerStatus('这集未能正常播放', true); });
+  media.addEventListener('error', function () {
+    if (!activePlayback || !media.getAttribute('src')) return;
+    clearRangeStallTimer();
+    if (fallbackRangePlayback(activePlayback)) return;
+    setPlayerStatus('这集未能正常播放', true);
+  });
   media.addEventListener('ended', function () {
+    clearRangeStallTimer();
     var playback = activePlayback;
     if (!playback || !playback.started || playback.generation !== feedGeneration) return;
     saveProgress(true, true);

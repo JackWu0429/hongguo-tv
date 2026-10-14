@@ -40,6 +40,7 @@ const (
 	miniReelAPIPath      = "/novel/player/video_model/v1/"
 	miniReelAppUA        = "com.phoenix.read/73532 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
 	miniReelTTL          = 2 * time.Hour
+	miniReelRangeTTL     = 15 * time.Minute
 	miniReelMaxBytes     = 512 << 20
 	miniReelMaxCache     = 512 << 20
 )
@@ -59,6 +60,8 @@ type miniReelOption struct {
 type miniReelMediaJob struct {
 	Ready     chan struct{}
 	Path      string
+	Range     *miniReelRangeSource
+	Mode      string
 	Quality   string
 	Qualities []string
 	Err       error
@@ -107,6 +110,11 @@ func handleMiniReelResolve(w http.ResponseWriter, r *http.Request) {
 var miniReelIDRE = regexp.MustCompile(`^[0-9]{1,32}$`)
 
 func handleMiniReelMedia(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		miniReelApplyCORS(w.Header())
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD, OPTIONS")
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
@@ -126,7 +134,15 @@ func handleMiniReelMedia(w http.ResponseWriter, r *http.Request) {
 		job.Accessed = time.Now()
 	}
 	miniReelState.Unlock()
-	if job == nil || !isMiniReelReady(job.Ready) || job.Path == "" {
+	if job == nil || !isMiniReelReady(job.Ready) {
+		writeJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "media is not prepared"})
+		return
+	}
+	if job.Range != nil {
+		serveMiniReelRangeMedia(w, r, job.Range)
+		return
+	}
+	if job.Path == "" {
 		writeJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "media is not prepared"})
 		return
 	}
@@ -160,6 +176,12 @@ func resolveMiniReelMediaQuality(ctx context.Context, seriesID, vid, quality str
 // one request only cancels networking when no other consumer needs the job.
 func resolveMiniReelMediaWith(ctx context.Context, seriesID, vid, quality string, fallback bool,
 	prepare func(context.Context, *miniReelMediaJob, string, string, string, string, bool)) (map[string]any, error) {
+	token := miniReelQualityToken(seriesID, vid, quality, fallback)
+	return resolveMiniReelMediaWithToken(ctx, token, seriesID, vid, quality, fallback, prepare)
+}
+
+func resolveMiniReelMediaWithToken(ctx context.Context, token, seriesID, vid, quality string, fallback bool,
+	prepare func(context.Context, *miniReelMediaJob, string, string, string, string, bool)) (map[string]any, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -167,7 +189,6 @@ func resolveMiniReelMediaWith(ctx context.Context, seriesID, vid, quality string
 	if err != nil {
 		return nil, err
 	}
-	token := miniReelQualityToken(seriesID, vid, quality, fallback)
 	// A just-aborted speculative job must finish cleaning its partial file before
 	// another job for the same token writes to that directory.
 acquire:
@@ -248,6 +269,7 @@ acquire:
 		"quality":   job.Quality,
 		"qualities": job.Qualities,
 		"vid":       vid,
+		"mode":      firstNonEmpty(job.Mode, "full"),
 	}, nil
 }
 
@@ -274,6 +296,7 @@ func prepareMiniReelMedia(ctx context.Context, job *miniReelMediaJob, token, ser
 	}
 	job.Quality = option.Quality
 	job.Qualities = miniReelQualities(options)
+	job.Mode = "full"
 	if err := ensureMiniReelRoot(); err != nil {
 		job.Err = err
 		return
@@ -448,7 +471,12 @@ func miniReelCleanupLocked() {
 		miniReelState.lastRootCleanup = now
 	}
 	for token, job := range miniReelState.jobs {
-		if job.Waiters > 0 || now.Sub(job.Accessed) <= miniReelTTL || job.Ready != nil && !isMiniReelReady(job.Ready) {
+		ready := job.Ready != nil && isMiniReelReady(job.Ready)
+		ttl := miniReelTTL
+		if ready && job.Range != nil {
+			ttl = miniReelRangeTTL
+		}
+		if job.Waiters > 0 || now.Sub(job.Accessed) <= ttl || !ready {
 			continue
 		}
 		if miniReelState.root != "" {
@@ -467,10 +495,17 @@ func miniReelCleanupLocked() {
 	entries := []cacheEntry{}
 	var total int64
 	for token, job := range miniReelState.jobs {
-		if job.Ready == nil || !isMiniReelReady(job.Ready) || job.Path == "" {
+		if job.Ready == nil || !isMiniReelReady(job.Ready) {
 			continue
 		}
-		size := miniReelDirectorySize(filepath.Dir(job.Path))
+		size := int64(0)
+		if job.Range != nil {
+			size = miniReelRangeMemorySize(job.Range)
+		} else if job.Path != "" {
+			size = miniReelDirectorySize(filepath.Dir(job.Path))
+		} else {
+			continue
+		}
 		total += size
 		if job.Waiters > 0 {
 			continue
@@ -1058,6 +1093,9 @@ func parseMP4Stsc(data []byte, box mp4Box) ([]mp4StscEntry, error) {
 	}
 	count := int(binary.BigEndian.Uint32(data[p : p+4]))
 	p += 4
+	if count > miniReelRangeMaxSamples {
+		return nil, errors.New("MP4 stsc table exceeds the sample limit")
+	}
 	entries := make([]mp4StscEntry, 0, count)
 	for i := 0; i < count; i++ {
 		if p+12 > box.End {
@@ -1079,6 +1117,9 @@ func parseMP4ChunkOffsets(data []byte, box mp4Box) ([]int, error) {
 	}
 	count := int(binary.BigEndian.Uint32(data[p : p+4]))
 	p += 4
+	if count > miniReelRangeMaxSamples {
+		return nil, errors.New("MP4 chunk table exceeds the sample limit")
+	}
 	offsets := make([]int, 0, count)
 	wide := box.Type == "co64"
 	for i := 0; i < count; i++ {
@@ -1111,6 +1152,9 @@ func parseMP4SampleSizes(data []byte, box mp4Box) ([]int, error) {
 	constant := int(binary.BigEndian.Uint32(data[p : p+4]))
 	count := int(binary.BigEndian.Uint32(data[p+4 : p+8]))
 	p += 8
+	if count > miniReelRangeMaxSamples {
+		return nil, errors.New("MP4 sample table exceeds the sample limit")
+	}
 	sizes := make([]int, count)
 	for i := range sizes {
 		if constant != 0 {
@@ -1133,6 +1177,9 @@ func parseMP4SencIVs(data []byte, box mp4Box, sampleCount int) ([][]byte, error)
 	}
 	flags := binary.BigEndian.Uint32(data[p:p+4]) & 0xffffff
 	count := int(binary.BigEndian.Uint32(data[p+4 : p+8]))
+	if count > miniReelRangeMaxSamples {
+		return nil, errors.New("MP4 senc table exceeds the sample limit")
+	}
 	if count != sampleCount {
 		return nil, fmt.Errorf("senc count %d does not match samples %d", count, sampleCount)
 	}
@@ -1320,6 +1367,6 @@ func miniReelToString(value any) string {
 func miniReelApplyCORS(headers http.Header) {
 	headers.Set("Access-Control-Allow-Origin", "*")
 	headers.Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
-	headers.Set("Access-Control-Allow-Headers", "Content-Type, Range")
-	headers.Set("Access-Control-Expose-Headers", "Accept-Ranges, Content-Length, Content-Range")
+	headers.Set("Access-Control-Allow-Headers", "Content-Type, Range, If-Range")
+	headers.Set("Access-Control-Expose-Headers", "Accept-Ranges, Content-Length, Content-Range, ETag")
 }

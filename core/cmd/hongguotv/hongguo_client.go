@@ -126,10 +126,12 @@ type RankRequest struct {
 }
 
 type PlayInfo struct {
-	Path      string   `json:"path"`
-	Quality   string   `json:"quality,omitempty"`
-	Qualities []string `json:"qualities,omitempty"`
-	Vid       string   `json:"vid"`
+	Path          string   `json:"path"`
+	Quality       string   `json:"quality,omitempty"`
+	Qualities     []string `json:"qualities,omitempty"`
+	Vid           string   `json:"vid"`
+	Mode          string   `json:"mode,omitempty"`
+	RangeFallback string   `json:"range_fallback,omitempty"`
 }
 
 type hongguoClient struct {
@@ -588,6 +590,24 @@ func (c *hongguoClient) PlayInfoQuality(ctx context.Context, seriesID, vid, qual
 	return result, nil
 }
 
+func (c *hongguoClient) PlayInfoRangeQuality(ctx context.Context, seriesID, vid, quality string, fallback, allowStandardFallback bool) (PlayInfo, error) {
+	if !validID(seriesID) || !validID(vid) {
+		return PlayInfo{}, errors.New("播放参数无效")
+	}
+	value, err := resolveMiniReelMediaRangeQuality(ctx, seriesID, vid, quality, fallback, allowStandardFallback)
+	if err != nil {
+		return PlayInfo{}, fmt.Errorf("按需读取播放准备失败: %w", err)
+	}
+	return PlayInfo{
+		Path:          asString(value["path"]),
+		Quality:       asString(value["quality"]),
+		Qualities:     value["qualities"].([]string),
+		Vid:           firstNonEmpty(value["vid"], vid),
+		Mode:          asString(value["mode"]),
+		RangeFallback: asString(value["range_fallback"]),
+	}, nil
+}
+
 func embeddedMiniReelPlayInfo(ctx context.Context, seriesID, vid, quality string, fallback bool) (PlayInfo, error) {
 	value, err := resolveMiniReelMediaQuality(ctx, seriesID, vid, quality, fallback)
 	if err != nil {
@@ -598,6 +618,7 @@ func embeddedMiniReelPlayInfo(ctx context.Context, seriesID, vid, quality string
 		Quality:   asString(value["quality"]),
 		Qualities: value["qualities"].([]string),
 		Vid:       firstNonEmpty(value["vid"], vid),
+		Mode:      asString(value["mode"]),
 	}, nil
 }
 

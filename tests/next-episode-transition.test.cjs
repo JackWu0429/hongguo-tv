@@ -6,16 +6,17 @@ const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'
 const slice = (a,b) => source.slice(source.indexOf('  function '+a+'('), source.indexOf('  function '+b+'('));
 const tick = () => new Promise(r=>setImmediate(r));
 function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve}}
-function fixture({failWrite=false,ready=true}={}) {
-  const gate=deferred(), calls=[], writes=[], notices=[], frames=new Map(), handlers={};let frameID=0;
+function fixture({failWrite=false,ready=true,engine='standard'}={}) {
+  const gate=deferred(), calls=[], writes=[], notices=[], frames=new Map(), handlers={}, timers=[];let frameID=0;
   function classes(...initial){const names=new Set(initial);return {add(...x){x.forEach(n=>names.add(n))},remove(...x){x.forEach(n=>names.delete(n))},contains(n){return names.has(n)},toggle(n,on){if(on)names.add(n);else names.delete(n)},names}}
   const hero={classList:classes('is-feed'),style:{}};
   const video={currentTime:120,duration:120,paused:false,ended:false,seeking:false,readyState:4,videoWidth:720,videoHeight:1280,muted:false,volume:.75,classList:classes('has-source'),getAttribute(n){return this[n]||null},addEventListener(name,fn){handlers[name]=fn},pause(){this.paused=true},removeAttribute(n){delete this[n]},load(){calls.push('load');assert.equal(hero.classList.contains('is-preparing-video'),true)}};
   const elem={classList:classes(),style:{}};
   const paint=()=>{const pending=[...frames.values()];frames.clear();pending.forEach(fn=>fn())};
   const c=vm.createContext({Promise,AbortController,URLSearchParams,Date,Object,Number,Math,clearTimeout,console,
+    setTimeout(fn,delay){timers.push({fn,delay});return timers.length},
     requestAnimationFrame(fn){frames.set(++frameID,fn);return frameID},cancelAnimationFrame(id){frames.delete(id)},
-    video,calls,writes,notices,gate,document:{hidden:false,getElementById:id=>id==='hero-video'?video:id==='hero'?hero:elem},
+    engine,video,calls,writes,notices,gate,document:{hidden:false,getElementById:id=>id==='hero-video'?video:id==='hero'?hero:elem},
     fetch:async(url,options)=>{
       assert.equal(url,'/api/v1/library');const change=JSON.parse(options.body);calls.push('history:'+change.episode);writes.push(change);
       if(change.episode===1)await gate.promise;
@@ -26,6 +27,8 @@ function fixture({failWrite=false,ready=true}={}) {
   vm.runInContext("var desktopShell=false;" + source.match(/  function applicationHidden[^\n]+/)[0], c);
   vm.runInContext(`
     var accountEpoch=2,feedGeneration=1,continuationGeneration=0,seasonSwitchRequest=null;
+    var rangeTransitionTimer=null;
+    var rangePlaybackEnabled=function(){return engine==='range'};
     var detailModalOpen=false,qualityPrevious=null,applicationInBackground=false;
     var libraryData={owner_id:'123',entries:[]},libraryLoaded=${ready},libraryError='';
     var libraryReady=Promise.resolve(),libraryQueue=Promise.resolve();
@@ -46,7 +49,7 @@ function fixture({failWrite=false,ready=true}={}) {
   `+slice('changeLibrary','toggleSaved')+slice('saveProgress','continueAfterEpisode')+
     slice('continueAfterEpisode','offerNextSeasonReservation')+slice('holdPlaybackAudio','renderFeed'),c);
   vm.runInContext('var media=video;'+source.slice(source.indexOf("  media.addEventListener('playing'"),source.indexOf("  media.addEventListener('ended'")),c);
-  return {c,gate,calls,writes,notices,video,hero,paint,frames,handlers};
+  return {c,gate,calls,writes,notices,video,hero,paint,frames,handlers,timers};
 }
 test('automatic next starts while the completed history fsync is still pending, then saves both episodes in order',async()=>{
   const f=fixture(),old=f.c.activePlayback;
@@ -103,6 +106,15 @@ test('same-drama selection keeps the opaque cover and skips its poster before th
   f.paint();await tick();assert.ok(!f.calls.includes('load'));
   f.paint();await tick();await tick();
   assert.equal(f.video.src,'/media/next.mp4');assert.equal(f.calls.filter(x=>x==='load').length,2);
+  assert.equal(f.hero.classList.contains('is-preparing-video'),true);
+});
+test('same-series Range switch holds the old frame and delays its spinner for 320ms',()=>{
+  const f=fixture({engine:'range'});f.video.src='/media/current.mp4';f.c.playFeedItem(0,2,0);
+  assert.equal(f.hero.classList.contains('is-range-transition'),true);
+  assert.equal(f.hero.classList.contains('is-range-transition-loading'),false);
+  assert.equal(f.video.classList.contains('has-source'),true);
+  const timer=f.timers.find(x=>x.delay===320);assert.ok(timer);timer.fn();
+  assert.equal(f.hero.classList.contains('is-range-transition-loading'),true);
   assert.equal(f.hero.classList.contains('is-preparing-video'),true);
 });
 test('first start and a different drama keep the loading poster, including after a previous same-drama transition',async()=>{
