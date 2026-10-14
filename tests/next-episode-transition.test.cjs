@@ -6,7 +6,7 @@ const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'
 const slice = (a,b) => source.slice(source.indexOf('  function '+a+'('), source.indexOf('  function '+b+'('));
 const tick = () => new Promise(r=>setImmediate(r));
 function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve}}
-function fixture({failWrite=false,ready=true,engine='standard'}={}) {
+function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null}={}) {
   const gate=deferred(), calls=[], writes=[], notices=[], frames=new Map(), handlers={}, timers=[];let frameID=0;
   function classes(...initial){const names=new Set(initial);return {add(...x){x.forEach(n=>names.add(n))},remove(...x){x.forEach(n=>names.delete(n))},contains(n){return names.has(n)},toggle(n,on){if(on)names.add(n);else names.delete(n)},names}}
   const hero={classList:classes('is-feed'),style:{}};
@@ -22,7 +22,7 @@ function fixture({failWrite=false,ready=true,engine='standard'}={}) {
       if(change.episode===1)await gate.promise;
       return {ok:!(failWrite&&change.episode===1),json:async()=>({ok:!(failWrite&&change.episode===1),error:'fixture disk failure',data:{owner_id:'123',entries:[{drama:change.drama,episode:change.episode}]}})};
     },
-    fetchData:async url=>{calls.push('source');assert.match(url,/\/api\/v1\/play\/info\?/);return {path:'/media/next.mp4',quality:'720P',qualities:['720P']};}
+    fetchData:async url=>{calls.push('source');assert.match(url,/\/api\/v1\/play\/info\?/);if(sourceGate)await sourceGate.promise;return {path:'/media/next.mp4',quality:'720P',qualities:['720P']};}
   });
   vm.runInContext("var desktopShell=false;" + source.match(/  function applicationHidden[^\n]+/)[0], c);
   vm.runInContext(`
@@ -115,6 +115,15 @@ test('same-series Range switch holds the old frame and delays its spinner for 32
   assert.equal(f.video.classList.contains('has-source'),true);
   const timer=f.timers.find(x=>x.delay===320);assert.ok(timer);timer.fn();
   assert.equal(f.hero.classList.contains('is-range-transition-loading'),true);
+  assert.equal(f.hero.classList.contains('is-preparing-video'),true);
+});
+test('same-series Range switch keeps the old source until a replacement is ready',async()=>{
+  const sourceGate=deferred(),f=fixture({engine:'range',sourceGate});f.gate.resolve();f.video.src='/media/current.mp4';
+  f.c.playFeedItem(0,2,0);f.paint();f.paint();await tick();await tick();
+  assert.equal(f.video.src,'/media/current.mp4');assert.equal(f.calls.filter(x=>x==='load').length,0);
+  sourceGate.resolve();await tick();await tick();f.paint();f.paint();await tick();await tick();
+  assert.equal(f.video.src,'/media/next.mp4');assert.equal(f.calls.filter(x=>x==='load').length,1);
+  assert.equal(f.hero.classList.contains('is-range-source-reset'),true);
   assert.equal(f.hero.classList.contains('is-preparing-video'),true);
 });
 test('first start and a different drama keep the loading poster, including after a previous same-drama transition',async()=>{

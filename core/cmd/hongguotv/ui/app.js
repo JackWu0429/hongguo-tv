@@ -3173,7 +3173,7 @@
       presentation.pending = false;
       if (!painted || !playbackVideoReady(playback, presentation, video)) return;
       if (typeof clearRangeTransitionHint === 'function') clearRangeTransitionHint();
-      hero.classList.remove('is-preparing-video', 'is-starting-video', 'is-episode-transition', 'is-range-transition');
+      hero.classList.remove('is-preparing-video', 'is-starting-video', 'is-episode-transition', 'is-range-transition', 'is-range-source-reset');
       setPlayerStatus('');
       releasePresentedAudio(playback, presentation, video);
     });
@@ -3387,27 +3387,32 @@
         if (!data) return;
         playbackInfoRequest = null;
         if (!data.path) throw new Error('播放服务没有返回地址');
-        if (keepRangeFrame) {
-          video.classList.remove('has-source');
-          video.pause();
-          video.removeAttribute('src');
+        function attachPreparedSource() {
+          if (generation !== feedGeneration || request.signal.aborted || !activePlayback) return;
+          activePlayback.timing.ready_at = Date.now();
+          activePlayback.mode = data.mode || 'full';
+          activePlayback.rangeFallback = data.range_fallback || '';
+          bindPlaybackPresentation(activePlayback, data.path);
+          video.src = data.path;
+          playbackQuality = data.quality || '';
+          playbackQualities = data.qualities || [];
+          if (playbackPreferences.quality && playbackQuality !== playbackPreferences.quality) showNotice('本集没有 ' + playbackPreferences.quality + '，使用 ' + (playbackQuality || '自动清晰度'));
+          updatePlaybackControls();
+          video.classList.add('has-source');
+          placeholder.classList.add('is-hidden');
           video.load();
+          setPlayerStatus(episodeLoadingText(activePlayback.episode));
+          if (!applicationHidden() && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus(''); revealControls(); showNotice('视频已准备好，请按确认键开始播放'); });
+          else { setPlayerStatus(''); revealControls(); }
         }
-        activePlayback.timing.ready_at = Date.now();
-        activePlayback.mode = data.mode || 'full';
-        activePlayback.rangeFallback = data.range_fallback || '';
-        bindPlaybackPresentation(activePlayback, data.path);
-        video.src = data.path;
-        playbackQuality = data.quality || '';
-        playbackQualities = data.qualities || [];
-        if (playbackPreferences.quality && playbackQuality !== playbackPreferences.quality) showNotice('本集没有 ' + playbackPreferences.quality + '，使用 ' + (playbackQuality || '自动清晰度'));
-        updatePlaybackControls();
-        video.classList.add('has-source');
-        placeholder.classList.add('is-hidden');
-        video.load();
-        setPlayerStatus(episodeLoadingText(activePlayback.episode));
-        if (!applicationHidden() && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus(''); revealControls(); showNotice('视频已准备好，请按确认键开始播放'); });
-        else { setPlayerStatus(''); revealControls(); }
+        if (!keepRangeFrame) { attachPreparedSource(); return; }
+        // Cover the source replacement before it reaches Android's video
+        // compositor, and keep the cover until a frame from this source is ready.
+        hero.classList.add('is-range-source-reset');
+        return waitForPlaybackPaint(generation, request.signal).then(function (painted) {
+          if (!painted || generation !== feedGeneration || request.signal.aborted) return;
+          attachPreparedSource();
+        });
       })
       .catch(function (error) {
         if (generation !== feedGeneration || (pageMode() !== 'recommend' && pageMode() !== 'player')) return;
