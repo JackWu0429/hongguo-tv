@@ -22,14 +22,17 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     private final FrameLayout holder;
     private final SurfaceView surface;
     private final SharedPreferences preferences;
-    private Session session;
+    // Native MPV callbacks arrive off the main thread. Volatile visibility is
+    // required so a callback cannot observe a retired session after a new
+    // card has already replaced it on the UI thread.
+    private volatile Session session;
     // Keep one libmpv client while the SurfaceView remains alive. Recreating
     // libmpv for every page/card transition was the riskiest path on vendor
     // 32-bit Android builds: the old native client could still be unwinding
     // while the new client captured the same SurfaceView.
     private MPVLib player;
     private boolean playerSurfaceAttached;
-    private long generation;
+    private volatile long generation;
     private boolean destroyed, background;
     private double volume = 1, speed = 1;
     private boolean muted = true;
@@ -195,9 +198,15 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                     // Reading the mutable field later can attribute a delayed
                     // old-source event to a newer card.
                     final Session observed = session;
+                    final long observedGeneration = generation;
                     handler.post(() -> {
-                        if (observed != null && observed.player == active)
-                            guarded(observed, () -> action.run(observed));
+                        // Check the identity and generation before entering
+                        // any callback body. The second current() check in
+                        // guarded() remains the final guard if another main
+                        // thread transition happened before execution.
+                        if (observed == null || observed.generation != observedGeneration
+                                || observed.terminal || session != observed || observed.player != active) return;
+                        guarded(observed, () -> action.run(observed));
                     });
                 }
                 @Override public void error() { post(target -> fail(target, "native_event")); }

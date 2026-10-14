@@ -183,6 +183,10 @@ test('MPV bridge keeps source replacement serialized and isolates delayed native
   assert.match(release, /setPropertyBoolean\("pause", true\)[\s\S]*command\(new String\[\]\{"stop"\}\)/);
   assert.match(start, /setPropertyBoolean\("pause", true\)[\s\S]*command\(new String\[\]\{"loadfile", target\.source, "replace"\}\)/);
   assert.match(mpvBridgeSource, /final Session observed = session/);
+  assert.match(mpvBridgeSource, /final long observedGeneration = generation/);
+  assert.match(mpvBridgeSource, /observed\.generation != observedGeneration/);
+  assert.match(mpvBridgeSource, /session != observed/);
+  assert.match(mpvBridgeSource, /observed\.player != active/);
   assert.match(mpvBridgeSource, /if \(!target\.output\.loaded\) return;/);
 });
 
