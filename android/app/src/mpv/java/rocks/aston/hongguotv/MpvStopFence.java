@@ -21,7 +21,7 @@ final class MpvStopFence {
     void onEvent() { if (active) quietPolls = 0; }
 
     boolean onCommandReply(long id, int error) {
-        if (!active || id != requestId) return false;
+        if (!active || failed || id != requestId) return false;
         onEvent();
         if (error < 0) failed = true;
         else commandComplete = true;
