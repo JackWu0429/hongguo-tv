@@ -18,10 +18,13 @@ final class MPVLib {
         void event(int value);
         void outputMessage(int component, int level);
         void endFile(int reason, int error);
+        void commandReply(long requestId, int error);
+        void eventsDrained();
         void error();
     }
     static final class MpvEvent {
         static final int MPV_EVENT_LOG_MESSAGE = 2;
+        static final int MPV_EVENT_COMMAND_REPLY = 5;
         static final int MPV_EVENT_END_FILE = 7;
         static final int MPV_EVENT_FILE_LOADED = 8;
         static final int MPV_EVENT_PLAYBACK_RESTART = 21;
@@ -63,6 +66,7 @@ final class MPVLib {
     Boolean getPropertyBoolean(String name) { return nativeFlag(handle(), name); }
     String getPropertyString(String name) { return nativeString(handle(), name); }
     void command(String[] args) { nativeCommand(handle(), args); }
+    void commandAsync(String[] args, long requestId) { nativeCommandAsync(handle(), requestId, args); }
     void attachSurface(Surface surface) { nativeSurface(handle(), surface); }
     void detachSurface() { nativeSurface(handle(), null); }
     void destroy() {
@@ -74,12 +78,13 @@ final class MPVLib {
     private final Runnable poll = new Runnable() {
         @Override public void run() {
             if (pointer == 0 || !initialized) return;
+            boolean queueEmpty = false;
             try {
                 // Bounded, non-blocking draining avoids a native event thread
                 // racing source replacement or a released Java surface.
                 for (int count = 0; count < 32 && pointer != 0; count++) {
                     long[] event = nativePoll(pointer);
-                    if (event == null) break;
+                    if (event == null) { queueEmpty = true; break; }
                     int kind = (int) event[0];
                     List<EventObserver> snapshot = new ArrayList<>(observers);
                     for (EventObserver observer : snapshot) {
@@ -92,9 +97,12 @@ final class MPVLib {
                             if (event[3] > 0) observer.outputMessage((int) event[3], (int) event[2]);
                         } else if (kind == MpvEvent.MPV_EVENT_END_FILE) {
                             observer.endFile((int) event[2], (int) event[3]);
+                        } else if (kind == MpvEvent.MPV_EVENT_COMMAND_REPLY) {
+                            observer.commandReply(event[1], (int) event[2]);
                         } else observer.event(kind);
                     }
                 }
+                if (queueEmpty) for (EventObserver observer : new ArrayList<>(observers)) observer.eventsDrained();
             } catch (RuntimeException failure) {
                 initialized = false;
                 for (EventObserver observer : new ArrayList<>(observers)) observer.error();
@@ -112,5 +120,6 @@ final class MPVLib {
     private static native Boolean nativeFlag(long pointer, String name);
     private static native String nativeString(long pointer, String name);
     private static native void nativeCommand(long pointer, String[] args);
+    private static native void nativeCommandAsync(long pointer, long requestId, String[] args);
     private static native void nativeSurface(long pointer, Surface surface);
 }

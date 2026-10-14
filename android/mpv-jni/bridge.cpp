@@ -64,6 +64,8 @@ extern "C" JNIEXPORT jlongArray JNICALL JNI_METHOD(nativePoll)(JNIEnv *env, jcla
     } else if (event->event_id == MPV_EVENT_END_FILE && event->data) {
         const auto *end = static_cast<mpv_event_end_file *>(event->data);
         values[2] = end->reason; values[3] = end->error;
+    } else if (event->event_id == MPV_EVENT_COMMAND_REPLY) {
+        values[2] = event->error;
     }
     jlongArray result = env->NewLongArray(4);
     if (result) env->SetLongArrayRegion(result, 0, 4, values);
@@ -113,6 +115,18 @@ extern "C" JNIEXPORT void JNICALL JNI_METHOD(nativeCommand)(JNIEnv *env, jclass,
     std::vector<const char *> argv;
     for (const auto &arg : strings) argv.push_back(arg.c_str()); argv.push_back(nullptr);
     check(env, mpv_command(client(p)->mpv, argv.data()));
+}
+extern "C" JNIEXPORT void JNICALL JNI_METHOD(nativeCommandAsync)(JNIEnv *env, jclass, jlong p, jlong requestId, jobjectArray args) {
+    if (!args || env->GetArrayLength(args) < 1 || env->GetArrayLength(args) > 32) { error(env, "Invalid MPV command"); return; }
+    std::vector<std::string> strings; strings.reserve(env->GetArrayLength(args));
+    for (jsize i = 0; i < env->GetArrayLength(args); i++) {
+        jstring arg = static_cast<jstring>(env->GetObjectArrayElement(args, i));
+        strings.push_back(string(env, arg)); env->DeleteLocalRef(arg);
+        if (env->ExceptionCheck()) return;
+    }
+    std::vector<const char *> argv;
+    for (const auto &arg : strings) argv.push_back(arg.c_str()); argv.push_back(nullptr);
+    check(env, mpv_command_async(client(p)->mpv, static_cast<uint64_t>(requestId), argv.data()));
 }
 extern "C" JNIEXPORT void JNICALL JNI_METHOD(nativeSurface)(JNIEnv *env, jclass, jlong p, jobject surface) {
     Client *c = client(p);

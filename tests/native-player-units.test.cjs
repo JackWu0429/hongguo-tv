@@ -178,9 +178,13 @@ test('MPV source replacement stops the old session before starting the new one',
 });
 
 test('MPV bridge keeps source replacement serialized and isolates delayed native events', () => {
-  const release = mpvBridgeSource.slice(mpvBridgeSource.indexOf('private void release()'), mpvBridgeSource.indexOf('@Override public void onPause()'));
-  const start = mpvBridgeSource.slice(mpvBridgeSource.indexOf('private void start(Session target)'), mpvBridgeSource.indexOf('/** Create/configure the one client'));
-  assert.match(release, /setPropertyBoolean\("pause", true\)[\s\S]*command\(new String\[\]\{"stop"\}\)/);
+  const transition = mpvBridgeSource.slice(mpvBridgeSource.indexOf('private void requestStop('), mpvBridgeSource.indexOf('private void retire('));
+  const start = mpvBridgeSource.slice(mpvBridgeSource.indexOf('private void start(Session target)'), mpvBridgeSource.indexOf('/** Create/configure the player client'));
+  assert.match(transition, /stopFence\.begin\(requestId, expectEndFile\)[\s\S]*player\.commandAsync\(new String\[\]\{"stop"\}, requestId\)/);
+  assert.match(mpvBridgeSource, /stopFence\.onCommandReply\(requestId, error\)/);
+  assert.match(mpvBridgeSource, /stopFence\.onEndFile\(\)/);
+  assert.match(mpvBridgeSource, /stopFence\.onEventsDrained\(\)/);
+  assert.match(mpvBridgeSource, /handler\.postDelayed\(stopTimeout, 3000\)/);
   assert.match(start, /setPropertyBoolean\("pause", true\)[\s\S]*command\(new String\[\]\{"loadfile", target\.source, "replace"\}\)/);
   assert.match(mpvBridgeSource, /final Session observed = session/);
   assert.match(mpvBridgeSource, /final long observedGeneration = generation/);
@@ -188,6 +192,27 @@ test('MPV bridge keeps source replacement serialized and isolates delayed native
   assert.match(mpvBridgeSource, /session != observed/);
   assert.match(mpvBridgeSource, /observed\.player != active/);
   assert.match(mpvBridgeSource, /if \(!target\.output\.loaded\) return;/);
+});
+
+test('MPV bridge keeps the last rapid source request and carries pause intent across the fence', () => {
+  const play = mpvBridgeSource.slice(mpvBridgeSource.indexOf('private void requestPlay('), mpvBridgeSource.indexOf('private void installSession('));
+  const finish = mpvBridgeSource.slice(mpvBridgeSource.indexOf('private void finishStopBoundary('), mpvBridgeSource.indexOf('@Override public void onPause()'));
+  assert.match(play, /if \(stopFence\.isActive\(\)\)[\s\S]*transition\.queue\(new Session/);
+  assert.match(mpvBridgeSource, /if \(stopFence\.isActive\(\)\) \{ transition\.setPlayIntent\(false\); return; \}/);
+  assert.match(mpvBridgeSource, /if \(stopFence\.isActive\(\)\) \{ transition\.setPlayIntent\(true\); return; \}/);
+  assert.match(finish, /Session next = transition\.takePendingSession\(\);[\s\S]*if \(next != null\) installSession\(next\);/);
+  assert.match(mpvBridgeSource, /Boolean playIntent = transition\.takePlayIntent\(\);/);
+});
+
+test('MPV bridge retires a fenced client on timeout or surface loss before installing the pending source', () => {
+  const bridge = mpvBridgeSource;
+  const surface = bridge.slice(bridge.indexOf('@Override public void surfaceDestroyed'), bridge.indexOf('private void dispose('));
+  const stop = bridge.slice(bridge.indexOf('private void requestStop('), bridge.indexOf('private void retire('));
+  assert.match(stop, /stopTimeout = \(\) -> \{[\s\S]*stopFence\.onTimeout\(\)[\s\S]*finishStopBoundary\(false\);/);
+  assert.match(surface, /if \(stopFence\.isActive\(\)\) \{[\s\S]*retire\(stoppingPlayer\);[\s\S]*finishStopBoundary\(false\);/);
+  assert.match(bridge, /private void finishStopBoundary\(boolean reusable\)[\s\S]*if \(!reusable\) retire\(stopped\);/);
+  assert.match(bridge, /surfaceCreated\(SurfaceHolder surfaceHolder\)[\s\S]*start\(target\);/);
+  assert.match(bridge, /MpvStartPolicy\.mayStart\(current\(target\), target\.player != null,[\s\S]*getSurface\(\)\.isValid\(\)\)/);
 });
 
 test('MPV failure stays native, reports error and ignores late success until explicit retry', async () => {

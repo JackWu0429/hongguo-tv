@@ -2,7 +2,7 @@ package rocks.aston.hongguotv;
 
 /** MPV readiness is an output configuration signal, not a physical first-frame callback. */
 final class MpvOutputState {
-    boolean loaded, attached, restarted, configured;
+    boolean openRequested, loaded, attached, restarted, configured;
     int width, height, surfaceWidth, surfaceHeight;
     String vo = "";
     private final int[] messages = new int[4];

@@ -4,6 +4,13 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class MpvOutputStateTest {
+    @Test public void recreatedSurfaceAllowsDeferredStartButRejectsStaleAndDuplicateStarts() {
+        assertFalse(MpvStartPolicy.mayStart(true, false, false));
+        assertTrue(MpvStartPolicy.mayStart(true, false, true));
+        assertFalse(MpvStartPolicy.mayStart(false, false, true));
+        assertFalse(MpvStartPolicy.mayStart(true, true, true));
+    }
+
     private MpvOutputState configured() {
         MpvOutputState state = new MpvOutputState();
         state.loaded = state.attached = state.restarted = state.configured = true;
