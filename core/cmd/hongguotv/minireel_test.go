@@ -20,6 +20,45 @@ func TestRenameEncryptedSampleEntryUsesKnownFrmaCodec(t *testing.T) {
 	}
 }
 
+func TestRenameEncryptedSampleEntryNeutralizesSinfInPlace(t *testing.T) {
+	data, stbl := syntheticEncryptedVideoTrack("hvc1", true)
+	stsd, ok := findMP4Child(data, stbl, "stsd")
+	if !ok {
+		t.Fatal("synthetic stsd missing")
+	}
+	entry, ok := firstMP4BoxMust(t, data, stsd, "encv")
+	if !ok {
+		t.Fatal("synthetic sample entry missing")
+	}
+	sinf, ok := firstMP4BoxMust(t, data, entry, "sinf")
+	if !ok {
+		t.Fatal("synthetic sinf missing")
+	}
+	if err := renameEncryptedSampleEntry(data, stbl); err != nil {
+		t.Fatal(err)
+	}
+	if got := firstSampleEntryType(t, data, stbl); got != "hvc1" {
+		t.Fatalf("sample entry type = %q, want hvc1", got)
+	}
+	if string(data[sinf.Start+4:sinf.Start+8]) != "free" {
+		t.Fatalf("protection box type = %q, want free", data[sinf.Start+4:sinf.Start+8])
+	}
+	for _, value := range data[sinf.Payload:sinf.End] {
+		if value != 0 {
+			t.Fatalf("neutralized protection box retained body byte %#x", value)
+		}
+	}
+	children, err := parseMP4Boxes(data, entry.Payload+visualSampleEntryHeaderSize, entry.End)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, child := range children {
+		if child.Type == "sinf" {
+			t.Fatal("sinf remained after decryption")
+		}
+	}
+}
+
 func TestRenameEncryptedSampleEntryFallsBackToHEVCWithoutUsableFrma(t *testing.T) {
 	for _, name := range []string{"missing frma", "unknown frma", "truncated sinf"} {
 		t.Run(name, func(t *testing.T) {

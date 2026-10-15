@@ -111,7 +111,7 @@ func TestMiniReelRangeMediaReturnsPatchedAndDecryptedFragments(t *testing.T) {
 	request.Header.Set("Range", fmt.Sprintf("bytes=0-%d", len(source.Prefix)-1))
 	response = httptest.NewRecorder()
 	serveMiniReelRangeMedia(response, request, source)
-	if response.Code != http.StatusPartialContent || !bytes.Contains(response.Body.Bytes(), []byte("hvc1")) {
+	if response.Code != http.StatusPartialContent || !bytes.Contains(response.Body.Bytes(), []byte("hvc1")) || bytes.Contains(response.Body.Bytes(), []byte("sinf")) || !bytes.Contains(response.Body.Bytes(), []byte("free")) {
 		t.Fatalf("patched MP4 initialization was not served: %d", response.Code)
 	}
 }

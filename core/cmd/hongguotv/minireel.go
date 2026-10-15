@@ -1302,9 +1302,15 @@ func renameEncryptedSampleEntry(data []byte, stbl mp4Box) error {
 				format = "hvc1"
 			}
 			copy(data[p+4:p+8], []byte(format))
+			neutralizeSampleEntryProtection(data, mp4Box{
+				Start: p, Size: size, Header: 8, Type: typ, Payload: p + 8, End: p + size,
+			})
 		}
 		if typ == "enca" {
 			copy(data[p+4:p+8], []byte("mp4a"))
+			neutralizeSampleEntryProtection(data, mp4Box{
+				Start: p, Size: size, Header: 8, Type: typ, Payload: p + 8, End: p + size,
+			})
 		}
 		p += size
 	}
@@ -1312,6 +1318,41 @@ func renameEncryptedSampleEntry(data []byte, stbl mp4Box) error {
 }
 
 const visualSampleEntryHeaderSize = 78
+const audioSampleEntryHeaderSize = 28
+
+// neutralizeSampleEntryProtection keeps the MP4 layout and offsets intact
+// while removing protection metadata after sample bytes have been decrypted.
+// A free box remains in place of sinf because deleting bytes would invalidate
+// stco/co64 offsets and the Range sample index.
+func neutralizeSampleEntryProtection(data []byte, entry mp4Box) {
+	headerSize := 0
+	switch entry.Type {
+	case "encv":
+		headerSize = visualSampleEntryHeaderSize
+	case "enca":
+		headerSize = audioSampleEntryHeaderSize
+	default:
+		return
+	}
+	childrenStart := entry.Payload + headerSize
+	if childrenStart < entry.Payload || childrenStart > entry.End || entry.End > len(data) {
+		return
+	}
+	children, err := parseMP4Boxes(data, childrenStart, entry.End)
+	if err != nil {
+		// Keep the established codec fallback for malformed/truncated input.
+		return
+	}
+	for _, child := range children {
+		if child.Type != "sinf" || child.Start+8 > child.End || child.End > len(data) {
+			continue
+		}
+		copy(data[child.Start+4:child.Start+8], []byte("free"))
+		for i := child.Payload; i < child.End; i++ {
+			data[i] = 0
+		}
+	}
+}
 
 // encryptedVideoSampleEntryFormat returns the original codec stored in the
 // encrypted sample entry's sinf/frma boxes. A blank result deliberately means

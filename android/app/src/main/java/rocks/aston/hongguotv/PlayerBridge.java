@@ -42,7 +42,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** UI-thread owned player. Every source has its own listener and load identity. */
+/** UI-thread owned player. Sources share one ExoPlayer and Surface when the player configuration is unchanged. */
 @android.annotation.SuppressLint("UnsafeOptInUsageError")
 final class PlayerBridge implements NativePlayerAdapter {
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -55,7 +55,10 @@ final class PlayerBridge implements NativePlayerAdapter {
     private volatile String diagnostic="{}";
     private JSONObject diagnosticFields=new JSONObject();
     private ExoPlayer player;
+    private boolean playerCompatibility, playerPcmAudio, playerLive;
+    private Map<String,String> playerHeaders=Collections.emptyMap();
     private Session session;
+    private long nextSessionGeneration;
     private boolean destroyed, background;
     private float requestedVolume = 1f;
     private boolean requestedMuted = true;
@@ -75,6 +78,7 @@ final class PlayerBridge implements NativePlayerAdapter {
         }handler.postDelayed(this,500);
     }};
     private static final class Session {
+        final long generation;
         final String id;
         final List<String> urls;
         final Map<String,String> headers;
@@ -85,8 +89,8 @@ final class PlayerBridge implements NativePlayerAdapter {
         int candidate;
         boolean wantsPlay = true, firstFrame;
         long position;
-        Session(String id, List<String> urls, Map<String,String> headers,boolean live,boolean compatibility) {
-            this.id=id;this.urls=urls;this.headers=headers;this.live=live;this.compatibility=compatibility;
+        Session(long generation, String id, List<String> urls, Map<String,String> headers,boolean live,boolean compatibility) {
+            this.generation=generation;this.id=id;this.urls=urls;this.headers=headers;this.live=live;this.compatibility=compatibility;
             pcmAudio=PlaybackCodecPolicy.pcmAudio(compatibility,live,Build.VERSION.SDK_INT);
         }
     }
@@ -128,8 +132,13 @@ final class PlayerBridge implements NativePlayerAdapter {
             }
             handler.post(()->{
                 if(destroyed)return;
-                releasePlayer();diagnosticFields=new JSONObject();videoWidth=videoHeight=0;
-                session=new Session(loadId,urls,headers,"hls".equals(data.optString("format")),"compatibility".equals(decoderMode()));
+                clearTimeout();
+                // Keep the native surface and ExoPlayer alive across ordinary source
+                // changes. The media item is cleared below after the new session is
+                // installed; callbacks for the cleared item see no matching media id.
+                if(player!=null){player.setVolume(0);player.pause();player.clearMediaItems();}
+                diagnosticFields=new JSONObject();videoWidth=videoHeight=0;
+                session=new Session(++nextSessionGeneration,loadId,urls,headers,"hls".equals(data.optString("format")),"compatibility".equals(decoderMode()));
                 session.position=PlaybackStart.positionMs(data.optDouble("start_position",0),session.live);
                 session.wantsPlay=!data.optBoolean("paused",false);
                 if(urls.isEmpty()){event(session,"error");return;}
@@ -143,14 +152,33 @@ final class PlayerBridge implements NativePlayerAdapter {
     }
     private void startCandidate(Session target) {
         if(destroyed||session!=target)return;
-        releasePlayer();target.firstFrame=false;target.clock.reset();videoWidth=videoHeight=0;
+        target.firstFrame=false;target.clock.reset();videoWidth=videoHeight=0;
         if(texture!=null)texture.setTransform(new Matrix());
         else surface.setLayoutParams(new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
+        ExoPlayer active=ensurePlayer(target);
+        if(active==null||session!=target)return;
+        active.setVolume(requestedMuted ? 0 : requestedVolume);
+        active.pause();
+        active.clearMediaItems();
+        event(target,"buffering");
+        MediaItem item=new MediaItem.Builder()
+            .setMediaId(target.generation+"#"+target.candidate)
+            .setUri(target.urls.get(target.candidate))
+            .setMimeType(target.live?MimeTypes.APPLICATION_M3U8:MimeTypes.VIDEO_MP4).build();
+        active.setMediaItem(item,target.position);
+        active.prepare();active.setPlayWhenReady(target.wantsPlay&&!background);
+        timeout=()->{if(session==target&&player==active&&currentMediaMatches(target)&&!target.firstFrame&&!background)retry(target,"first_frame_timeout",0);};
+        handler.postDelayed(timeout,25000);
+    }
+    private ExoPlayer ensurePlayer(Session target) {
+        if(player!=null&&playerCompatibility==target.compatibility&&playerPcmAudio==target.pcmAudio&&playerLive==target.live&&playerHeaders.equals(target.headers))return player;
+        releasePlayer();
+        final Session configuredTarget=target;
         DefaultHttpDataSource.Factory source=new DefaultHttpDataSource.Factory()
-            .setConnectTimeoutMs(10000).setReadTimeoutMs(15000).setDefaultRequestProperties(target.headers);
+            .setConnectTimeoutMs(10000).setReadTimeoutMs(120000).setDefaultRequestProperties(target.headers);
         DefaultRenderersFactory renderers=new DefaultRenderersFactory(web.getContext()){
             @Override protected AudioSink buildAudioSink(Context context,boolean floatOutput,boolean playbackParams){
-                if(!target.pcmAudio)return super.buildAudioSink(context,floatOutput,playbackParams);
+                if(!configuredTarget.pcmAudio)return super.buildAudioSink(context,floatOutput,playbackParams);
                 // The context-free builder deliberately fixes PCM-only capabilities. Supplying
                 // a Context would re-enable the device's encoded-audio passthrough detection.
                 return new DefaultAudioSink.Builder().setEnableFloatOutput(false)
@@ -164,7 +192,7 @@ final class PlayerBridge implements NativePlayerAdapter {
                 List<MediaCodecInfo> software=new ArrayList<>();
                 List<MediaCodecInfo> hardware=new ArrayList<>();
                 for(MediaCodecInfo info:MediaCodecSelector.DEFAULT.getDecoderInfos(mime,secure,tunnel))
-                    if(PlaybackCodecPolicy.allowsInMode(mime,info.name,target.compatibility||target.pcmAudio&&"audio/mp4a-latm".equals(mime))) {
+                    if(PlaybackCodecPolicy.allowsInMode(mime,info.name,configuredTarget.compatibility||configuredTarget.pcmAudio&&"audio/mp4a-latm".equals(mime))) {
                         if(PlaybackCodecPolicy.platformSoftware(info.name)) software.add(info); else hardware.add(info);
                     }
                 if(PlaybackCodecPolicy.preferSoftware(mime,Build.VERSION.SDK_INT)) {
@@ -176,7 +204,7 @@ final class PlayerBridge implements NativePlayerAdapter {
             });
         ExoPlayer.Builder builder=new ExoPlayer.Builder(web.getContext(),renderers)
             .setMediaSourceFactory(new DefaultMediaSourceFactory(source));
-        if(target.live){
+        if(configuredTarget.live){
             // Live streams need a short startup cushion, not the VOD default.
             // Keep it bounded and retain a larger cushion for rebuffering.
             builder.setLoadControl(new DefaultLoadControl.Builder()
@@ -184,25 +212,27 @@ final class PlayerBridge implements NativePlayerAdapter {
                 .setBackBuffer(0,false).build());
         }
         ExoPlayer active=builder.build();
-        player=active;if(surface!=null)active.setVideoSurfaceView(surface);else active.setVideoTextureView(texture);
+        player=active;playerCompatibility=target.compatibility;playerPcmAudio=target.pcmAudio;playerLive=target.live;playerHeaders=new HashMap<>(target.headers);
+        if(surface!=null)active.setVideoSurfaceView(surface);else active.setVideoTextureView(texture);
         active.setPlaybackParameters(PlaybackParameters.DEFAULT);
         active.setVolume(requestedMuted ? 0 : requestedVolume);
         active.addAnalyticsListener(new AnalyticsListener(){
-            private void decoder(String field,String name){if(session==target&&player==active){try{diagnosticFields.put(field,name);}catch(Exception ignored){}updateDiagnostic(target,"preparing");saveDiagnostic();}}
+            private void decoder(String field,String name){Session current=session;if(current!=null&&player==active&&currentMediaMatches(current)){try{diagnosticFields.put(field,name);}catch(Exception ignored){}updateDiagnostic(current,"preparing");saveDiagnostic();}}
             @Override public void onVideoDecoderInitialized(AnalyticsListener.EventTime time,String name,long timestamp,long duration){decoder("video_decoder",name);}
             @Override public void onAudioDecoderInitialized(AnalyticsListener.EventTime time,String name,long timestamp,long duration){decoder("audio_decoder",name);}
         });
         active.addListener(new Player.Listener(){
-            private boolean current(){return !destroyed&&session==target&&player==active;}
+            private boolean current(){Session current=session;return !destroyed&&current!=null&&player==active&&currentMediaMatches(current);}
             @Override public void onTracksChanged(Tracks tracks){
-                if(current())recordTrackDiagnostics(target,tracks);
+                Session current=session;
+                if(current())recordTrackDiagnostics(current,tracks);
                 if(current()&&!tracks.getGroups().isEmpty()&&!tracks.isTypeSelected(C.TRACK_TYPE_VIDEO)){
-                    fail(target,"decoder",PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED);
+                    fail(current,"decoder",PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED);
                 }
             }
             @Override public void onVideoSizeChanged(VideoSize size){if(current()){videoWidth=size.width;videoHeight=size.height;pixelRatio=size.pixelWidthHeightRatio;fit();}}
             @Override public void onRenderedFirstFrame(){
-                if(!current())return;target.firstFrame=true;clearTimeout();
+                Session current=session;if(!current())return;current.firstFrame=true;clearTimeout();
                 JSONObject frame = new JSONObject();
                 try { frame.put("width", videoWidth).put("height", videoHeight); } catch (Exception ignored) {}
                 // Keep audio held until the HTML cover has painted. If the
@@ -210,28 +240,27 @@ final class PlayerBridge implements NativePlayerAdapter {
                 // onIsPlayingChanged, emit playing here as well; otherwise
                 // the page can keep its loading cover while the clock moves.
                 active.setVolume(requestedMuted ? 0 : requestedVolume);
-                event(target,"frame", frame);
-                if(!target.wantsPlay) event(target,"paused");
-                else if(active.isPlaying()) event(target,"playing");
+                event(current,"frame", frame);
+                if(!current.wantsPlay) event(current,"paused");
+                else if(active.isPlaying()) event(current,"playing");
             }
             @Override public void onPlaybackStateChanged(int state){
                 if(!current())return;
-                if(state==Player.STATE_BUFFERING){target.clock.reset();event(target,"buffering");}
-                if(state==Player.STATE_READY&&target.firstFrame)event(target,target.wantsPlay?"playing":"paused");
-                if(state==Player.STATE_ENDED){event(target,"ended");markInactive();}
+                Session current=session;
+                if(state==Player.STATE_BUFFERING){current.clock.reset();event(current,"buffering");}
+                if(state==Player.STATE_READY&&current.firstFrame)event(current,current.wantsPlay?"playing":"paused");
+                if(state==Player.STATE_ENDED){event(current,"ended");markInactive();}
             }
-            @Override public void onIsPlayingChanged(boolean playing){if(current()){if(!playing)target.clock.reset();else if(target.firstFrame)event(target,"playing");}}
-            @Override public void onPositionDiscontinuity(Player.PositionInfo oldPosition,Player.PositionInfo newPosition,int reason){if(current())target.clock.reset();}
+            @Override public void onIsPlayingChanged(boolean playing){Session current=session;if(current()){if(!playing)current.clock.reset();else if(current.firstFrame)event(current,"playing");}}
+            @Override public void onPositionDiscontinuity(Player.PositionInfo oldPosition,Player.PositionInfo newPosition,int reason){if(current()){Session current=session;current.clock.reset();}}
             @Override public void onPlayerError(PlaybackException error){
                 if(!current())return;
+                Session current=session;
                 String kind=PlaybackCodecPolicy.failureKind(error.errorCode);
-                if("decoder".equals(kind))fail(target,kind,error.errorCode);else retry(target,kind,error.errorCode);
+                if("decoder".equals(kind))fail(current,kind,error.errorCode);else retry(current,kind,error.errorCode);
             }
         });
-        event(target,"buffering");active.setMediaItem(new MediaItem.Builder().setUri(target.urls.get(target.candidate)).setMimeType(target.live?MimeTypes.APPLICATION_M3U8:MimeTypes.VIDEO_MP4).build(),target.position);
-        active.prepare();active.setPlayWhenReady(target.wantsPlay&&!background);
-        timeout=()->{if(session==target&&player==active&&!target.firstFrame&&!background)retry(target,"first_frame_timeout",0);};
-        handler.postDelayed(timeout,25000);
+        return active;
     }
     private void recordTrackDiagnostics(Session target,Tracks tracks){
         if(session!=target)return;
@@ -375,8 +404,13 @@ final class PlayerBridge implements NativePlayerAdapter {
         String suffix = detail == null ? "{}" : detail.toString();
         web.evaluateJavascript("window.HongguoNativePlayback&&window.HongguoNativePlayback.event("+JSONObject.quote(id)+","+JSONObject.quote(name)+","+suffix+")",null);
     }
+    private boolean currentMediaMatches(Session target){
+        if(player==null||target==null)return false;
+        MediaItem item=player.getCurrentMediaItem();
+        return item!=null&&(target.generation+"#"+target.candidate).equals(item.mediaId);
+    }
     private void clearTimeout(){if(timeout!=null){handler.removeCallbacks(timeout);timeout=null;}}
-    private void releasePlayer(){clearTimeout();ExoPlayer old=player;player=null;if(old!=null){old.setVolume(0);if(surface!=null)old.clearVideoSurfaceView(surface);else old.clearVideoTextureView(texture);old.release();}}
+    private void releasePlayer(){clearTimeout();ExoPlayer old=player;player=null;playerHeaders=Collections.emptyMap();playerCompatibility=false;playerPcmAudio=false;playerLive=false;if(old!=null){old.setVolume(0);if(surface!=null)old.clearVideoSurfaceView(surface);else old.clearVideoTextureView(texture);old.release();}}
     public void onPause(){background=true;clearTimeout();if(session!=null)session.clock.reset();if(player!=null)player.pause();markInactive();}
     public void onResume(){background=false;if(session!=null&&player!=null&&session.wantsPlay){
         if(!preferences.edit().putBoolean("playback_active",Build.VERSION.SDK_INT<=23&&!session.live).commit()){fail(session,"settings",0);return;}
