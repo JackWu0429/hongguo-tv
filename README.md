@@ -9,7 +9,7 @@
 - 目标是复刻完整客户端的功能，而不是把现有 Lampa 插件包装为 APK。
 - 保留 Mac 版的左侧栏和右侧内容区；推荐页以视频流为主体。
 - 为 TV 重新设计遥控器焦点、面板回退和播放状态恢复。
-- Android 壳、Go 编译和打包流程参考 `aston314/vidsrc-local-proxy`；播放协议则复用了已验证的 MiniReel 签名与 CENC 解密实现。
+- Android 壳、Go 编译和打包流程参考 `aston314/vidsrc-local-proxy`；播放协议则复用了已验证的签名与 CENC 解密实现。
 - APK 在 GitHub Actions 上编译，覆盖 `arm64-v8a`、`armeabi-v7a` 和 `x86_64`。
 
 ## 功能范围
