@@ -660,7 +660,16 @@
     playbackPreferences.danmaku = danmakuEnabled; savePlaybackPreferences(); updateDanmakuButton(); tickDanmaku();
   }
   function updateDanmakuButton() {
-    var button = document.querySelector('[data-action="danmaku"]'); button.setAttribute('aria-pressed', String(danmakuEnabled)); button.querySelector('small').textContent = danmakuEnabled ? '弹幕开' : '弹幕关';
+    var button = document.querySelector('.playback-buttons [data-action="danmaku"]');
+    if (!button) return;
+    var label = danmakuEnabled ? '弹幕开' : '弹幕关';
+    var icon = danmakuEnabled ? 'icon-danmaku' : 'icon-danmaku-off';
+    button.setAttribute('aria-pressed', String(danmakuEnabled));
+    button.setAttribute('aria-label', danmakuEnabled ? '弹幕已开启' : '弹幕已关闭');
+    button.querySelector('.control-label').textContent = label;
+    var use = button.querySelector('use');
+    use.setAttribute('href', '#' + icon);
+    use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#' + icon);
   }
   function tickDanmaku() {
     var video = document.getElementById('hero-video');
@@ -1072,7 +1081,7 @@
         return controlTarget || (direction === 'left' ? activeSidebar() : null);
       }
       if (direction === 'up') {
-        if (current.dataset.action === 'fullscreen') return firstVisible('.round-action[data-action="danmaku"]') || firstVisible('#control-progress');
+        if (current.dataset.action === 'fullscreen') return firstVisible('#control-progress');
         return firstVisible('#control-progress') || firstVisible('.hero-feed-focus') || firstCatalog() || firstVisible('.primary-action');
       }
       return null;

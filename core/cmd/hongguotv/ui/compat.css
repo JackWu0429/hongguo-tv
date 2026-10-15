@@ -41,7 +41,8 @@
 .legacy-flex-gap .round-action > * + * { margin-top: 3px; }
 .legacy-flex-gap .bottom-controls > * + * { margin-top: 12px; }
 .legacy-flex-gap .playback-timeline > * + *, .legacy-flex-gap .playback-buttons > * + * { margin-left: 13px; }
-.legacy-flex-gap .playback-buttons [data-action="fullscreen"] { margin-left: auto; }
+.legacy-flex-gap .playback-utility-group > * + * { margin-left: 13px; }
+.legacy-flex-gap .playback-utility-group [data-action="fullscreen"] { margin-left: 13px; }
 .legacy-flex-gap .is-discussion-open .playback-buttons > * { margin: 0 8px 8px 0; }
 .legacy-flex-gap .player-status > * + * { margin-top: 15px; }
 .legacy-flex-gap .search-heading-row > .search-box { margin-left: 28px; }

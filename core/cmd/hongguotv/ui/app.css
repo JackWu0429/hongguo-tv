@@ -177,7 +177,9 @@ button:focus { outline: none; }
 .round-action:disabled { opacity: .55; cursor: default; }
 .bottom-controls { position: absolute; z-index: 4; right: 28px; bottom: 16px; left: 28px; display: flex; flex-direction: column; gap: 12px; color: #eeeef3; }
 .playback-timeline, .playback-buttons { display: flex; align-items: center; gap: 13px; min-width: 0; }
-.playback-buttons [data-action="fullscreen"] { margin-left: auto; }
+.playback-buttons { position: relative; overflow: visible; }
+.playback-utility-group { display: flex; align-items: center; gap: 13px; margin-left: auto; }
+.playback-utility-group [data-action="fullscreen"] { margin-left: 0; }
 .control-button { min-height: 44px; padding: 9px 10px; color: #ececf2; background: rgba(20,20,25,.68); border-radius: 7px; font-size: 16px; white-space: nowrap; }
 .control-button.has-icon { display: inline-block; vertical-align: middle; line-height: 1.25; }
 /* Old Android WebViews do not consistently apply flex layout to <button>.
@@ -186,6 +188,33 @@ button:focus { outline: none; }
 .control-content > svg { display: block; flex: 0 0 20px; width: 20px; height: 20px; margin-right: 7px; }
 .control-content > .control-label { display: block; flex: 0 0 auto; line-height: 1.25; }
 .control-button.is-focused, .control-button:focus { box-shadow: 0 0 0 3px #fff; background: rgba(255,255,255,.2); }
+/* Keep the default row compact while showing a control label only on focus. */
+.playback-buttons .control-button.has-icon {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 44px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 9px 10px;
+  overflow: visible;
+}
+.playback-buttons .control-button.has-icon .control-content { width: 22px; height: 24px; }
+.playback-buttons .control-button.has-icon .control-content > svg { margin-right: 0; }
+.playback-buttons .control-button.has-icon .control-label {
+  display: none;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.playback-buttons .control-button.has-icon.is-focused .control-label,
+.playback-buttons .control-button.has-icon:focus .control-label { display: block; flex: 0 1 auto; }
+.playback-buttons .control-button.has-icon.is-focused,
+.playback-buttons .control-button.has-icon:focus { flex: 0 1 auto; width: auto; min-width: 44px; }
+.playback-buttons .control-button.has-icon.is-focused .control-content,
+.playback-buttons .control-button.has-icon:focus .control-content { width: auto; max-width: 240px; }
+.playback-buttons .control-button.has-icon.is-focused .control-content > svg,
+.playback-buttons .control-button.has-icon:focus .control-content > svg { margin-right: 7px; }
 .time-label { flex: 0 0 auto; font-size: 15px; }
 .progress-track { flex: 1; height: 4px; background: rgba(255,255,255,.35); border-radius: 4px; }
 .progress-track span { display: block; width: 0; height: 100%; background: #f35d7b; border-radius: inherit; }
