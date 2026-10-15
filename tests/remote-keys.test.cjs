@@ -27,6 +27,7 @@ function keyboard() {
     function goFocus(target){focused.push(target.id)}
     function revealControls(){}
     function handleMediaCommand(){return false}
+    function handleEndRecommendationKey(){return false}
     function handleBack(){backs++;return true}
     function submitSearch(){searches++}
     current.click=function(){clicks++};

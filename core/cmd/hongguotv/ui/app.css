@@ -100,6 +100,35 @@ button:focus { outline: none; }
 .hero.is-preparing-video:not(.is-starting-video) .hero-video { visibility: hidden !important; opacity: 0 !important; }
 .hero-video { position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 1; width: 100%; height: 100%; object-fit: contain; visibility: hidden; opacity: 0; background: #000; }
 .hero-video.has-source { visibility: visible; opacity: 1; }
+.end-recommendations { position: absolute; z-index: 8; top: 0; right: 0; bottom: 0; left: 0; display: flex; flex-direction: column; justify-content: flex-end; }
+.end-recommendations-panel { width: 100%; padding: 34px 28px 22px; background: linear-gradient(180deg, rgba(10,11,16,0), rgba(10,11,16,.95) 38px, #101117); opacity: 0; transform: translateY(32px); transition: opacity .18s ease, transform .18s ease; }
+.end-recommendations.is-open .end-recommendations-panel { opacity: 1; transform: translateY(0); }
+.end-recommendations.is-closing { pointer-events: none; }
+.end-recommendations-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.end-recommendations-heading h2 { margin: 0; font-size: 22px; }
+.end-recommendations-heading p { margin: 5px 0 0; color: #b6b7c3; font-size: 14px; }
+.end-recommendations-close { flex-shrink: 0; padding: 10px 16px; color: #d2d3dd; background: #2b2d38; border-radius: 9px; }
+.end-recommendations-close span { margin-left: 10px; font-size: 22px; line-height: 16px; vertical-align: middle; }
+.end-recommendations-close:focus, .end-recommendations-close.is-focused { box-shadow: 0 0 0 3px #fff; color: #fff; }
+.end-recommendations-track { display: flex; width: 100%; overflow-x: auto; overflow-y: hidden; padding: 4px 4px 10px; scrollbar-color: #555766 transparent; }
+.end-recommendation-card { display: block; flex: 0 0 144px; width: 144px; min-width: 0; margin-right: 18px; padding: 0; color: #eeeef4; background: transparent; text-align: left; }
+.end-recommendation-card:last-child { margin-right: 0; }
+.end-recommendation-card .drama-poster { height: 202px; overflow: hidden; background: #272934; }
+.end-recommendation-card img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 10px; }
+.end-recommendation-card strong { display: block; margin-top: 9px; overflow: hidden; font-size: 17px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.end-recommendation-card small { display: block; margin-top: 4px; color: #a9abb9; font-size: 13px; }
+.hero.has-end-recommendations .bottom-controls, .hero.has-end-recommendations .right-actions,
+.hero.has-end-recommendations .hero-top-copy, .hero.has-end-recommendations .hero-title,
+.hero.has-end-recommendations .hero-episode, .hero.has-end-recommendations .hero-summary { visibility: hidden; pointer-events: none; }
+@media (max-height: 650px) {
+  .end-recommendations-panel { padding: 28px 22px 12px; }
+  .end-recommendations-heading { margin-bottom: 10px; }
+  .end-recommendations-heading h2 { font-size: 19px; }
+  .end-recommendation-card { flex-basis: 112px; width: 112px; margin-right: 14px; }
+  .end-recommendation-card .drama-poster { height: 157px; }
+  .end-recommendation-card strong { font-size: 15px; }
+}
+@media (prefers-reduced-motion: reduce) { .end-recommendations-panel { transition: none; } }
 .hero.is-feed .hero-backdrop { opacity: .28; }
 .hero.is-feed .hero-video.has-source { opacity: 1; }
 .hero.is-feed .catalog-ribbon { display: none; }
@@ -618,10 +647,12 @@ button:focus { outline: none; }
    all four rounded edges, even while the image is loading or unavailable. */
 .search-result-card.is-focused, .search-result-card:focus,
 .new-card.is-focused, .new-card:focus,
-.library-card.is-focused, .library-card:focus { outline: none; border-color: transparent; box-shadow: none; transform: none; }
+.library-card.is-focused, .library-card:focus,
+.end-recommendation-card.is-focused, .end-recommendation-card:focus { outline: none; border-color: transparent; box-shadow: none; transform: none; }
 .search-result-card.is-focused > .drama-poster::after, .search-result-card:focus > .drama-poster::after,
 .new-card.is-focused > .drama-poster::after, .new-card:focus > .drama-poster::after,
-.library-card.is-focused > .drama-poster::after, .library-card:focus > .drama-poster::after { position: absolute; z-index: 2; top: 0; right: 0; bottom: 0; left: 0; border: 3px solid #fff; border-radius: inherit; content: ''; pointer-events: none; }
+.library-card.is-focused > .drama-poster::after, .library-card:focus > .drama-poster::after,
+.end-recommendation-card.is-focused > .drama-poster::after, .end-recommendation-card:focus > .drama-poster::after { position: absolute; z-index: 2; top: 0; right: 0; bottom: 0; left: 0; border: 3px solid #fff; border-radius: inherit; content: ''; pointer-events: none; }
 .poster-season-badge { position: absolute; z-index: 1; top: 8px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 16px); padding: 4px 9px; overflow: hidden; color: #fff; background: rgba(12,13,18,.82); border: 1px solid rgba(255,255,255,.18); border-radius: 6px; font-size: 13px; font-weight: 600; line-height: 1.3; text-align: center; white-space: nowrap; text-overflow: ellipsis; pointer-events: none; }
 
 /* Keep the call to action inside the empty state, including old flex layouts. */

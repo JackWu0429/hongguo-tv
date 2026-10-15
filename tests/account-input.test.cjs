@@ -13,6 +13,7 @@ function router() {
     var numericKeypad;function accountKeypadOpen(){return numericKeypad.isOpen()}
     function moveFrom(current,direction){moved.push(direction)}
     function handleBack(){return true}function handleMediaCommand(){return false}
+    function handleEndRecommendationKey(){return false}
   ` + keyNames + keys,c);
   c.changes=[];c.closes=[];
   c.numericKeypad=create({change:(kind,value)=>c.changes.push({kind,value}),close:r=>c.closes.push(r)});

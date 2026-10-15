@@ -12,7 +12,7 @@ test('desktop media alone bypasses the Wails scheme; foreign URLs are not rewrit
 test('desktop input keys preserve deletion, paste, arrows, tab, space and IME; Enter submits the right form',()=>{
  const keys=app.slice(app.indexOf('  function normalizedKey('),app.indexOf('  function showNotice('));
  const c=vm.createContext({window:{HongguoDesktopUI:{editing}},document:{activeElement:{tagName:'INPUT',id:'account-phone'}},desktopShell:true});
- vm.runInContext(`var keyNames={},numericKeypad;function accountKeypadOpen(){return false}var actions=[];function accountSendCode(){actions.push('phone')}function accountLogin(){actions.push('code')}function submitSearch(){actions.push('search')}`+keys,c);
+ vm.runInContext(`var keyNames={},numericKeypad;function handleEndRecommendationKey(){return false}function accountKeypadOpen(){return false}var actions=[];function accountSendCode(){actions.push('phone')}function accountLogin(){actions.push('code')}function submitSearch(){actions.push('search')}`+keys,c);
  for(const key of ['Backspace','Delete','ArrowLeft','ArrowDown','Tab',' ','v'])c.handleKey({key,ctrlKey:key==='v',preventDefault(){assert.fail(key)},stopPropagation(){assert.fail(key)}});
  c.handleKey({key:'Enter',isComposing:true,preventDefault(){assert.fail('IME')},stopPropagation(){}});
  for(const [id,name] of [['account-phone','phone'],['account-code','code'],['search-input','search']]){c.document.activeElement.id=id;let prevented=0;c.handleKey({key:'Enter',preventDefault(){prevented++},stopPropagation(){}});assert.equal(prevented,1);assert.equal(c.actions.at(-1),name)}

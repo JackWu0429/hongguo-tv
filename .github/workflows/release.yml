@@ -67,6 +67,7 @@ jobs:
           node --check core/cmd/hongguotv/ui/sidebar-settings.js
           node --check core/cmd/hongguotv/ui/compat.js
           node --check core/cmd/hongguotv/ui/episode-prefetch.js
+          node --check core/cmd/hongguotv/ui/end-recommendations.js
           node --check core/cmd/hongguotv/ui/updates.js
           node --check core/cmd/hongguotv/ui/engagement.js
           node --check core/cmd/hongguotv/ui/sms-verification.js

@@ -302,6 +302,12 @@
           </div>
         </div>
         <div class="player-status is-hidden" id="player-status" role="status" aria-live="polite"><span class="player-spinner" aria-hidden="true"></span><span class="player-status-title is-hidden" id="player-status-title"></span><span id="player-status-text"></span><div class="player-status-actions"><button class="control-button has-icon player-failure-action player-failure-retry is-hidden" id="player-retry" data-action="retry" data-focus="player-retry"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-retry" xlink:href="#icon-retry"></use></svg><span class="control-label">重试播放</span></span></button><button class="control-button has-icon player-failure-action player-failure-diagnostics is-hidden" id="player-failure-diagnostics" data-action="diagnostics" data-focus="player-failure-diagnostics" aria-haspopup="dialog" aria-controls="player-options"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-diagnostics" xlink:href="#icon-diagnostics"></use></svg><span class="control-label">播放诊断</span></span></button></div></div>
+        <section id="end-recommendations" class="end-recommendations is-hidden" role="dialog" aria-modal="true" aria-labelledby="end-recommendations-title" aria-hidden="true">
+          <div class="end-recommendations-panel">
+            <div class="end-recommendations-heading"><div><h2 id="end-recommendations-title">接着看点什么</h2><p>本剧相关推荐</p></div><button id="end-recommendations-close" class="end-recommendations-close" data-focus="end-recommendations-close" aria-label="关闭相关推荐">关闭 <span aria-hidden="true">×</span></button></div>
+            <div id="end-recommendations-track" class="end-recommendations-track" aria-label="相关推荐短剧"></div>
+          </div>
+        </section>
         <div id="player-diagnostics-shade" class="diagnostic-shade is-hidden" aria-hidden="true"></div>
         <section class="player-options is-hidden" id="player-options" role="dialog" aria-modal="true" aria-labelledby="player-options-title"><div class="player-options-heading"><strong id="player-options-title"></strong><button class="player-option" id="player-options-close" data-focus="player-options-close" aria-label="关闭">×</button></div><div id="player-options-list"></div><div id="player-diagnostics" class="is-hidden"><div id="player-diagnostics-scroll" class="diagnostic-scroll" tabindex="0" data-focus="diagnostics-scroll" aria-label="诊断内容"><p id="player-diagnostics-summary"></p><div id="player-diagnostics-rows" class="diagnostic-rows"></div></div><div class="diagnostic-footer"><span id="player-diagnostics-time"></span><div><button id="player-diagnostics-refresh" class="player-option diagnostic-action" data-focus="diagnostics-refresh">刷新诊断</button><button id="player-diagnostics-close" class="player-option diagnostic-action" data-focus="diagnostics-close">关闭</button></div></div></div><div id="player-compose" class="is-hidden"><label id="player-compose-label" for="player-compose-input">说点什么…</label><textarea id="player-compose-input" class="player-text-input" data-focus="player-compose-input" rows="3" maxlength="200" placeholder="发一条弹幕…"></textarea><div class="player-compose-actions"><button id="player-compose-scan" class="player-option player-compose-scan" data-action="danmaku-scan" data-focus="player-compose-scan"><svg aria-hidden="true" focusable="false"><use href="#icon-scan" xlink:href="#icon-scan"></use></svg><span>扫码输入</span></button><button id="player-compose-send" class="player-option" data-focus="player-compose-send">发送</button></div></div><p id="player-options-message" class="player-form-message" role="status" aria-live="polite"></p></section>
       </section>
@@ -333,6 +339,7 @@
   </main>
   <script src="/pagination.js"></script>
   <script src="/episode-prefetch.js"></script>
+  <script src="/end-recommendations.js"></script>
   <script src="/updates.js"></script>
   <script src="/engagement.js"></script>
   <script src="/sms-verification.js"></script>
