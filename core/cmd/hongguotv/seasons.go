@@ -82,13 +82,13 @@ func (r seasonRow) playable() bool {
 
 func (c *hongguoClient) seasonRows(ctx context.Context, seriesID string) ([]seasonRow, error) {
 	params, _ := url.ParseQuery(c.appQuery())
-	miniReelIdentity.Do(func() {
-		miniReelIdentity.deviceID = miniReelRandomID()
-		miniReelIdentity.installID = miniReelRandomID()
+	miniReelSeasonIdentity.Do(func() {
+		miniReelSeasonIdentity.deviceID = miniReelRandomID()
+		miniReelSeasonIdentity.installID = miniReelRandomID()
 	})
 	stamp := time.Now().UnixMilli()
 	for key, value := range map[string]string{
-		"device_id": miniReelIdentity.deviceID, "iid": miniReelIdentity.installID,
+		"device_id": miniReelSeasonIdentity.deviceID, "iid": miniReelSeasonIdentity.installID,
 		"_rticket": strconv.FormatInt(stamp, 10), "scene": "10", "offset": "0", "limit": "0",
 		"from": "series_short_play_info", "total_chapter_num": "0", "current_chapter_num": "0",
 		"post_id": "0", "is_horizontal_screen": "false", "bookstore_tab": "0", "bookstore_tab_type": "0",

@@ -35,14 +35,15 @@ import (
 )
 
 const (
-	miniReelMaxJSONBytes = 5 * 1024 * 1024
-	miniReelAPIBase      = "https://api5-normal-sinfonlineb.fqnovel.com"
-	miniReelAPIPath      = "/novel/player/video_model/v1/"
-	miniReelAppUA        = "com.phoenix.read/73532 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
-	miniReelTTL          = 2 * time.Hour
-	miniReelRangeTTL     = 15 * time.Minute
-	miniReelMaxBytes     = 512 << 20
-	miniReelMaxCache     = 512 << 20
+	miniReelMaxJSONBytes       = 5 * 1024 * 1024
+	miniReelAPIBase            = "https://api5-normal-sinfonlineb.fqnovel.com"
+	miniReelAPIPath            = "/novel/player/video_model/v1/"
+	miniReelAppUA              = "com.phoenix.read/73532 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
+	miniReelTTL                = 2 * time.Hour
+	miniReelRangeTTL           = 15 * time.Minute
+	miniReelMaxBytes           = 512 << 20
+	miniReelMaxCache           = 512 << 20
+	miniReelVideoModelAttempts = 3
 )
 
 var miniReelDefinitionRE = regexp.MustCompile(`(?i)(\d{3,4})`)
@@ -79,11 +80,22 @@ var miniReelState = struct {
 	lastRootCleanup time.Time
 }{jobs: make(map[string]*miniReelMediaJob)}
 
-var miniReelIdentity = struct {
+// plan/v is a metadata endpoint and keeps its existing process identity. This
+// must not be reused for video_model, whose device identity is one-shot.
+var miniReelSeasonIdentity = struct {
 	sync.Once
 	deviceID  string
 	installID string
 }{}
+
+var errMiniReelVideoModelEmpty = errors.New("MiniReel video_model response is empty")
+
+// A video_model request consumes its device identity at the upstream. Keep the
+// static app profile stable, but never reuse these per-request identifiers.
+type miniReelDevice struct {
+	deviceID  string
+	installID string
+}
 
 func handleMiniReelResolve(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -604,16 +616,34 @@ func selectMiniReelQuality(options []miniReelOption, quality string, fallback bo
 }
 
 func miniReelNativeOptions(ctx context.Context, vid string) ([]miniReelOption, error) {
-	miniReelIdentity.Do(func() {
-		miniReelIdentity.deviceID = miniReelRandomID()
-		miniReelIdentity.installID = miniReelRandomID()
-	})
+	return miniReelNativeOptionsEndpoint(ctx, vid, miniReelAPIBase+miniReelAPIPath)
+}
+
+func miniReelNativeOptionsEndpoint(ctx context.Context, vid, endpoint string) ([]miniReelOption, error) {
+	var lastErr error
+	for attempt := 0; attempt < miniReelVideoModelAttempts; attempt++ {
+		options, err := miniReelNativeOptionsAttempt(ctx, vid, endpoint, miniReelFreshDevice())
+		if err == nil {
+			return options, nil
+		}
+		lastErr = err
+		if !errors.Is(err, errMiniReelVideoModelEmpty) {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("MiniReel video_model empty after %d fresh device attempts: %w", miniReelVideoModelAttempts, lastErr)
+}
+
+func miniReelNativeOptionsAttempt(ctx context.Context, vid, endpoint string, device miniReelDevice) ([]miniReelOption, error) {
 	stamp := time.Now().UnixMilli()
 	params := url.Values{
 		"_rticket": {strconv.FormatInt(stamp, 10)}, "ac": {"wifi"}, "aid": {"8662"},
-		"channel": {"update_64"}, "device_brand": {"Redmi"}, "device_id": {miniReelIdentity.deviceID},
+		"channel": {"update_64"}, "device_brand": {"Redmi"}, "device_id": {device.deviceID},
 		"device_platform": {"android"}, "device_type": {"25053RT47C"}, "dpi": {"520"},
-		"iid": {miniReelIdentity.installID}, "language": {"zh"}, "manifest_version_code": {"73532"},
+		"iid": {device.installID}, "language": {"zh"}, "manifest_version_code": {"73532"},
 		"os": {"android"}, "os_api": {"36"}, "os_version": {"16"}, "resolution": {"1280*2772"},
 		"ssmix": {"a"}, "update_version_code": {"73532"}, "version_code": {"73532"},
 		"version_name": {"7.3.5.32"}, "app_name": {"novelread"},
@@ -623,18 +653,23 @@ func miniReelNativeOptions(ctx context.Context, vid string) ([]miniReelOption, e
 		"video_id": vid, "content_type": 1,
 		"biz_param": map[string]any{"need_all_video_definition": true, "video_platform": 3},
 	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, miniReelAPIBase+miniReelAPIPath+"?"+query, bytes.NewReader(bodyBytes))
+	query, signedHeaders, err := signPassportRequest(params, bodyBytes, stamp, device.deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("MiniReel request signing failed: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"?"+query, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
+	req.Header = signedHeaders
 	req.Header.Set("User-Agent", miniReelAppUA)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("X-XS-From-Web", "0")
 	req.Header.Set("Sdk-Version", "2")
-	for key, value := range miniReelSignRequest(query, string(bodyBytes), stamp) {
-		req.Header.Set(key, value)
-	}
+	req.Header.Set("X-SS-DP", "8662")
+	req.Header.Set("X-Tt-Store-Region", "cn")
+	req.Header.Set("X-Tt-Store-Region-Src", "did")
 	client := &http.Client{Timeout: 35 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -647,6 +682,10 @@ func miniReelNativeOptions(ctx context.Context, vid string) ([]miniReelOption, e
 	data, err := miniReelReadLimited(resp.Body, miniReelMaxJSONBytes)
 	if err != nil {
 		return nil, err
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		log.Printf("[minireel] video_model empty response status=%d content_length=%d tt_logid=%q device_digits=%d iid_digits=%d", resp.StatusCode, resp.ContentLength, resp.Header.Get("X-Tt-Logid"), len(device.deviceID), len(device.installID))
+		return nil, errMiniReelVideoModelEmpty
 	}
 	var envelope map[string]any
 	if err := json.Unmarshal(data, &envelope); err != nil {
@@ -712,6 +751,18 @@ func miniReelRandomID() string {
 		return strconv.FormatInt(time.Now().UnixNano(), 10)
 	}
 	return strconv.FormatUint(binary.BigEndian.Uint64(buf)%8000000000000000000+1000000000000000000, 10)
+}
+
+func miniReelFreshDevice() miniReelDevice {
+	return miniReelDevice{deviceID: miniReelPlaybackID(), installID: miniReelPlaybackID()}
+}
+
+func miniReelPlaybackID() string {
+	buf := make([]byte, 8)
+	if _, err := crand.Read(buf); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano()%9000000000000000+1000000000000000, 10)
+	}
+	return strconv.FormatUint(binary.BigEndian.Uint64(buf)%9000000000000000+1000000000000000, 10)
 }
 
 func miniReelSignRequest(query, body string, stamp int64) map[string]string {
