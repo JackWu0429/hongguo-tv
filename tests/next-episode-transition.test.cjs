@@ -6,7 +6,7 @@ const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'
 const slice = (a,b) => source.slice(source.indexOf('  function '+a+'('), source.indexOf('  function '+b+'('));
 const tick = () => new Promise(r=>setImmediate(r));
 function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve}}
-function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,captureFailure=false,native=false}={}) {
+function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,captureFailure=false,native=false,prefetchReady=false}={}) {
   const gate=deferred(), calls=[], writes=[], notices=[], frames=new Map(), handlers={}, timers=[];let frameID=0;
   function classes(...initial){const names=new Set(initial);return {add(...x){x.forEach(n=>names.add(n))},remove(...x){x.forEach(n=>names.delete(n))},contains(n){return names.has(n)},toggle(n,on){if(on)names.add(n);else names.delete(n)},names}}
   const hero={classList:classes('is-feed'),style:{}};
@@ -36,14 +36,16 @@ function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,c
     var libraryData={owner_id:'123',entries:[]},libraryLoaded=${ready},libraryError='';
     var libraryReady=Promise.resolve(),libraryQueue=Promise.resolve();
     var playbackInfoRequest=null,playbackPrefetchHandoff=null,playbackRequest=null,controlsTimer=null,playbackAudioHold=null,playbackTiming=[];
+    var playbackRecovery={reset:function(){},next:function(){return 'stop'},attempts:function(){return 0}};
     var playbackQuality='',playbackQualities=[],playbackPreferences={quality:'720P'},feedIndex=0;
     var feedItems=[{series_id:'9001',title:'fixture',episode_count:3,vid_list:['111','222','333']}];
     var activePlayback={item:feedItems[0],episode:1,vid:'111',owner:2,generation:1,started:true,lastWrite:0,completed:false};
-    var episodePrefetch={keepFor:function(){},consume:function(){return {promise:Promise.resolve({path:'/media/next.mp4'}),timing:{started_at:1,ready_at:2},cancel:function(){}}}};
+    var episodePrefetch={keepFor:function(){},consume:function(){return ${prefetchReady ? "{promise:Promise.resolve({path:'/media/prefetched.mp4',quality:'720P',mode:'full'}),timing:{started_at:1,ready_at:2},cancel:function(){}}" : 'null'}}};
     function pageMode(){return 'player'}function isPlaybackPage(){return true}function isLibraryPage(){return false}
     function basicDrama(x){return x}function firstVid(x){return x.vid_list[0]}
     function getDetail(x){return Promise.resolve(x)}function libraryEntry(){return null}function resumeEpisode(){return 1}
     function closePlayerOptions(){}function closeDiscussion(){}function resetDanmaku(){}function cancelPlaybackPreparation(){}
+    function clearRangeTransitionHint(){}function waitForPlaybackPrefetch(handoff){return handoff ? handoff.promise : Promise.resolve(null)}function recoverPlaybackAfterError(){return false}
     function updateFeedCounter(){}function setFeatured(){}function updateSeriesRows(){}function updatePlaybackControls(){}
     function updateSavedButtons(){}function updateDetailProgress(){}function renderLibrary(){}
     function episodeLoadingText(){return 'loading'}function setPlayerStatus(text,failed){calls.push('status:'+text);if(failed){clearLastPlaybackFrame();if(activePlayback&&activePlayback.presentation)activePlayback.presentation.failed=true}}function revealControls(){}
@@ -67,6 +69,12 @@ test('automatic next starts while the completed history fsync is still pending, 
   f.gate.resolve();await f.c.libraryQueue;
   assert.deepEqual(f.writes.map(x=>[x.episode,x.completed]),[[1,true],[2,false]]);
   assert.equal(f.c.libraryData.entries[0].episode,2);
+});
+test('a completed prefetch is adopted without a second foreground resolver request',async()=>{
+  const f=fixture({prefetchReady:true});f.gate.resolve();f.c.playFeedItem(0,2,0);
+  f.paint();f.paint();await tick();await tick();
+  assert.equal(f.video.src,'/media/prefetched.mp4');
+  assert.ok(!f.calls.includes('source'));
 });
 test('a failed completion write is reported without stopping the already prepared next episode or poisoning later saves',async()=>{
   const f=fixture({failWrite:true}),old=f.c.activePlayback;

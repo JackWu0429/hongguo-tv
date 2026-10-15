@@ -13,7 +13,7 @@ func TestEmbeddedUIUpdateAndCompatibilityAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	handler := serveUI(root)
-	for _, path := range []string{"/", "/app.js", "/app.css", "/pagination.js", "/compat.js", "/compat.css", "/playback-diagnostics.js"} {
+	for _, path := range []string{"/", "/app.js", "/app.css", "/pagination.js", "/compat.js", "/compat.css", "/playback-diagnostics.js", "/playback-recovery.js"} {
 		t.Run(path, func(t *testing.T) {
 			res := httptest.NewRecorder()
 			handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, path, nil))

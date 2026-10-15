@@ -258,6 +258,7 @@
   var playbackPrefetchHandoff = null;
   var playbackAudioHold = null;
   var playbackTiming = [];
+  var playbackRecovery = HongguoPlaybackRecovery.create({ maxAttempts: 1 });
   // Bounded, memory-only diagnostics. No drama IDs, titles or account data.
   window.HongguoTVPlaybackTiming = { snapshot: function () { return playbackTiming.map(function (item) { return Object.assign({}, item); }); } };
   var episodePrefetch = HongguoEpisodePrefetch.create({
@@ -3222,6 +3223,51 @@
     if (playbackPrefetchHandoff) playbackPrefetchHandoff.cancel(); playbackPrefetchHandoff = null;
     interruptPlaybackPresentation(activePlayback);
   }
+  function playbackEngineName() {
+    try {
+      return window.HongguoNativePlayer && window.HongguoNativePlayer.engine ? window.HongguoNativePlayer.engine() : '';
+    } catch (ignored) { return ''; }
+  }
+  function playbackDebug(message) {
+    try { if (window.console && console.debug) console.debug(message); } catch (ignored) {}
+  }
+  function waitForPlaybackPrefetch(handoff, generation, signal) {
+    if (!handoff || !handoff.promise) return Promise.resolve(null);
+    var settled = false;
+    return new Promise(function (resolve) {
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        // The foreground resolver may join the same core job. Keep the
+        // handoff alive so a source switch can still cancel that job.
+        if (generation === feedGeneration && !(signal && signal.aborted)) playbackDebug('[Preload] handoff timeout, use foreground resolver');
+        resolve(null);
+      }, 1200);
+      handoff.promise.then(function (data) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (generation !== feedGeneration || signal && signal.aborted) { resolve(null); return; }
+        resolve(data && data.path ? data : null);
+      }, function () {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(null);
+      });
+    });
+  }
+  function recoverPlaybackAfterError(playback) {
+    if (!playback || playback !== activePlayback || playback.generation !== feedGeneration) return false;
+    var action = playbackRecovery.next({ native: playbackEngineName() });
+    if (action !== 'refresh') return false;
+    var video = document.getElementById('hero-video');
+    var position = Math.max(0, Number(video.currentTime) || Number(playback.position) || 0);
+    playback.recoveryAttempts = playbackRecovery.attempts();
+    showNotice('正在刷新播放地址…');
+    playFeedItem(feedIndex, playback.episode, position, null, null, { recoveryAttempts: playback.recoveryAttempts });
+    return true;
+  }
   function clearRangeTransitionHint() {
     clearTimeout(rangeTransitionTimer);
     rangeTransitionTimer = null;
@@ -3502,7 +3548,7 @@
     });
     return true;
   }
-  function playFeedItem(index, forcedEpisode, forcedPosition, continuation, resumeCheckpoint) {
+  function playFeedItem(index, forcedEpisode, forcedPosition, continuation, resumeCheckpoint, recovery) {
     closePlayerOptions(false);
     closeDiscussion(false); resetDanmaku();
     if (!feedItems.length) return;
@@ -3519,6 +3565,7 @@
     if (index >= feedItems.length) return;
     var item = feedItems[index];
     if (!item || !item.series_id) return;
+    if (!recovery || !recovery.recoveryAttempts) playbackRecovery.reset();
     resetEndRecommendations();
     var switchStartedAt = Date.now();
     var sameSeries = !!((activePlayback && activePlayback.started && activePlayback.owner === accountEpoch &&
@@ -3600,6 +3647,7 @@
         var playing = Object.assign({}, item, detail, { start_episode: episode, vid: vid });
         activePlayback = { item: playing, episode: episode, vid: vid, position: position, generation: generation, owner: accountEpoch, started: false, stableSince: 0, lastWrite: 0, completed: false,
           mode: '', rangeFallback: '', rangeFallbackAttempted: false,
+          recoveryAttempts: recovery && recovery.recoveryAttempts || 0,
           timing: { episode: episode, automatic_next: fastContinuation, started_at: switchStartedAt, ready_at: 0, prefetch_ms: null, prepared_before_switch: false, reported: false } };
         setFeatured(playing);
         updateDetailProgress();
@@ -3607,17 +3655,24 @@
         var target = { series_id: item.series_id, vid: vid, episode: episode, quality: playbackPreferences.quality, owner: accountEpoch, mode: playbackMode };
         var handoff = episodePrefetch.consume(target);
         playbackPrefetchHandoff = handoff;
-        return (handoff ? handoff.promise : Promise.resolve()).then(function () {
+        return waitForPlaybackPrefetch(handoff, generation, request.signal).then(function (prepared) {
           if (generation !== feedGeneration || request.signal.aborted || applicationInBackground || applicationHidden()) return null;
-          playbackPrefetchHandoff = null;
           if (handoff && handoff.timing.ready_at) {
             activePlayback.timing.prefetch_ms = Math.max(0, handoff.timing.ready_at - handoff.timing.started_at);
             activePlayback.timing.prepared_before_switch = handoff.timing.ready_at <= switchStartedAt;
           }
+          if (prepared && prepared.path) {
+            playbackPrefetchHandoff = null;
+            return prepared;
+          }
           // Revalidate the prepared cache entry; the core reuses the same file
-          // and retries a failed speculative job through the normal resolver.
+          // and retries a failed or timed-out speculative job through the
+          // normal resolver. The 1.2s handoff budget keeps navigation responsive.
           var params = { series_id: item.series_id, vid: vid, quality: playbackPreferences.quality, fallback: '1', mode: playbackMode };
-          return fetchData('/api/v1/play/info?' + new URLSearchParams(params), { signal: request.signal });
+          return fetchData('/api/v1/play/info?' + new URLSearchParams(params), { signal: request.signal }).then(function (data) {
+            playbackPrefetchHandoff = null;
+            return data;
+          });
         });
       });
     })
@@ -5354,6 +5409,7 @@
     if (!activePlayback || !media.getAttribute('src')) return;
     clearRangeStallTimer();
     if (fallbackRangePlayback(activePlayback)) return;
+    if (recoverPlaybackAfterError(activePlayback)) return;
     setPlayerStatus('这集未能正常播放', true);
   });
   media.addEventListener('ended', function () {
