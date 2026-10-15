@@ -2,6 +2,8 @@ package rocks.aston.hongguotv;
 
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public final class MpvSurfaceLifecyclePolicyTest {
     @Test public void terminalSessionPlayerIsRetired() {
@@ -22,5 +24,12 @@ public final class MpvSurfaceLifecyclePolicyTest {
     @Test public void unownedPlayerIsRetiredWhenSurfaceIsDestroyed() {
         assertEquals(MpvSurfaceLifecyclePolicy.Action.RETIRE_ORPHAN,
             MpvSurfaceLifecyclePolicy.onDestroyed(false, false, false, true));
+    }
+
+    @Test public void stoppedPlayerIsReusedOnlyWhenItsSurfaceStayedAvailable() {
+        assertTrue(MpvSurfaceLifecyclePolicy.canReuseStoppedPlayer(true, true, true));
+        assertFalse(MpvSurfaceLifecyclePolicy.canReuseStoppedPlayer(true, false, true));
+        assertFalse(MpvSurfaceLifecyclePolicy.canReuseStoppedPlayer(true, true, false));
+        assertFalse(MpvSurfaceLifecyclePolicy.canReuseStoppedPlayer(false, true, true));
     }
 }

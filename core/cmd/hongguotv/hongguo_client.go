@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -456,8 +457,87 @@ func (c *hongguoClient) SeriesDetail(ctx context.Context, seriesID string) (Seri
 			Locked: index >= drama.AccessibleEpisodeCnt,
 		})
 	}
-	routerMap, _ := asMap(router)
-	return SeriesDetailResult{Drama: drama, Reviews: normalizeSeriesReviews(routerMap), Related: normalizeRelatedDramas(routerMap, seriesID)}, nil
+	detailPage, ok := findObjectByKey(router, "detail_page")
+	if !ok {
+		detailPage, _ = asMap(router)
+	}
+	related := normalizeRelatedDramas(detailPage, seriesID)
+	if len(related) == 0 {
+		related = normalizeRelatedDramas(extractDeferredRecommendations(body), seriesID)
+	}
+	return SeriesDetailResult{Drama: drama, Reviews: normalizeSeriesReviews(detailPage), Related: related}, nil
+}
+
+func extractDeferredRecommendations(body []byte) map[string]any {
+	const marker = "<script"
+	for offset := 0; offset < len(body); {
+		start := bytes.Index(body[offset:], []byte(marker))
+		if start < 0 {
+			break
+		}
+		start += offset
+		end := scriptTagEnd(body, start)
+		if end < 0 {
+			break
+		}
+		token, err := xml.NewDecoder(bytes.NewReader(body[start : end+1])).Token()
+		if err != nil {
+			offset = end + 1
+			continue
+		}
+		element, ok := token.(xml.StartElement)
+		if !ok {
+			offset = end + 1
+			continue
+		}
+		script := map[string]string{}
+		for _, attr := range element.Attr {
+			script[attr.Name.Local] = attr.Value
+		}
+		offset = end + 1
+		if script["data-fn-name"] != "mergeLoaderData" || script["data-fn-args"] == "" {
+			continue
+		}
+		var args []any
+		if json.Unmarshal([]byte(script["data-fn-args"]), &args) != nil || len(args) < 2 || args[0] != "detail_page" {
+			continue
+		}
+		entries, _ := args[1].([]any)
+		for _, raw := range entries {
+			entry, _ := asMap(raw)
+			if asString(entry["key"]) != "recommendations" || asString(entry["routerDataFnName"]) != "p" {
+				continue
+			}
+			fnArgs, _ := entry["routerDataFnArgs"].([]any)
+			if len(fnArgs) == 0 {
+				continue
+			}
+			encoded, _ := fnArgs[0].(string)
+			var result map[string]any
+			if json.Unmarshal([]byte(encoded), &result) == nil {
+				return result
+			}
+		}
+	}
+	return nil
+}
+
+func scriptTagEnd(data []byte, start int) int {
+	var quote byte
+	for i := start; i < len(data); i++ {
+		if quote != 0 {
+			if data[i] == quote {
+				quote = 0
+			}
+			continue
+		}
+		if data[i] == '\'' || data[i] == '"' {
+			quote = data[i]
+		} else if data[i] == '>' {
+			return i
+		}
+	}
+	return -1
 }
 
 func normalizeSeriesReviews(router map[string]any) []SeriesReview {
@@ -505,12 +585,11 @@ func normalizeSeriesReviews(router map[string]any) []SeriesReview {
 }
 
 func normalizeRelatedDramas(router map[string]any, currentID string) []Drama {
-	keys := []string{"related", "detail_page_more_related", "related_video", "rawRelatedVideo"}
-	var rows []any
+	keys := []string{"related_list", "videoList", "related", "detail_page_more_related", "related_video", "rawRelatedVideo"}
+	rows := make([]any, 0)
 	for _, key := range keys {
 		if found, ok := findArrayByKey(router, key); ok {
-			rows = found
-			break
+			rows = append(rows, found...)
 		}
 	}
 	out := make([]Drama, 0, len(rows))

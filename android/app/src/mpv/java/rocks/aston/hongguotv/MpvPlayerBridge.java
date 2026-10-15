@@ -35,6 +35,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     private Runnable stopTimeout;
     private volatile long generation;
     private boolean destroyed, background, surfaceReady;
+    private long surfaceEpoch, stopSurfaceEpoch = -1;
     private double volume = 1, speed = 1;
     private boolean muted = true;
     private float left, top, width, height;
@@ -75,7 +76,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         // layer while the shared libmpv client is fenced between sources.
         holder.setVisibility(View.VISIBLE);
         holder.setAlpha(0f);
-        web.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> applyBounds());
+        web.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> applyBoundsWhenIdle());
         handler.postDelayed(progress, 500);
     }
 
@@ -142,6 +143,10 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         }
         session = target;
         if (!MediaUrlPolicy.valid(target.source)) { fail(target, "source"); return; }
+        // Apply the latest geometry before attaching a native player. During a
+        // fenced source replacement, WebView can report bounds while the old
+        // Surface is still stopping; applying them here keeps that resize
+        // away from the new libmpv/Surface binding window.
         if (!applyBounds()) { fail(target, "display"); return; }
         double rate = target.data.optDouble("speed", speed);
         if (finite(rate) && rate > 0 && rate <= 4) speed = rate;
@@ -460,15 +465,33 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     @JavascriptInterface public void seekBy(int seconds) { handler.post(() -> { if (session != null) seekTo(Math.max(0, session.position / 1000.0 + Math.max(-60, Math.min(60, seconds)))); }); }
     @JavascriptInterface public void bounds(float l, float t, float w, float h) {
         if (!PlaybackBounds.valid(l, t, w, h)) return;
-        handler.post(() -> { left = l; top = t; width = w; height = h; applyBounds(); });
+        handler.post(() -> {
+            left = l; top = t; width = w; height = h;
+            // Do not resize the holder while an old source is fenced. A
+            // LayoutParams change can destroy/recreate the SurfaceView, and
+            // that is the exact window in which the next source is being
+            // attached. installSession() applies the latest cached bounds
+            // once the fence has completed and before attachSurface().
+            applyBoundsWhenIdle();
+        });
+    }
+    private void applyBoundsWhenIdle() {
+        if (!stopFence.isActive()) applyBounds();
     }
     private boolean applyBounds() {
         if (!PlaybackBounds.valid(left, top, width, height)) return false;
         int w = Math.round(web.getWidth() * width), h = Math.round(web.getHeight() * height);
         if (!PlaybackBounds.visible(w, h)) return false;
+        FrameLayout.LayoutParams current = (FrameLayout.LayoutParams) holder.getLayoutParams();
+        int l = Math.round(web.getWidth() * left), t = Math.round(web.getHeight() * top);
+        if (current != null && current.width == w && current.height == h
+                && current.leftMargin == l && current.topMargin == t) {
+            return true;
+        }
         FrameLayout.LayoutParams layout = new FrameLayout.LayoutParams(w, h);
-        layout.leftMargin = Math.round(web.getWidth() * left); layout.topMargin = Math.round(web.getHeight() * top);
-        holder.setLayoutParams(layout); return true;
+        layout.leftMargin = l; layout.topMargin = t;
+        holder.setLayoutParams(layout);
+        return true;
     }
     @Override public void surfaceCreated(SurfaceHolder surfaceHolder) {
         surfaceReady = true;
@@ -491,13 +514,16 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     }
     @Override public void surfaceDestroyed(SurfaceHolder surfaceHolder) {
         surfaceReady = false;
+        surfaceEpoch++;
         Session s = session;
         boolean sessionOwnsPlayer = s != null && s.player != null;
         boolean currentSession = current(s);
         MpvSurfaceLifecyclePolicy.Action action = MpvSurfaceLifecyclePolicy.onDestroyed(
             stopFence.isActive(), sessionOwnsPlayer, currentSession, player != null);
         if (action == MpvSurfaceLifecyclePolicy.Action.DEFER_STOPPING_SESSION) {
-            finishStopBoundary(false);
+            // Let the stop reply and queued END_FILE/events settle before
+            // destroying libmpv. finishStopBoundary() will retire it after
+            // the fence if this Surface generation is no longer reusable.
             return;
         }
         if (action == MpvSurfaceLifecyclePolicy.Action.RECREATE_ACTIVE_SESSION) guarded(s, () -> {
@@ -556,6 +582,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         stoppingPlayer = player;
         boolean expectEndFile = old != null && old.output.openRequested && !"ended".equals(old.state);
         long requestId = ++stopCommandSequence;
+        stopSurfaceEpoch = surfaceEpoch;
         stopFence.begin(requestId, expectEndFile);
         stopTimeout = () -> {
             if (stopFence.onTimeout() && stoppingPlayer == player) finishStopBoundary(false);
@@ -574,9 +601,14 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     private void finishStopBoundary(boolean reusable) {
         if (stopTimeout != null) handler.removeCallbacks(stopTimeout);
         stopTimeout = null;
+        boolean hadFence = stopFence.isActive();
         stopFence.clear();
         MPVLib stopped = stoppingPlayer; stoppingPlayer = null;
-        if (!reusable) retire(stopped);
+        boolean sameSurface = !hadFence || stopSurfaceEpoch == surfaceEpoch;
+        stopSurfaceEpoch = -1;
+        boolean canReuse = !hadFence || MpvSurfaceLifecyclePolicy.canReuseStoppedPlayer(
+            reusable, sameSurface, surfaceAvailable());
+        if (!canReuse) retire(stopped);
         else playerQuiescent = true;
         installPendingSessionIfReady();
     }

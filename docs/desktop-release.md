@@ -1,10 +1,7 @@
-红果短剧桌面版 0.2.63
+红果短剧桌面版 0.2.67（macOS / Windows）
 
-- 修正桌面应用文件名：macOS 解压后为“红果短剧.app”，Windows 启动程序为“红果短剧.exe”。
-- 本次为名称迁移版本，0.2.60 及更早的桌面包需手动下载一次 ZIP。旧更新器校验英文程序路径，旧更新清单保留在 0.2.60；新版使用独立 desktop-update-v2.json，后续可在设置中检查和下载更新。
-- 退出旧程序后，macOS 用“红果短剧.app”替换旧的 hongguo-desktop.app；Windows 完整替换程序文件夹。账号、历史、设置的数据目录和应用标识不变。
-- macOS 通用包支持 Intel / Apple Silicon，最低 macOS 11；Windows x64 需要 Microsoft Edge WebView2 Runtime。
-- 修复 Mac 进入/退出窗口全屏时误触发后台暂停；桌面只按真实最小化/隐藏状态暂停，并同步系统全屏按钮和 Escape 的页面布局。Windows 使用同一桌面状态桥，实体播放仍需验证。
-- 同步共享 Web UI 的播放焦点改进：从单剧播放页或推荐页全屏播放时，上、下键切换上一集/下一集，左右键在播放画面中快进或后退。
-- 播放仍使用系统 HTML5，不引入新解码器。未做 Apple 公证或 Windows 代码签名。
-- Android TV 标准版与 MPV 版保持已发布的 0.2.60，下载和更新渠道独立。
+- 选集弹窗的相关推荐现已能读取红果详情页延迟返回的数据；同时保留明确的空态提示。
+- 同步共享 Web UI 修复和内容更新。
+- macOS 通用 ZIP 支持 Intel / Apple Silicon，最低 macOS 11；Windows x64 需要 Microsoft Edge WebView2 Runtime。
+- 桌面版通过独立更新清单检查并下载 ZIP，安装仍由用户手动替换程序文件。
+- 未做 Apple 公证或 Windows 代码签名。

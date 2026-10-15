@@ -15,6 +15,7 @@ import (
 func TestListsBrowserFixture(t *testing.T) {
 	browseFixture := os.Getenv("HONGGUO_BROWSE_UI_FIXTURE") == "1"
 	seriesFixture := os.Getenv("HONGGUO_SERIES_UI_FIXTURE") == "1"
+	realRelatedFixture := os.Getenv("HONGGUO_REAL_RELATED_UI_FIXTURE") == "1"
 	likesFixture := os.Getenv("HONGGUO_LIKES_UI_FIXTURE") == "1"
 	prefetchFixture := os.Getenv("HONGGUO_PREFETCH_UI_FIXTURE") == "1"
 	playerFixture := os.Getenv("HONGGUO_PLAYER_UI_FIXTURE") == "1" || seriesFixture || likesFixture || prefetchFixture
@@ -462,6 +463,16 @@ func TestListsBrowserFixture(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/api/v1/series/detail" {
+			if realRelatedFixture {
+				seriesID := envOr("HONGGUO_REAL_RELATED_SERIES_ID", "7690163276214176792")
+				result, err := newHongguoClient().SeriesDetail(r.Context(), seriesID)
+				if err != nil {
+					writeError(w, http.StatusBadGateway, "读取红果真实详情失败: "+err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": result})
+				return
+			}
 			d := drama(0)
 			d.SeriesID = q.Get("series_id")
 			if likesFixture || prefetchFixture {
@@ -495,6 +506,14 @@ func TestListsBrowserFixture(t *testing.T) {
 				for i, vid := range d.VidList {
 					d.Episodes = append(d.Episodes, Episode{Index: i + 1, VideoID: vid})
 				}
+				related := make([]Drama, 0, 6)
+				for i := 1; i <= 6; i++ {
+					item := drama(i + 30)
+					item.Title = fmt.Sprintf("相关推荐短剧%02d", i)
+					related = append(related, item)
+				}
+				writeJSON(w, 200, map[string]any{"ok": true, "data": SeriesDetailResult{Drama: d, Related: related}})
+				return
 			}
 			writeJSON(w, 200, map[string]any{"ok": true, "data": d})
 			return
@@ -540,7 +559,7 @@ func TestListsBrowserFixture(t *testing.T) {
 	if playerFixture {
 		addr = "127.0.0.1:18897"
 	}
-	if seriesFixture {
+	if seriesFixture || realRelatedFixture {
 		addr = "127.0.0.1:18997"
 	}
 	if override := os.Getenv("HONGGUO_UI_FIXTURE_ADDR"); override != "" {

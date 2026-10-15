@@ -206,20 +206,32 @@ test('MPV bridge keeps the last rapid source request and carries pause intent ac
   assert.match(mpvBridgeSource, /Boolean playIntent = transition\.takePlayIntent\(\);/);
 });
 
-test('MPV bridge retires a fenced client on timeout or surface loss before installing the pending source', () => {
+test('MPV bridge waits for the stop fence before retiring a player whose Surface was lost', () => {
   const bridge = mpvBridgeSource;
   const surface = bridge.slice(bridge.indexOf('@Override public void surfaceDestroyed'), bridge.indexOf('private void dispose('));
   const stop = bridge.slice(bridge.indexOf('private void requestStop('), bridge.indexOf('private void retire('));
+  const finish = bridge.slice(bridge.indexOf('private void finishStopBoundary('), bridge.indexOf('@Override public void onPause()'));
   assert.match(stop, /stopTimeout = \(\) -> \{[\s\S]*stopFence\.onTimeout\(\)[\s\S]*finishStopBoundary\(false\);/);
-  assert.match(surface, /surfaceReady = false;[\s\S]*MpvSurfaceLifecyclePolicy\.onDestroyed\([\s\S]*if \(action == MpvSurfaceLifecyclePolicy\.Action\.DEFER_STOPPING_SESSION\) \{\s*finishStopBoundary\(false\);/);
+  assert.match(surface, /surfaceReady = false;\s*surfaceEpoch\+\+;[\s\S]*if \(action == MpvSurfaceLifecyclePolicy\.Action\.DEFER_STOPPING_SESSION\) \{[\s\S]*return;/);
+  assert.doesNotMatch(surface, /DEFER_STOPPING_SESSION\) \{\s*finishStopBoundary/);
   assert.doesNotMatch(surface, /retire\(stoppingPlayer\)/);
   assert.match(surface, /MpvSurfaceLifecyclePolicy\.Action\.RECREATE_ACTIVE_SESSION\) guarded\(s/);
   assert.match(surface, /MpvSurfaceLifecyclePolicy\.Action\.RETIRE_ORPHAN/);
-  assert.match(bridge, /private void finishStopBoundary\(boolean reusable\)[\s\S]*if \(!reusable\) retire\(stopped\);/);
+  assert.match(stop, /stopSurfaceEpoch = surfaceEpoch;[\s\S]*stopFence\.begin\(/);
+  assert.match(finish, /boolean sameSurface = !hadFence \|\| stopSurfaceEpoch == surfaceEpoch;[\s\S]*canReuseStoppedPlayer\([\s\S]*if \(!canReuse\) retire\(stopped\);/);
   assert.match(bridge, /surfaceCreated\(SurfaceHolder surfaceHolder\)[\s\S]*installPendingSessionIfReady\(\)[\s\S]*start\(target\);/);
   assert.match(bridge, /surfaceChanged\(SurfaceHolder surfaceHolder, int format, int w, int h\)[\s\S]*installPendingSessionIfReady\(\)/);
   assert.match(bridge, /private boolean installPendingSessionIfReady\(\)[\s\S]*stopFence\.isActive\(\)[\s\S]*takePendingSessionWhenReady\(surfaceAvailable\(\)\)[\s\S]*installSession\(pending\)/);
   assert.match(bridge, /MpvStartPolicy\.mayStart\(current\(target\), target\.player != null,[\s\S]*getSurface\(\)\.isValid\(\)\)/);
+});
+
+test('MPV bridge defers holder resizes during source replacement and avoids redundant Surface layout changes', () => {
+  const bounds = mpvBridgeSource.slice(mpvBridgeSource.indexOf('@JavascriptInterface public void bounds('), mpvBridgeSource.indexOf('@Override public void surfaceCreated'));
+  const applyBounds = mpvBridgeSource.slice(mpvBridgeSource.indexOf('private boolean applyBounds('), mpvBridgeSource.indexOf('@Override public void surfaceCreated'));
+  assert.match(bounds, /left = l; top = t; width = w; height = h;[\s\S]*applyBoundsWhenIdle\(\);/);
+  assert.match(mpvBridgeSource, /addOnLayoutChangeListener\([\s\S]*applyBoundsWhenIdle\(\)/);
+  assert.match(mpvBridgeSource, /private void applyBoundsWhenIdle\(\) \{\s*if \(!stopFence\.isActive\(\)\) applyBounds\(\);/);
+  assert.match(applyBounds, /current\.width == w && current\.height == h[\s\S]*current\.leftMargin == l && current\.topMargin == t[\s\S]*return true;/);
 });
 
 test('MPV failure stays native, reports error and ignores late success until explicit retry', async () => {

@@ -12,4 +12,9 @@ final class MpvSurfaceLifecyclePolicy {
         if (sessionOwnsPlayer) return currentSession ? Action.RECREATE_ACTIVE_SESSION : Action.RETIRE_ORPHAN;
         return sharedPlayerExists ? Action.RETIRE_ORPHAN : Action.NONE;
     }
+
+    static boolean canReuseStoppedPlayer(boolean stopSucceeded, boolean sameSurface,
+                                         boolean surfaceAvailable) {
+        return stopSucceeded && sameSurface && surfaceAvailable;
+    }
 }
