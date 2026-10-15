@@ -2952,7 +2952,9 @@
     var badge = document.getElementById('end-recommendation-countdown');
     if (!badge) return;
     badge.classList.toggle('is-hidden', seconds === null);
-    if (seconds !== null) badge.querySelector('.end-countdown-value').textContent = seconds + ' 秒';
+    badge.querySelector('.end-countdown-value').textContent = seconds === null ? '' : String(seconds);
+    if (seconds === null) badge.removeAttribute('aria-label');
+    else badge.setAttribute('aria-label', seconds + '秒后自动播放');
   }
   function prepareEndRecommendationCountdown(panel, image, animation) {
     var body = panel.querySelector('.end-recommendations-panel');
@@ -3003,8 +3005,7 @@
       if (index === 0) {
         var badge = document.createElement('span'); badge.id = 'end-recommendation-countdown'; badge.className = 'end-recommendation-countdown is-hidden';
         var seconds = document.createElement('span'); seconds.className = 'end-countdown-value';
-        var label = document.createElement('span'); label.className = 'end-countdown-label'; label.textContent = '自动播放';
-        badge.appendChild(seconds); badge.appendChild(label); poster.appendChild(badge); card.setAttribute('aria-describedby', badge.id);
+        badge.appendChild(seconds); poster.appendChild(badge); card.setAttribute('aria-describedby', badge.id);
       }
       card.appendChild(poster); card.appendChild(title); card.appendChild(meta);
       card.addEventListener('click', function () { endRecommendations.choose(index); });
