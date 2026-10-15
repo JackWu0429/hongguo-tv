@@ -1647,6 +1647,7 @@
     document.getElementById('player-retry').classList.toggle('is-hidden', !failed);
     document.getElementById('player-failure-diagnostics').classList.toggle('is-hidden', !failed);
     if (failed) {
+      clearLastPlaybackFrame();
       revealControls();
       if (zoneOf(document.activeElement) === 'feed') goFocus(document.getElementById('player-retry'));
     }
@@ -2008,6 +2009,7 @@
   function syncNativePlayerBounds() {
     var adapter = window.HongguoNativePlaybackAdapter;
     if (adapter && typeof adapter.syncBounds === 'function') adapter.syncBounds();
+    layoutLastPlaybackFrame();
   }
   function setCinema(enabled) {
     shell.classList.toggle('is-cinema', enabled);
@@ -2081,6 +2083,7 @@
     var video = document.getElementById('hero-video');
     var preparing = playbackInfoRequest || playbackPrefetchHandoff || activePlayback && !video.getAttribute('src');
     applicationInBackground = true;
+    clearLastPlaybackFrame();
     episodePrefetch.cancel();
     cancelPlaybackPreparation();
     cancelQualitySwitch();
@@ -2103,6 +2106,7 @@
     episodePrefetch.cancel(); cancelPlaybackPreparation();
     if (document.getElementById('hero-video').paused) releasePlaybackAudio();
     clearRangeTransitionHint();
+    clearLastPlaybackFrame();
     document.getElementById('hero').classList.remove('is-range-transition');
     closeDiscussion(false); resetDanmaku();
     closePlayerOptions(false); clearTimeout(controlsTimer);
@@ -3080,6 +3084,60 @@
     playbackAudioHold.generation = generation;
     video.muted = true;
   }
+  function hasLastPlaybackFrame(item) {
+    var canvas = document.getElementById('hero-last-frame');
+    var held = canvas && canvas.__playbackFrame;
+    return !!(item && held && held.series === item.series_id && held.owner === accountEpoch && canvas.classList.contains('is-visible'));
+  }
+  function clearLastPlaybackFrame() {
+    var canvas = document.getElementById('hero-last-frame');
+    if (!canvas) return;
+    canvas.classList.remove('is-visible');
+    canvas.__playbackFrame = null;
+    // Release the pixel buffer and reset any origin-tainted canvas state.
+    canvas.width = 0; canvas.height = 0;
+  }
+  function layoutLastPlaybackFrame() {
+    var canvas = document.getElementById('hero-last-frame');
+    if (!canvas || !canvas.__playbackFrame || !canvas.width || !canvas.height) return;
+    var rect = canvas.parentNode.getBoundingClientRect();
+    if (!(rect.width > 0) || !(rect.height > 0)) return;
+    // Explicit contain geometry also works on WebViews without object-fit.
+    var scale = Math.min(rect.width / canvas.width, rect.height / canvas.height);
+    canvas.style.width = (canvas.width * scale / rect.width * 100) + '%';
+    canvas.style.height = (canvas.height * scale / rect.height * 100) + '%';
+  }
+  function captureLastPlaybackFrame(item) {
+    // Rapid selections keep the last displayed frame, never an intermediate
+    // source which is still loading behind the cover.
+    if (hasLastPlaybackFrame(item)) return true;
+    clearLastPlaybackFrame();
+    var canvas = document.getElementById('hero-last-frame');
+    var node = document.querySelector('#hero-video');
+    // getElementById may return the native media proxy. drawImage needs the
+    // actual HTML video, and its old pixels are invalid during native playback.
+    if (!canvas || !node || document.documentElement.classList.contains('native-playback') ||
+        node.readyState < 2 || !(node.videoWidth > 0) || !(node.videoHeight > 0)) return false;
+    try {
+      var width = node.videoWidth, height = node.videoHeight;
+      var scale = Math.min(1, 1280 / Math.max(width, height), Math.sqrt(921600 / (width * height)));
+      canvas.width = Math.max(1, Math.floor(width * scale));
+      canvas.height = Math.max(1, Math.floor(height * scale));
+      var context = canvas.getContext('2d');
+      if (!context) throw new Error('No frame canvas');
+      context.drawImage(node, 0, 0, canvas.width, canvas.height);
+      // A cross-origin/unsupported read must fail closed without data URLs,
+      // files or a full-frame readback on memory-constrained TVs.
+      if (context.getImageData(0, 0, 1, 1).data[3] !== 255) throw new Error('No captured frame');
+      canvas.__playbackFrame = { series: item.series_id, owner: accountEpoch };
+      layoutLastPlaybackFrame();
+      canvas.classList.add('is-visible');
+      return true;
+    } catch (ignoredCapture) {
+      clearLastPlaybackFrame();
+      return false;
+    }
+  }
   function clearRangeStallTimer() {
     if (typeof rangeStallTimer === 'undefined') return;
     clearTimeout(rangeStallTimer);
@@ -3173,6 +3231,7 @@
       presentation.pending = false;
       if (!painted || !playbackVideoReady(playback, presentation, video)) return;
       if (typeof clearRangeTransitionHint === 'function') clearRangeTransitionHint();
+      clearLastPlaybackFrame();
       hero.classList.remove('is-preparing-video', 'is-starting-video', 'is-episode-transition', 'is-range-transition', 'is-range-source-reset');
       setPlayerStatus('');
       releasePresentedAudio(playback, presentation, video);
@@ -3284,7 +3343,8 @@
     var item = feedItems[index];
     if (!item || !item.series_id) return;
     var switchStartedAt = Date.now();
-    var sameSeries = !!(activePlayback && activePlayback.started && activePlayback.item.series_id === item.series_id);
+    var sameSeries = !!((activePlayback && activePlayback.started && activePlayback.owner === accountEpoch &&
+      activePlayback.item.series_id === item.series_id) || hasLastPlaybackFrame(item));
     var fastContinuation = !!(continuation && continuation.completed && canContinuePlayback(continuation) &&
       continuation.owner === accountEpoch && continuation.item.series_id === item.series_id &&
       forcedEpisode === continuation.episode + 1 && forcedPosition === 0 && libraryLoaded);
@@ -3306,11 +3366,12 @@
     var video = document.getElementById('hero-video');
     var placeholder = document.getElementById('hero-placeholder');
     var keepRangeFrame = sameSeries && playbackMode === 'range' && !!video.getAttribute('src');
+    if (keepRangeFrame) captureLastPlaybackFrame(item); else clearLastPlaybackFrame();
     var generation = ++feedGeneration;
     holdPlaybackAudio(generation);
     clearTimeout(controlsTimer);
     hero.classList.add('is-feed', 'is-preparing-video');
-    hero.classList.remove('is-catalog-loading', 'is-starting-video');
+    hero.classList.remove('is-catalog-loading', 'is-starting-video', 'is-range-source-reset');
     hero.classList.toggle('is-episode-transition', sameSeries);
     hero.classList.toggle('is-range-transition', keepRangeFrame);
     placeholder.classList.add('is-hidden');
@@ -4266,6 +4327,7 @@
     releasePlaybackAudio();
     document.getElementById('hero-video').removeAttribute('src');
     document.getElementById('hero-video').classList.remove('has-source');
+    clearLastPlaybackFrame();
     document.getElementById('hero').classList.remove('is-preparing-video');
     document.getElementById('hero-video').load();
     resetDanmaku(); closeDiscussion(false);
@@ -4805,6 +4867,7 @@
   document.addEventListener('keydown', handleKey, true);
   document.addEventListener('scroll', queueTailCheck, true);
   window.addEventListener('resize', queueTailCheck);
+  window.addEventListener('resize', layoutLastPlaybackFrame);
   document.addEventListener('focusin', function (event) {
     if (scanModalOpen() && !event.target.closest('#search-scan-modal')) { goFocus(document.getElementById('search-scan-close')); return; }
     if (detailModalOpen && event.target.id !== 'detail-tab-episodes') detailFocusPending = false;

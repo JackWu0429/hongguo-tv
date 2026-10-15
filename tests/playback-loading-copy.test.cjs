@@ -11,7 +11,7 @@ function fixture() {
   panel.querySelector=selector=>{assert.equal(selector,'.player-spinner');return spinner};
   const nodes={'hero':hero,'player-status':panel,'player-status-title':title,'player-status-text':text,'player-retry':retry,'player-failure-diagnostics':diagnostics};
   const c=vm.createContext({document:{getElementById:id=>nodes[id]},activePlayback:null,featuredItem:{title:'新剧名称'},reveals:0,focused:null,zoneOf:()=> 'feed'});
-  vm.runInContext('function revealControls(){reveals++}function goFocus(node){focused=node}'+functions,c);
+  vm.runInContext('function clearLastPlaybackFrame(){}function revealControls(){reveals++}function goFocus(node){focused=node}'+functions,c);
   return {c,hero,title,text,spinner,retry,diagnostics,panel};
 }
 test('first start shows only the spinner until the real target episode resolves, without a title or loading panel',()=>{

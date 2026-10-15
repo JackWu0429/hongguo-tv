@@ -6,17 +6,20 @@ const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'
 const slice = (a,b) => source.slice(source.indexOf('  function '+a+'('), source.indexOf('  function '+b+'('));
 const tick = () => new Promise(r=>setImmediate(r));
 function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve}}
-function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null}={}) {
+function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,captureFailure=false,native=false}={}) {
   const gate=deferred(), calls=[], writes=[], notices=[], frames=new Map(), handlers={}, timers=[];let frameID=0;
   function classes(...initial){const names=new Set(initial);return {add(...x){x.forEach(n=>names.add(n))},remove(...x){x.forEach(n=>names.delete(n))},contains(n){return names.has(n)},toggle(n,on){if(on)names.add(n);else names.delete(n)},names}}
   const hero={classList:classes('is-feed'),style:{}};
   const video={currentTime:120,duration:120,paused:false,ended:false,seeking:false,readyState:4,videoWidth:720,videoHeight:1280,muted:false,volume:.75,classList:classes('has-source'),getAttribute(n){return this[n]||null},addEventListener(name,fn){handlers[name]=fn},pause(){this.paused=true},removeAttribute(n){delete this[n]},load(){calls.push('load');assert.equal(hero.classList.contains('is-preparing-video'),true)}};
+  const root={classList:classes(...(native?['native-playback']:[]))};
+  const bounds={width:1400,height:900};
+  const canvas={width:0,height:0,classList:classes(),style:{},parentNode:{getBoundingClientRect:()=>bounds},getContext(){return {drawImage(node){assert.equal(node,video);calls.push('capture');if(captureFailure===true)throw new Error('capture unavailable')},getImageData(){if(captureFailure==='read')throw new Error('tainted canvas');return {data:[12,34,56,255]}}}}};
   const elem={classList:classes(),style:{}};
   const paint=()=>{const pending=[...frames.values()];frames.clear();pending.forEach(fn=>fn())};
   const c=vm.createContext({Promise,AbortController,URLSearchParams,Date,Object,Number,Math,clearTimeout,console,
     setTimeout(fn,delay){timers.push({fn,delay});return timers.length},
     requestAnimationFrame(fn){frames.set(++frameID,fn);return frameID},cancelAnimationFrame(id){frames.delete(id)},
-    engine,video,calls,writes,notices,gate,document:{hidden:false,getElementById:id=>id==='hero-video'?video:id==='hero'?hero:elem},
+    engine,video,calls,writes,notices,gate,document:{hidden:false,documentElement:root,querySelector:()=>video,getElementById:id=>id==='hero-video'?video:id==='hero'?hero:id==='hero-last-frame'?canvas:elem},
     fetch:async(url,options)=>{
       assert.equal(url,'/api/v1/library');const change=JSON.parse(options.body);calls.push('history:'+change.episode);writes.push(change);
       if(change.episode===1)await gate.promise;
@@ -43,13 +46,13 @@ function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null}=
     function closePlayerOptions(){}function closeDiscussion(){}function resetDanmaku(){}function cancelPlaybackPreparation(){}
     function updateFeedCounter(){}function setFeatured(){}function updateSeriesRows(){}function updatePlaybackControls(){}
     function updateSavedButtons(){}function updateDetailProgress(){}function renderLibrary(){}
-    function episodeLoadingText(){return 'loading'}function setPlayerStatus(text,failed){calls.push('status:'+text);if(failed&&activePlayback&&activePlayback.presentation)activePlayback.presentation.failed=true}function revealControls(){}
+    function episodeLoadingText(){return 'loading'}function setPlayerStatus(text,failed){calls.push('status:'+text);if(failed){clearLastPlaybackFrame();if(activePlayback&&activePlayback.presentation)activePlayback.presentation.failed=true}}function revealControls(){}
     function tickDanmaku(){}function scheduleControlsHide(){}function maybePrefetchNextEpisode(){}
     function showNotice(x){notices.push(x)}function playMedia(){calls.push('play');return Promise.resolve()}
   `+slice('changeLibrary','toggleSaved')+slice('saveProgress','continueAfterEpisode')+
     slice('continueAfterEpisode','offerNextSeasonReservation')+slice('holdPlaybackAudio','renderFeed'),c);
   vm.runInContext('var media=video;'+source.slice(source.indexOf("  media.addEventListener('playing'"),source.indexOf("  media.addEventListener('ended'")),c);
-  return {c,gate,calls,writes,notices,video,hero,paint,frames,handlers,timers};
+  return {c,gate,calls,writes,notices,video,hero,canvas,bounds,root,paint,frames,handlers,timers};
 }
 test('automatic next starts while the completed history fsync is still pending, then saves both episodes in order',async()=>{
   const f=fixture(),old=f.c.activePlayback;
@@ -125,6 +128,76 @@ test('same-series Range switch keeps the old source until a replacement is ready
   assert.equal(f.video.src,'/media/next.mp4');assert.equal(f.calls.filter(x=>x==='load').length,1);
   assert.equal(f.hero.classList.contains('is-range-source-reset'),true);
   assert.equal(f.hero.classList.contains('is-preparing-video'),true);
+});
+test('a captured frame covers source replacement until the new picture is presented, then releases its memory',async()=>{
+  const f=fixture({engine:'range'});f.gate.resolve();f.video.src='/media/current.mp4';
+  f.c.playFeedItem(0,2,0);
+  assert.equal(f.canvas.classList.contains('is-visible'),true);
+  assert.equal(f.calls.filter(x=>x==='capture').length,1);
+  f.paint();f.paint();await tick();await tick();f.paint();f.paint();await tick();
+  assert.equal(f.video.src,'/media/next.mp4');
+  assert.equal(f.canvas.classList.contains('is-visible'),true);
+  f.video.readyState=1;f.handlers.canplay();await present(f);
+  assert.equal(f.canvas.classList.contains('is-visible'),true);
+  f.video.readyState=4;f.video.paused=false;f.handlers.playing();
+  f.paint();await tick();assert.equal(f.canvas.classList.contains('is-visible'),true);
+  f.paint();await tick();assert.equal(f.canvas.classList.contains('is-visible'),false);
+  assert.equal(f.canvas.width*f.canvas.height,0);
+  assert.equal(f.hero.classList.contains('is-preparing-video'),false);
+});
+test('capture failure, a native player or missing video data keeps the existing protected transition',async()=>{
+  for(const options of [{captureFailure:true},{captureFailure:'read'},{native:true},{noFrame:true}]){
+    const f=fixture({engine:'range',...options});f.gate.resolve();f.video.src='/media/current.mp4';
+    if(options.noFrame)f.video.readyState=0;
+    assert.doesNotThrow(()=>f.c.playFeedItem(0,2,0));
+    f.paint();f.paint();await tick();await tick();f.paint();f.paint();await tick();
+    assert.equal(f.video.src,'/media/next.mp4');
+    assert.equal(f.canvas.classList.contains('is-visible'),false);
+    assert.equal(f.canvas.width*f.canvas.height,0);
+    assert.equal(f.hero.classList.contains('is-range-source-reset'),true);
+    assert.equal(f.hero.classList.contains('is-preparing-video'),true);
+  }
+});
+test('rapid selections retain the last displayed frame and stale presentation cannot clear it',async()=>{
+  const f=fixture({engine:'range'});f.gate.resolve();f.video.src='/media/current.mp4';
+  f.c.playFeedItem(0,2,0);f.paint();f.paint();await tick();await tick();f.paint();f.paint();await tick();
+  const old=f.c.activePlayback;f.video.readyState=0;
+  f.c.playFeedItem(0,3,0);
+  assert.equal(f.canvas.classList.contains('is-visible'),true);
+  assert.equal(f.calls.filter(x=>x==='capture').length,1);
+  old.started=true;f.c.finishPlaybackPreparation(old);await present(f);
+  assert.equal(f.canvas.classList.contains('is-visible'),true);
+  await present(f);assert.ok(f.c.activePlayback.presentation);
+  f.video.readyState=4;f.video.paused=false;f.handlers.playing();await present(f);
+  assert.equal(f.c.activePlayback.episode,3);
+  assert.equal(f.canvas.classList.contains('is-visible'),false);
+});
+test('frame buffers are bounded and preserve portrait/landscape proportions when the viewport changes',()=>{
+  const f=fixture({engine:'range'}),item=f.c.feedItems[0];
+  for(const [width,height] of [[2160,3840],[3840,2160]]){
+    f.c.clearLastPlaybackFrame();f.video.videoWidth=width;f.video.videoHeight=height;
+    assert.equal(f.c.captureLastPlaybackFrame(item),true);
+    assert.ok(f.canvas.width*f.canvas.height<=921600);
+    for(const [boxWidth,boxHeight] of [[1400,900],[1920,1080],[960,540]]){
+      f.bounds.width=boxWidth;f.bounds.height=boxHeight;f.c.layoutLastPlaybackFrame();
+      const displayWidth=parseFloat(f.canvas.style.width)/100*boxWidth;
+      const displayHeight=parseFloat(f.canvas.style.height)/100*boxHeight;
+      assert.ok(Math.abs(displayWidth/displayHeight-width/height)<.001);
+      assert.ok(displayWidth<=boxWidth+.01&&displayHeight<=boxHeight+.01);
+    }
+  }
+});
+test('another drama, account or MPV switch cannot reuse a held frame',()=>{
+  for(const change of ['drama','account','mpv']){
+    const f=fixture({engine:'range'});f.video.src='/media/current.mp4';f.c.playFeedItem(0,2,0);
+    assert.equal(f.canvas.classList.contains('is-visible'),true);
+    if(change==='drama')f.c.feedItems=[{series_id:'other',vid_list:['111']}];
+    else if(change==='account')f.c.accountEpoch++;
+    else f.c.engine='mpv';
+    f.c.playFeedItem(0,1,0);
+    assert.equal(f.canvas.classList.contains('is-visible'),false);
+    assert.equal(f.canvas.width*f.canvas.height,0);
+  }
 });
 test('first start and a different drama keep the loading poster, including after a previous same-drama transition',async()=>{
   for(const type of ['first','different']){

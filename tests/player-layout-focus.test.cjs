@@ -24,7 +24,7 @@ test('CSS fullscreen synchronizes real normalized native bounds without a window
     innerWidth: 960, innerHeight: 540, addEventListener() {},
     HongguoNativePlayer: { isAvailable: () => true, engine: () => 'mpv', bounds: (...v) => bounds.push(v) }
   }, shell: { classList: { toggle: (name, value) => { cinema = value; } } },
-  updatePlaybackControls() {}, setTimeout: fn => timers.push(fn), clearTimeout() {}, isFinite, Promise });
+  updatePlaybackControls() {}, layoutLastPlaybackFrame() {}, setTimeout: fn => timers.push(fn), clearTimeout() {}, isFinite, Promise });
   vm.runInContext(adapter + slice('syncNativePlayerBounds', 'exitCinema'), c);
   c.setCinema(true);
   assert.deepEqual(bounds[0], [0, 0, 1, 1]);
@@ -38,7 +38,7 @@ test('CSS fullscreen synchronizes real normalized native bounds without a window
 test('fullscreen remains usable in a browser or standard edition without a native adapter', () => {
   let cinema;
   const c = vm.createContext({ window: {}, shell: { classList: { toggle: (n, v) => { cinema = v; } } },
-    updatePlaybackControls() {}, setTimeout: fn => fn() });
+    updatePlaybackControls() {}, layoutLastPlaybackFrame() {}, setTimeout: fn => fn() });
   vm.runInContext(slice('syncNativePlayerBounds', 'exitCinema'), c);
   assert.doesNotThrow(() => c.setCinema(true));
   assert.equal(cinema, true);

@@ -67,6 +67,7 @@ function fixture({ failSave = false, writeGate = null, sourceGate = null } = {})
     function updateSavedButtons(){}function updateDetailProgress(){}function renderLibrary(){}function updateSeriesRows(){}function updatePlaybackControls(){}function updateSeasonControl(){}
     function cancelPlaybackPreparation(){if(playbackInfoRequest)playbackInfoRequest.abort();playbackInfoRequest=null;}
     function setFeatured(x){windowFeatured=x}function holdPlaybackAudio(){}function releasePlaybackAudio(){}
+    function hasLastPlaybackFrame(){return false}function captureLastPlaybackFrame(){}function clearLastPlaybackFrame(){}
     function waitForPlaybackPaint(){return Promise.resolve(true)}function bindPlaybackPresentation(){}
     function setPlayerStatus(){}function showRecommendationPlaceholder(){}function episodeLoadingText(){return 'loading'}function revealControls(){}function showNotice(x){calls.push({kind:'notice',text:x})}
     function playMedia(v){v.paused=false;calls.push({kind:'play',src:v.src});return Promise.resolve()}
