@@ -102,8 +102,8 @@ jobs:
           # Package the two flavors in separate Gradle invocations. AGP's
           # native-library splitter can race when standard and MPV packaging
           # workers are scheduled in the same invocation on a hosted runner.
-          gradle -p android testStandardReleaseUnitTest assembleStandardRelease lintStandardRelease
-          gradle -p android testMpvReleaseUnitTest assembleMpvRelease lintMpvRelease
+          gradle --no-daemon --max-workers=1 --stacktrace -p android testStandardReleaseUnitTest assembleStandardRelease lintStandardRelease
+          gradle --no-daemon --max-workers=1 --stacktrace -p android testMpvReleaseUnitTest assembleMpvRelease lintMpvRelease
       - name: Verify APK signature and version
         run: |
           python3 scripts/verify_apks.py --standard android/app/build/outputs/apk/standard/release/app-standard-release.apk --mpv android/app/build/outputs/apk/mpv/release/app-mpv-release.apk --version "$APP_VERSION" --standard-code "$APP_VERSION_CODE" --mpv-code "$MPV_VERSION_CODE" | tee "$RUNNER_TEMP/apk-verification.json"
