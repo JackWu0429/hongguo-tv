@@ -274,7 +274,7 @@
   });
   var applicationInBackground = false;
   var playbackPreferences = { speed: 1, volume: 100, quality: '', danmaku: false };
-  var endRecommendationIndex = 0, endRecommendationAnimation = 0;
+  var endRecommendationIndex = 0, endRecommendationAnimation = 0, endRecommendationReadyCleanup = null;
   var endRecommendations = HongguoEndRecommendations.create({
     isCurrent: function (playback) {
       return !!(playback && activePlayback === playback && playback.owner === accountEpoch && playback.generation === feedGeneration &&
@@ -284,6 +284,13 @@
       return !scanModalOpen() && !accountKeypadOpen() && !supportModalOpen && !rankFilterOpen && !confirmOpen &&
         !detailModalOpen && !playerOptionsOpen && !discussionOpen && zoneOf(document.activeElement) === 'feed';
     },
+    canAutoplay: function () {
+      var track = document.getElementById('end-recommendations-track');
+      return !scanModalOpen() && !accountKeypadOpen() && !supportModalOpen && !rankFilterOpen && !confirmOpen &&
+        !detailModalOpen && !playerOptionsOpen && !discussionOpen && (!document.hasFocus || document.hasFocus()) && document.activeElement === track.children[0];
+    },
+    now: function () { return window.performance && typeof window.performance.now === 'function' ? window.performance.now() : Date.now(); },
+    countdown: renderEndRecommendationCountdown,
     show: showEndRecommendations,
     hide: hideEndRecommendations,
     play: function (item) { startPlayer(item, playerReturnFocus); }
@@ -2940,7 +2947,48 @@
     endRecommendations.offer(playback, detail.related);
     return true;
   }
+  function cancelEndRecommendationAutoplay() { if (typeof endRecommendations !== 'undefined' && endRecommendations) endRecommendations.cancelAutoplay(); }
+  function renderEndRecommendationCountdown(seconds) {
+    var badge = document.getElementById('end-recommendation-countdown');
+    if (!badge) return;
+    badge.classList.toggle('is-hidden', seconds === null);
+    if (seconds !== null) badge.querySelector('.end-countdown-value').textContent = seconds + ' 秒';
+  }
+  function prepareEndRecommendationCountdown(panel, image, animation) {
+    var body = panel.querySelector('.end-recommendations-panel');
+    var coverReady = !image || image.complete || !image.getAttribute('src'), fadeReady = false, queued = false, disposed = false;
+    var coverTimer = null, fadeTimer = null;
+    function cleanup() {
+      disposed = true; clearTimeout(coverTimer); clearTimeout(fadeTimer);
+      if (image) { image.removeEventListener('load', coverSettled); image.removeEventListener('error', coverSettled); }
+      body.removeEventListener('transitionend', transitioned);
+      if (endRecommendationReadyCleanup === cleanup) endRecommendationReadyCleanup = null;
+    }
+    function maybeReady() {
+      if (disposed || queued || !coverReady || !fadeReady) return;
+      queued = true;
+      // setCover also uses a paint callback; let its pixels/fallback appear
+      // before starting the user's thirty seconds.
+      requestAnimationFrame(function () { requestAnimationFrame(function () {
+        if (disposed) return;
+        cleanup();
+        if (animation === endRecommendationAnimation && panel.classList.contains('is-open') && endRecommendations.isOpen()) endRecommendations.ready();
+      }); });
+    }
+    function coverSettled() { coverReady = true; maybeReady(); }
+    function fadeSettled() { fadeReady = true; maybeReady(); }
+    function transitioned(event) { if (event.target === body && (event.propertyName === 'opacity' || event.propertyName === 'transform')) fadeSettled(); }
+    if (image && !coverReady) {
+      image.addEventListener('load', coverSettled); image.addEventListener('error', coverSettled);
+      // A missing/slow cover keeps its reserved poster placeholder usable.
+      coverTimer = setTimeout(coverSettled, 2500);
+    }
+    body.addEventListener('transitionend', transitioned);
+    endRecommendationReadyCleanup = cleanup;
+    return function () { fadeTimer = setTimeout(fadeSettled, 220); };
+  }
   function showEndRecommendations(items) {
+    if (endRecommendationReadyCleanup) endRecommendationReadyCleanup();
     var panel = document.getElementById('end-recommendations');
     var track = document.getElementById('end-recommendations-track');
     var animation = ++endRecommendationAnimation;
@@ -2951,7 +2999,14 @@
       var image = document.createElement('img'); setCover(image, item);
       var title = document.createElement('strong'); title.textContent = item.title;
       var meta = document.createElement('small'); meta.textContent = item.episode_count ? '全' + item.episode_count + '集' : '红果短剧';
-      card.appendChild(dramaPoster(image, item)); card.appendChild(title); card.appendChild(meta);
+      var poster = dramaPoster(image, item);
+      if (index === 0) {
+        var badge = document.createElement('span'); badge.id = 'end-recommendation-countdown'; badge.className = 'end-recommendation-countdown is-hidden';
+        var seconds = document.createElement('span'); seconds.className = 'end-countdown-value';
+        var label = document.createElement('span'); label.className = 'end-countdown-label'; label.textContent = '自动播放';
+        badge.appendChild(seconds); badge.appendChild(label); poster.appendChild(badge); card.setAttribute('aria-describedby', badge.id);
+      }
+      card.appendChild(poster); card.appendChild(title); card.appendChild(meta);
       card.addEventListener('click', function () { endRecommendations.choose(index); });
       track.appendChild(card);
     });
@@ -2961,11 +3016,13 @@
     document.getElementById('end-recommendations-close').tabIndex = 0;
     // Focus the first card immediately; the two paints only animate the sheet.
     goFocus(track.children[0]);
+    var opened = prepareEndRecommendationCountdown(panel, track.children[0].querySelector('img'), animation);
     requestAnimationFrame(function () { requestAnimationFrame(function () {
-      if (animation === endRecommendationAnimation && endRecommendations.isOpen()) panel.classList.add('is-open');
+      if (animation === endRecommendationAnimation && endRecommendations.isOpen()) { panel.classList.add('is-open'); opened(); }
     }); });
   }
   function hideEndRecommendations(restoreFocus, animate) {
+    if (endRecommendationReadyCleanup) endRecommendationReadyCleanup();
     var panel = document.getElementById('end-recommendations');
     if (!panel) return;
     var animation = ++endRecommendationAnimation;
@@ -2979,7 +3036,10 @@
     }
     if (animate && !panel.classList.contains('is-hidden')) { panel.classList.add('is-closing'); setTimeout(finish, 180); }
     else finish();
-    if (restoreFocus && isPlaybackPage()) goFocus(document.getElementById('hero-feed-focus'));
+    if (restoreFocus && isPlaybackPage()) {
+      revealControls();
+      goFocus(firstVisible('.playback-buttons [data-action="episodes"]') || firstVisible('.playback-buttons .control-button') || document.getElementById('hero-feed-focus'));
+    }
   }
   function scrollEndRecommendationIntoView(card) {
     if (!card || !card.classList.contains('end-recommendation-card')) return;
@@ -2992,6 +3052,7 @@
   function handleEndRecommendationKey(key, repeat) {
     if (!endRecommendations || !endRecommendations.isOpen()) return false;
     if (key === 'Escape' || key === 'Backspace') { if (!repeat) endRecommendations.close(true); return true; }
+    if (key === 'Enter' || key === 'Tab' || /^Arrow/.test(key) || key === ' ' || /^Media/.test(key)) endRecommendations.cancelAutoplay();
     var track = document.getElementById('end-recommendations-track');
     var close = document.getElementById('end-recommendations-close');
     var current = document.activeElement;
@@ -4977,8 +5038,10 @@
   window.addEventListener('resize', queueTailCheck);
   window.addEventListener('resize', layoutLastPlaybackFrame);
   window.addEventListener('resize', function () { if (endRecommendations && endRecommendations.isOpen()) scrollEndRecommendationIntoView(document.activeElement); });
+  window.addEventListener('blur', cancelEndRecommendationAutoplay);
   document.addEventListener('focusin', function (event) {
     if (endRecommendations && endRecommendations.isOpen()) {
+      if (event.target !== document.getElementById('end-recommendations-track').children[0]) endRecommendations.cancelAutoplay();
       if (!event.target.closest('#end-recommendations')) { goFocus(document.getElementById('end-recommendations-track').children[endRecommendationIndex] || document.getElementById('end-recommendations-close')); return; }
       scrollEndRecommendationIntoView(event.target);
     } else setTimeout(flushEndRecommendations, 0);
@@ -5111,6 +5174,9 @@
   document.getElementById('detail-series-retry').addEventListener('click', loadSeriesSeasons);
   document.getElementById('end-recommendations-close').addEventListener('click', function () { endRecommendations.close(true); });
   document.getElementById('end-recommendations').addEventListener('click', function (event) { if (event.target === this) endRecommendations.close(true); });
+  ['wheel', 'touchstart', 'mousedown', 'pointerdown'].forEach(function (name) {
+    document.getElementById('end-recommendations').addEventListener(name, cancelEndRecommendationAutoplay, true);
+  });
   document.getElementById('account-send-code').addEventListener('click', accountSendCode);
   document.getElementById('account-login').addEventListener('click', accountLogin);
   document.getElementById('account-verify').addEventListener('click', verifyAccountSMS);

@@ -49,6 +49,66 @@ test('reset clears the old playback offer so the new completed drama can have it
   assert.equal(f.panel.offer(next,related),true);assert.equal(f.calls.filter(c=>c[0]==='show').length,2);
 });
 
+function timedFixture(){
+  const calls=[],playback={item:{series_id:'self'}},jobs=new Map();let time=0,id=0;
+  const state={current:playback,safe:true,eligible:true};
+  const panel=create({isCurrent:p=>state.current===p,canPresent:()=>state.safe,canAutoplay:()=>state.eligible,
+    now:()=>time,schedule:(fn,delay)=>{jobs.set(++id,{fn,at:time+delay});return id},unschedule:handle=>jobs.delete(handle),
+    countdown:seconds=>calls.push(['countdown',seconds]),show:items=>calls.push(['show',items]),
+    hide:(restore,animate)=>calls.push(['hide',restore,animate]),play:item=>calls.push(['play',item])});
+  function advance(ms){const target=time+ms;while(jobs.size){const [key,job]=[...jobs].sort((a,b)=>a[1].at-b[1].at)[0];if(job.at>target)break;time=job.at;jobs.delete(key);job.fn()}time=target}
+  return {panel,calls,state,playback,jobs,advance,jump(ms){time+=ms}};
+}
+test('the thirty seconds start after readiness, then autoplay exactly the first card through the normal selection path',()=>{
+  const f=timedFixture();f.panel.offer(f.playback,related);f.advance(60000);
+  assert.equal(f.jobs.size,0);assert.equal(f.panel.ready(),true);assert.deepEqual(f.calls.at(-1),['countdown',30]);
+  f.advance(1000);assert.deepEqual(f.calls.at(-1),['countdown',29]);
+  assert.equal(f.panel.ready(),false);f.advance(28999);assert.equal(f.calls.filter(c=>c[0]==='play').length,0);
+  f.advance(1);assert.equal(f.panel.isOpen(),false);assert.deepEqual(f.calls.slice(-2),[['hide',false,false],['play',related[0]]]);
+  f.advance(60000);assert.equal(f.calls.filter(c=>c[0]==='play').length,1);assert.equal(f.jobs.size,0);
+});
+test('reservation or active controls delay both the sheet and its full countdown',()=>{
+  const f=timedFixture();f.state.safe=false;f.panel.offer(f.playback,related);
+  assert.equal(f.panel.ready(),false);f.advance(90000);assert.equal(f.jobs.size,0);
+  f.state.safe=true;f.panel.flush();f.panel.ready();assert.deepEqual(f.calls.at(-1),['countdown',30]);
+});
+test('manual browsing before or after readiness cancels permanently, including returning to the first card',()=>{
+  for(const started of [false,true]){
+    const f=timedFixture();f.panel.offer(f.playback,related);if(started){f.panel.ready();f.advance(8000)}
+    f.panel.cancelAutoplay();assert.deepEqual(f.calls.at(-1),['countdown',null]);
+    assert.equal(f.panel.ready(),false);f.advance(60000);assert.equal(f.calls.filter(c=>c[0]==='play').length,0);
+    assert.equal(f.panel.isOpen(),true);assert.equal(f.jobs.size,0);
+    f.panel.choose(7);assert.deepEqual(f.calls.at(-1),['play',related[7]]);
+  }
+});
+test('closing or leaving a playback cancels queued callbacks, including a callback already delivered late',()=>{
+  for(const action of ['close','reset','stale','modal']){
+    const f=timedFixture();f.panel.offer(f.playback,related);f.panel.ready();const late=[...f.jobs.values()][0].fn;
+    if(action==='close')f.panel.close(true);
+    else if(action==='reset')f.panel.reset();
+    else if(action==='stale')f.state.current=null;
+    else f.state.eligible=false;
+    f.jump(31000);late();f.advance(60000);assert.equal(f.calls.filter(c=>c[0]==='play').length,0);assert.equal(f.jobs.size,0);
+  }
+});
+test('an old session timer cannot clear or fire a newer session countdown',()=>{
+  const f=timedFixture();f.panel.offer(f.playback,related);f.panel.ready();const old=[...f.jobs.values()][0].fn;
+  f.panel.reset();const next={item:{series_id:'new'}};f.state.current=next;f.panel.offer(next,related);f.panel.ready();
+  f.advance(9000);old();assert.equal(f.jobs.size,1);assert.deepEqual(f.calls.at(-1),['countdown',21]);
+  f.advance(21000);assert.deepEqual(f.calls.at(-1),['play',related[0]]);assert.equal(f.calls.filter(c=>c[0]==='play').length,1);
+});
+test('a duplicate ended event after background reset cannot offer a fresh countdown for the same playback',()=>{
+  const f=timedFixture();f.panel.offer(f.playback,related);f.panel.ready();f.panel.reset();
+  assert.equal(f.panel.offer(f.playback,related),false);assert.equal(f.panel.ready(),false);
+  f.advance(60000);assert.equal(f.calls.filter(c=>c[0]==='play').length,0);assert.equal(f.calls.filter(c=>c[0]==='show').length,1);
+});
+test('a delayed foreground tick uses elapsed time, while a manual choice at the deadline wins only once',()=>{
+  const f=timedFixture();f.panel.offer(f.playback,related);f.panel.ready();const late=[...f.jobs.values()][0].fn;
+  f.jump(17000);f.jobs.clear();late();assert.deepEqual(f.calls.at(-1),['countdown',13]);
+  f.jump(13000);f.panel.choose(4);late();assert.deepEqual(f.calls.at(-1),['play',related[4]]);
+  assert.equal(f.calls.filter(c=>c[0]==='play').length,1);
+});
+
 function keysFixture(){
   const plays=[],rows=related.map((item,i)=>({id:'card-'+i,classList:{contains:n=>n==='end-recommendation-card'},closest:()=>true,click(){panel.choose(i)}}));
   const close={id:'end-recommendations-close',closest:()=>true,click(){panel.close(true)}};
