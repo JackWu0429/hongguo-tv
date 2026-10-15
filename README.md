@@ -1,8 +1,8 @@
 # 红果短剧 TV
 
-独立 Android TV 客户端项目，以 [hongguo-player](https://github.com/yangbin1322/hongguo-player) 的 Mac 发布版为功能和布局参考，采用 Android 壳与 Go 核心的实现方式。
+独立 Android TV 客户端项目，采用 Android 壳与 Go 核心的实现方式。
 
-本仓库为私有仓库。当前版本包含可启动的 Go 本地服务、Android TV 壳、Mac 风格推荐页、红果分类/详情接口和 APK 内置播放链路，并由 GitHub Actions 构建。
+当前版本包含可启动的 Go 本地服务、Android TV 壳、Mac 风格推荐页、红果分类/详情接口和 APK 内置播放链路，并由 GitHub Actions 构建。
 
 ## 项目方向
 
