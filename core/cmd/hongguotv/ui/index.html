@@ -112,7 +112,11 @@
       <section class="rank-page page-workspace is-hidden" id="rank-page" aria-label="排行榜">
         <div class="rank-heading-row">
           <h1>排行榜</h1>
-          <div class="rank-heading-actions"><button class="rank-filter-open" id="rank-filter-open" data-focus="rank-filter-open">筛选</button><div class="rank-tabs" id="rank-tabs" data-focus-zone="rankTabs"></div></div>
+          <div class="rank-view-switch" data-focus-zone="rankViews" aria-label="榜单视图">
+            <button class="rank-view-tab is-active" data-rank-view="official" data-focus="rank-view-official" aria-pressed="true">红果榜</button>
+            <button class="rank-view-tab" data-rank-view="radar" data-focus="rank-view-radar" aria-pressed="false">榜单雷达</button>
+          </div>
+          <div class="rank-heading-actions" id="rank-official-controls"><button class="rank-filter-open" id="rank-filter-open" data-focus="rank-filter-open">筛选</button><div class="rank-tabs" id="rank-tabs" data-focus-zone="rankTabs"></div></div>
         </div>
         <div class="rank-layout">
           <nav class="rank-subnav" id="rank-subnav" data-focus-zone="rankSubnav" aria-label="榜单类型"></nav>
@@ -126,6 +130,51 @@
             <div id="rank-pagination" class="list-status" role="status"></div>
           </div>
         </div>
+        <section class="rank-radar-view is-hidden" id="rank-radar-view" aria-label="榜单雷达">
+          <div class="radar-heading">
+            <div>
+              <h2 class="radar-title">榜单雷达</h2>
+              <div class="radar-status" id="radar-status" role="status" aria-live="polite">打开榜单雷达后读取最新数据</div>
+            </div>
+            <button class="radar-refresh" id="radar-refresh" data-focus="radar-refresh" aria-label="刷新榜单雷达">刷新</button>
+          </div>
+          <nav class="radar-view-switch" id="radar-view-switch" data-focus-zone="radarViewTabs" aria-label="榜单雷达视图">
+            <button class="radar-view-tab is-active" data-radar-view="official" data-focus="radar-view-official" aria-pressed="true">官方榜</button>
+            <button class="radar-view-tab" data-radar-view="growth" data-focus="radar-view-growth" aria-pressed="false">飙升榜</button>
+          </nav>
+          <section class="radar-section" id="radar-official-section" aria-label="官方榜">
+            <div class="radar-section-heading"><h3>官方榜</h3><span>红果榜单快照</span></div>
+            <nav class="radar-filter-row" id="radar-official-tabs" data-focus-zone="radarOfficialTabs" aria-label="官方榜分类">
+              <button class="radar-filter is-active" data-radar-official="hot" data-focus="radar-official-hot" aria-pressed="true">综合</button>
+              <button class="radar-filter" data-radar-official="real" data-focus="radar-official-real" aria-pressed="false">真人</button>
+              <button class="radar-filter" data-radar-official="ai" data-focus="radar-official-ai" aria-pressed="false">AI</button>
+              <button class="radar-filter" data-radar-official="comic" data-focus="radar-official-comic" aria-pressed="false">漫剧</button>
+            </nav>
+            <div class="radar-table radar-official-table" aria-label="官方榜数据">
+              <div class="radar-table-head"><span>名次</span><span>变化</span><span>剧名</span><span>类型</span><span>热度</span><span>热度日增</span><span>收藏日增</span><span>评分</span><span>在榜</span></div>
+              <div class="radar-rows" id="radar-official-rows" data-focus-zone="radarOfficialItems" aria-live="polite"></div>
+            </div>
+          </section>
+          <section class="radar-section is-hidden" id="radar-growth-section" aria-label="飙升榜">
+            <div class="radar-section-heading"><h3>飙升榜</h3><span>按指标查看日增趋势</span></div>
+            <nav class="radar-filter-row" id="radar-growth-metrics" data-focus-zone="radarGrowthMetrics" aria-label="飙升榜指标">
+              <button class="radar-filter is-active" data-radar-metric="d_hot" data-focus="radar-metric-hot" aria-pressed="true">热度日增</button>
+              <button class="radar-filter" data-radar-metric="d_fav" data-focus="radar-metric-fav" aria-pressed="false">收藏日增</button>
+              <button class="radar-filter" data-radar-metric="r_hot" data-focus="radar-metric-rate" aria-pressed="false">热度增长率</button>
+            </nav>
+            <nav class="radar-filter-row radar-growth-types" id="radar-growth-types" data-focus-zone="radarGrowthTypes" aria-label="飙升榜分类">
+              <button class="radar-filter radar-growth-type is-active" data-radar-type="all" data-focus="radar-type-all" aria-pressed="true">全部</button>
+              <button class="radar-filter radar-growth-type" data-radar-type="real" data-focus="radar-type-real" aria-pressed="false">真人</button>
+              <button class="radar-filter radar-growth-type" data-radar-type="ai" data-focus="radar-type-ai" aria-pressed="false">AI</button>
+              <button class="radar-filter radar-growth-type" data-radar-type="comic" data-focus="radar-type-comic" aria-pressed="false">漫剧</button>
+              <button class="radar-filter radar-growth-type" data-radar-type="unknown" data-focus="radar-type-unknown" aria-pressed="false">未知</button>
+            </nav>
+            <div class="radar-table radar-growth-table" aria-label="飙升榜数据">
+              <div class="radar-table-head"><span>名次</span><span>剧名</span><span>类型</span><span>热度</span><span>热度日增</span><span>增长率</span><span>收藏日增</span><span>7日热度增量</span></div>
+              <div class="radar-rows" id="radar-growth-rows" data-focus-zone="radarGrowthItems" aria-live="polite"></div>
+            </div>
+          </section>
+        </section>
       </section>
       <section class="rank-filter-modal is-hidden" id="rank-filter-modal" aria-hidden="true"><div class="rank-filter-dialog" role="dialog" aria-modal="true" aria-labelledby="rank-filter-title"><div class="rank-filter-header"><h2 id="rank-filter-title">排行榜筛选</h2><button class="rank-filter-close" id="rank-filter-close" data-focus="rank-filter-close">关闭</button></div><div id="rank-filter-options" class="rank-filter-options"></div><div class="rank-filter-actions"><button class="rank-filter-close rank-filter-cancel" id="rank-filter-cancel" data-focus="rank-filter-cancel">取消</button><button class="rank-filter-apply" id="rank-filter-apply" data-focus="rank-filter-apply">应用筛选</button></div></div></section>
       <section class="new-page page-workspace is-hidden" id="new-page" aria-label="新剧">

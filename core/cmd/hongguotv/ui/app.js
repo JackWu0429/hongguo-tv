@@ -25,6 +25,14 @@
     reservationItems: '.reservation-row',
     publicationActions: '.publication-action',
     rankTabs: '.rank-tab',
+    rankViews: '.rank-view-tab',
+    radarViewTabs: '.radar-view-tab',
+    radarRefresh: '.radar-refresh',
+    radarOfficialTabs: '.radar-filter[data-radar-official]',
+    radarGrowthMetrics: '.radar-filter[data-radar-metric]',
+    radarGrowthTypes: '.radar-filter[data-radar-type]',
+    radarOfficialItems: '.radar-official-row',
+    radarGrowthItems: '.radar-growth-row',
     rankSubnav: '.rank-subtab',
     rankItems: '.rank-row',
     rankActions: '.rank-row-play, .rank-row-detail',
@@ -185,6 +193,11 @@
   var rankSelection = { rank: 'all', rank_sub: 'ranklist_hot_play_sc', rank_panel: '' };
   var rankFilterOpen = false;
   var rankDraftSelection = null;
+  var rankView = 'official';
+  var radarView = 'official';
+  var radarData = null;
+  var radarRequest = null;
+  var radarGeneration = 0;
   var reservationMode = 'online';
   var reservationCounts = { online: null, upcoming: null };
   var activeSearchQuery = '';
@@ -761,10 +774,18 @@
     if (element.classList.contains('reservation-row')) return 'reservationItems';
     if (element.classList.contains('publication-action')) return 'publicationActions';
     if (element.classList.contains('rank-tab')) return 'rankTabs';
+    if (element.classList.contains('rank-view-tab')) return 'rankViews';
+    if (element.classList.contains('radar-view-tab')) return 'radarViewTabs';
     if (element.classList.contains('rank-filter-open')) return 'rankTabs';
     if (element.classList.contains('rank-subtab')) return 'rankSubnav';
     if (element.classList.contains('rank-row')) return 'rankItems';
     if (element.classList.contains('rank-row-play') || element.classList.contains('rank-row-detail')) return 'rankActions';
+    if (element.classList.contains('radar-refresh')) return 'radarRefresh';
+    if (element.dataset && element.dataset.radarOfficial) return 'radarOfficialTabs';
+    if (element.dataset && element.dataset.radarMetric) return 'radarGrowthMetrics';
+    if (element.dataset && element.dataset.radarType) return 'radarGrowthTypes';
+    if (element.classList.contains('radar-official-row')) return 'radarOfficialItems';
+    if (element.classList.contains('radar-growth-row')) return 'radarGrowthItems';
     if (element.classList.contains('new-tab')) return 'newTabs';
     if (element.classList.contains('new-filter')) return 'newFilters';
     if (element.classList.contains('new-card')) return 'newItems';
@@ -827,6 +848,10 @@
     // Restored recommendations are already visible; enter the channel bar
     // explicitly instead of relying on the loading placeholder.
     if (pageMode() === 'recommend') return activeChannel();
+    // The rank page has a two-level entry bar. Always enter that bar first;
+    // restoring a previously focused data row would hide the view switch on
+    // TV remotes and make the Radar view appear unreachable.
+    if (pageMode() === 'rank') return firstRankView();
     var remembered = lastPageFocus[pageMode()];
     if (remembered && focusables().indexOf(remembered) >= 0) return remembered;
     if (pageMode() === 'search') return searchInput || document.querySelector('.search-submit');
@@ -834,7 +859,6 @@
     if (pageMode() === 'settings') return selectedSidebarDisplay() || firstVisible('.app-update-action') || firstVisible('.playback-mode-action') || activeSidebar();
     if (pageMode() === 'support') return firstVisible('.support-card');
     if (isLibraryPage()) return firstVisible('.library-card') || firstVisible('.history-filter.is-active') || firstVisible('[data-action="library-discover"]') || firstVisible('.library-toolbar-button');
-    if (pageMode() === 'rank') return firstVisible('.rank-tab.is-active') || firstRankTab();
     if (pageMode() === 'new') return firstVisible('.new-tab.is-active') || firstNewTab();
     if (pageMode() === 'reservations') return firstVisible('.reservation-tab.is-active');
     if (pageMode() === 'follows') return followNotificationViewOpen ? firstVisible('.follow-notification-row') || firstVisible('#follow-notifications-back') : firstVisible('.follow-card') || firstVisible('#follow-notifications-open') || firstVisible('#follow-refresh');
@@ -872,6 +896,13 @@
   }
 
   function firstRankTab() { return firstVisible('.rank-tab'); }
+  function firstRankView() { return firstVisible('.rank-view-tab'); }
+  function firstRadarViewTab() { return firstVisible('.radar-view-tab'); }
+  function firstRadarOfficialTab() { return firstVisible('.radar-filter[data-radar-official]'); }
+  function firstRadarGrowthMetric() { return firstVisible('.radar-filter[data-radar-metric]'); }
+  function firstRadarGrowthType() { return firstVisible('.radar-filter[data-radar-type]'); }
+  function firstRadarOfficialRow() { return firstVisible('.radar-official-row'); }
+  function firstRadarGrowthRow() { return firstVisible('.radar-growth-row'); }
   function firstRankSubtab() { return firstVisible('.rank-subtab'); }
   function firstRankFilterToggle() { return firstVisible('#rank-filter-toggle'); }
   function firstRankFilterEntry() {
@@ -1257,8 +1288,56 @@
     }
     if (zone === 'rankTabs') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return activeSidebar();
+      if (direction === 'up') return firstRankView() || activeSidebar();
       if (direction === 'down') return firstVisible('.rank-subtab.is-active') || firstRankSubtab() || firstRankRow();
+      return null;
+    }
+    if (zone === 'rankViews') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'up') return activeSidebar();
+      if (direction === 'down') return rankView === 'radar' ? firstRadarViewTab() : (firstVisible('.rank-subtab.is-active') || firstRankSubtab() || firstRankRow());
+      return null;
+    }
+    if (zone === 'radarViewTabs') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'up') return firstRankView();
+      if (direction === 'down') return radarView === 'growth' ? firstRadarGrowthMetric() : firstRadarOfficialTab();
+      return null;
+    }
+    if (zone === 'radarRefresh') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'up') return firstRankView();
+      if (direction === 'down') return firstRadarOfficialTab();
+      return null;
+    }
+    if (zone === 'radarOfficialTabs') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'up') return firstRadarViewTab() || firstRankView();
+      if (direction === 'down') return firstRadarOfficialRow() || firstRadarGrowthMetric();
+      return null;
+    }
+    if (zone === 'radarGrowthMetrics') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'up') return firstRadarViewTab() || firstRankView();
+      if (direction === 'down') return firstRadarGrowthType() || firstRadarGrowthRow();
+      return null;
+    }
+    if (zone === 'radarGrowthTypes') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'up') return firstRadarGrowthMetric();
+      if (direction === 'down') return firstRadarGrowthRow();
+      return null;
+    }
+    if (zone === 'radarOfficialItems') {
+      if (direction === 'up') return moveGrid('.radar-official-row', current, direction) || firstRadarOfficialTab();
+      if (direction === 'down') return moveGrid('.radar-official-row', current, direction) || current;
+      if (direction === 'left') return firstRadarOfficialTab() || activeSidebar();
+      return null;
+    }
+    if (zone === 'radarGrowthItems') {
+      if (direction === 'up') return moveGrid('.radar-growth-row', current, direction) || firstRadarGrowthType() || firstRadarGrowthMetric();
+      if (direction === 'down') return moveGrid('.radar-growth-row', current, direction) || current;
+      if (direction === 'left') return firstRadarGrowthType() || firstRadarGrowthMetric() || activeSidebar();
       return null;
     }
     if (zone === 'rankFilters') {
@@ -3175,7 +3254,7 @@
         document.getElementById('confirm-copy').textContent = '预约未确认成功：播放状态已变化，请重新打开预约提示后重试。';
         return Promise.resolve(false);
       }
-      return fetchData('/api/v1/reservation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: item.reservation_id, reserved: true }) }).then(function () {
+      return writeReservation(item, true).then(function () {
         if (epoch !== accountEpoch) {
           document.getElementById('confirm-copy').textContent = '预约未确认成功：账号状态已变化，请重新打开预约提示后重试。';
           return false;
@@ -4130,6 +4209,169 @@
     rankSelection = Object.assign({}, rankDraftSelection); closeRankFilter(false); renderRankSelectors(rankOptions); loadRank(); goFocus(document.getElementById('rank-filter-open'));
   }
 
+  var radarOfficialKind = 'hot';
+  var radarGrowthMetric = 'd_hot';
+  var radarGrowthType = 'all';
+  var radarOfficialLabels = { hot: '综合', real: '真人', ai: 'AI', comic: '漫剧' };
+  var radarGrowthMetricLabels = { d_hot: '热度日增', d_fav: '收藏日增', r_hot: '热度增长率' };
+  var radarGrowthTypeLabels = { all: '全部', real: '真人', ai: 'AI', comic: '漫剧', unknown: '未知' };
+  function radarNumber(value) {
+    if (value === null || value === undefined || value === '' || !isFinite(Number(value))) return '—';
+    var number = Number(value) || 0;
+    if (number >= 100000000) return (number / 100000000).toFixed(number >= 1000000000 ? 1 : 2).replace(/\.0+$/, '') + '亿';
+    if (number >= 10000) return (number / 10000).toFixed(number >= 1000000 ? 0 : 1).replace(/\.0+$/, '') + '万';
+    return String(number);
+  }
+  function radarDelta(delta) {
+    if (delta === null || delta === undefined) return '新上榜';
+    var number = Number(delta) || 0;
+    return number > 0 ? '↑ ' + number : number < 0 ? '↓ ' + Math.abs(number) : '— 持平';
+  }
+  function radarDate(data) {
+    return data && (data.date || data.rank_date) ? '数据日期 ' + (data.date || data.rank_date) : '';
+  }
+  function radarBucket(kind) { return radarData && radarData.ranks ? radarData.ranks[kind] : null; }
+  function radarTypeLabel(type) { return radarGrowthTypeLabels[type] || '未知'; }
+  function radarGrowthIndex() {
+    var result = {};
+    var items = radarData && radarData.growth && radarData.growth.items || [];
+    items.forEach(function (item) { if (item && item.id != null) result[String(item.id)] = item; });
+    return result;
+  }
+  function radarOfficialModel(source, index, kind, growthIndex) {
+    var growth = growthIndex[String(source.id)] || {};
+    return {
+      series_id: source.id,
+      title: source.title || '未命名短剧',
+      rank: source.rank || index + 1,
+      delta: source.delta,
+      status_tags: source.status_tags || [],
+      type: kind === 'hot' ? (growth.type || 'unknown') : kind,
+      hot: growth.hot,
+      d_hot: growth.d_hot,
+      d_fav: growth.d_fav,
+      score: growth.score,
+      streak: source.streak,
+      radar_rank: source
+    };
+  }
+  function radarGrowthItems() {
+    var items = radarData && radarData.growth && radarData.growth.items || [];
+    var type = radarGrowthType;
+    return items.filter(function (item) { return type === 'all' || (item.type || 'unknown') === type; }).slice().sort(function (a, b) {
+      return (Number(b[radarGrowthMetric]) || 0) - (Number(a[radarGrowthMetric]) || 0);
+    });
+  }
+  function radarCell(className, text) {
+    var cell = document.createElement('span');
+    cell.className = className || 'radar-cell';
+    cell.textContent = text == null || text === '' ? '—' : String(text);
+    return cell;
+  }
+  function radarRate(value) { return value == null || value === '' ? '—' : (Number(value) * 100).toFixed(2).replace(/\.00$/, '') + '%'; }
+  function radarSignedNumber(value) { return value === null || value === undefined || value === '' || !isFinite(Number(value)) ? '—' : '+' + radarNumber(value); }
+  function radarScore(value) { return value == null || value === '' ? '—' : String(value); }
+  function radarOfficialRow(source, index, kind, growthIndex) {
+    var item = radarOfficialModel(source, index, kind, growthIndex);
+    var row = document.createElement('div');
+    row.className = 'radar-row radar-official-row'; row.tabIndex = 0; row.setAttribute('role', 'button');
+    row.setAttribute('aria-label', '播放：' + item.title); row.dataset.focus = 'radar-official-' + item.series_id;
+    row.__radarItem = item;
+    row.appendChild(radarCell('radar-rank', item.rank));
+    row.appendChild(radarCell('radar-delta ' + (Number(item.delta) > 0 ? 'is-up' : Number(item.delta) < 0 ? 'is-down' : ''), radarDelta(item.delta)));
+    row.appendChild(radarCell('radar-title-cell', item.title));
+    row.appendChild(radarCell('radar-type-cell', radarTypeLabel(item.type)));
+    row.appendChild(radarCell('radar-number-cell radar-hot-cell', radarNumber(item.hot)));
+    row.appendChild(radarCell('radar-number-cell', radarSignedNumber(item.d_hot)));
+    row.appendChild(radarCell('radar-number-cell', radarSignedNumber(item.d_fav)));
+    row.appendChild(radarCell('radar-score-cell', radarScore(item.score)));
+    row.appendChild(radarCell('radar-number-cell', item.streak == null ? '—' : item.streak + '天'));
+    row.addEventListener('click', function () { startPlayer(row.__radarItem, row); });
+    row.addEventListener('focus', function () { try { row.scrollIntoView({ block: 'nearest' }); } catch (ignore) {} });
+    return row;
+  }
+  function radarGrowthRow(source, index) {
+    var item = Object.assign({}, source, { series_id: source.id, type: source.type || 'unknown', radar_growth: source });
+    var row = document.createElement('div');
+    row.className = 'radar-row radar-growth-row'; row.tabIndex = 0; row.setAttribute('role', 'button');
+    row.setAttribute('aria-label', '播放：' + (item.title || '未命名短剧')); row.dataset.focus = 'radar-growth-' + item.series_id;
+    row.__radarItem = item;
+    row.appendChild(radarCell('radar-rank', index + 1));
+    row.appendChild(radarCell('radar-title-cell', item.title || '未命名短剧'));
+    row.appendChild(radarCell('radar-type-cell', radarTypeLabel(item.type)));
+    row.appendChild(radarCell('radar-number-cell radar-hot-cell', radarNumber(item.hot)));
+    row.appendChild(radarCell('radar-number-cell radar-growth-primary', radarSignedNumber(item.d_hot)));
+    row.appendChild(radarCell('radar-rate-cell', radarRate(item.r_hot)));
+    row.appendChild(radarCell('radar-number-cell', radarSignedNumber(item.d_fav)));
+    row.appendChild(radarCell('radar-number-cell', radarSignedNumber(item.d7_hot)));
+    row.addEventListener('click', function () { startPlayer(row.__radarItem, row); });
+    row.addEventListener('focus', function () { try { row.scrollIntoView({ block: 'nearest' }); } catch (ignore) {} });
+    return row;
+  }
+  function renderRadar() {
+    var officialRows = document.getElementById('radar-official-rows');
+    var growthRows = document.getElementById('radar-growth-rows');
+    var status = document.getElementById('radar-status');
+    var officialSection = document.getElementById('radar-official-section');
+    var growthSection = document.getElementById('radar-growth-section');
+    officialRows.innerHTML = ''; growthRows.innerHTML = '';
+    officialSection.classList.toggle('is-hidden', radarView !== 'official');
+    growthSection.classList.toggle('is-hidden', radarView !== 'growth');
+    var official = radarBucket(radarOfficialKind);
+    var growth = radarGrowthItems();
+    if (!official || !official.items || !official.items.length) renderMessage(officialRows, 'rank-empty', radarData ? '官方榜暂无数据。' : '正在读取榜单雷达…');
+    else {
+      var index = radarGrowthIndex();
+      official.items.forEach(function (source, i) { officialRows.appendChild(radarOfficialRow(source, i, radarOfficialKind, index)); });
+    }
+    if (!growth.length) renderMessage(growthRows, 'rank-empty', radarData ? '当前筛选暂无飙升数据。' : '正在读取榜单雷达…');
+    else growth.forEach(function (source, i) { growthRows.appendChild(radarGrowthRow(source, i)); });
+    var rankDate = radarData && radarData.ranks && radarData.ranks[radarOfficialKind];
+    var growthDate = radarData && radarData.growth;
+    var stale = radarData && (radarData.ranks_stale || radarData.growth_stale);
+    status.textContent = '官方榜 ' + (radarDate(rankDate) || '暂无日期') + ' · 飙升榜 ' + (radarDate(growthDate) || '暂无日期') + ' · 当前按 ' + radarGrowthMetricLabels[radarGrowthMetric] + ' · ' + radarGrowthTypeLabels[radarGrowthType] + (stale ? ' · 使用最近成功数据' : '') + ' · 官方 ' + (official && official.items ? official.items.length : 0) + ' 部 · 飙升 ' + growth.length + ' 部';
+    document.querySelectorAll('[data-radar-official]').forEach(function (node) { var active = node.dataset.radarOfficial === radarOfficialKind; node.classList.toggle('is-active', active); node.setAttribute('aria-pressed', String(active)); });
+    document.querySelectorAll('[data-radar-metric]').forEach(function (node) { var active = node.dataset.radarMetric === radarGrowthMetric; node.classList.toggle('is-active', active); node.setAttribute('aria-pressed', String(active)); });
+    document.querySelectorAll('[data-radar-type]').forEach(function (node) { var active = node.dataset.radarType === radarGrowthType; node.classList.toggle('is-active', active); node.setAttribute('aria-pressed', String(active)); });
+    document.querySelectorAll('[data-radar-view]').forEach(function (node) { var active = node.dataset.radarView === radarView; node.classList.toggle('is-active', active); node.setAttribute('aria-pressed', String(active)); });
+  }
+  function setRadarView(view, focusAfter) {
+    radarView = view === 'growth' ? 'growth' : 'official';
+    renderRadar();
+    if (focusAfter !== false) goFocus(radarView === 'growth' ? firstRadarGrowthMetric() : firstRadarOfficialTab());
+  }
+  function setRadarOfficial(kind) { if (!radarOfficialLabels[kind]) return; radarOfficialKind = kind; renderRadar(); }
+  function setRadarGrowthMetric(metric) { if (!radarGrowthMetricLabels[metric]) return; radarGrowthMetric = metric; renderRadar(); }
+  function setRadarGrowthType(type) { if (!radarGrowthTypeLabels[type]) return; radarGrowthType = type; renderRadar(); }
+  function loadRadar(force) {
+    if (radarRequest) radarRequest.abort();
+    var request = radarRequest = typeof AbortController === 'function' ? new AbortController() : null;
+    var generation = ++radarGeneration;
+    document.getElementById('radar-status').textContent = '正在读取榜单雷达…';
+    var url = '/api/v1/radar' + (force ? '?refresh=' + Date.now() : '');
+    return fetchData(url, request ? { signal: request.signal } : {})
+      .then(function (data) {
+        if (generation !== radarGeneration) return;
+        radarData = data; renderRadar();
+      }).catch(function (error) {
+        if (error.name === 'AbortError' || generation !== radarGeneration) return;
+        document.getElementById('radar-status').textContent = '榜单雷达暂时读取失败：' + error.message;
+        renderMessage(document.getElementById('radar-official-rows'), 'rank-empty', '暂时没有官方榜数据，请稍后刷新。');
+        renderMessage(document.getElementById('radar-growth-rows'), 'rank-empty', '暂时没有飙升榜数据，请稍后刷新。');
+      }).then(function () { if (radarRequest === request) radarRequest = null; });
+  }
+  function setRankView(view, focusAfter) {
+    rankView = view === 'radar' ? 'radar' : 'official';
+    var radar = rankView === 'radar';
+    document.getElementById('rank-official-controls').classList.toggle('is-hidden', radar);
+    document.querySelector('#rank-page .rank-layout').classList.toggle('is-hidden', radar);
+    document.getElementById('rank-radar-view').classList.toggle('is-hidden', !radar);
+    document.querySelectorAll('.rank-view-tab').forEach(function (node) { var active = node.dataset.rankView === rankView; node.classList.toggle('is-active', active); node.setAttribute('aria-pressed', String(active)); });
+    if (radarData) renderRadar();
+    if (radar) loadRadar(false);
+    if (focusAfter !== false) goFocus(radar ? firstRadarViewTab() || firstRadarOfficialTab() || firstRankView() : firstVisible('.rank-tab.is-active') || firstRankTab());
+  }
+
   function renderRank(items, append) {
     if (!append) { rankItems = []; rankList.innerHTML = ''; }
     var start = rankItems.length;
@@ -4254,6 +4496,14 @@
       expires: Date.now() + reservationOverrideTTL
     };
   }
+  function writeReservation(item, reserved, signal) {
+    var options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: item.reservation_id, reserved: reserved }) };
+    if (signal) options.signal = signal;
+    return fetchData('/api/v1/reservation', options).then(function (result) {
+      if (!result.confirmed) throw new Error(result.message || '红果预约列表暂未确认这条记录，请稍后刷新核对');
+      return result;
+    });
+  }
   function applyReservationOverride(item) {
     var id = item && item.reservation_id;
     var local = id && reservationOverrides[id];
@@ -4332,7 +4582,7 @@
     var epoch = accountEpoch; var reserve = !item.reserved;
     var originPage = pageMode(); var hadFocus = document.activeElement === button;
     button.disabled = true; button.textContent = reserve ? '正在预约…' : '正在取消…';
-    fetchData('/api/v1/reservation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: item.reservation_id, reserved: reserve }) })
+    writeReservation(item, reserve)
       .then(function () {
         if (epoch !== accountEpoch) return;
         item.reserved = reserve;
@@ -4815,7 +5065,7 @@
     var generation = seriesGeneration; var epoch = accountEpoch; var reserved = !item.reserved;
     var request = new AbortController(); seriesReservationRequest = request; seriesReservationID = item.reservation_id;
     updateSeriesRows(); seriesMessage('');
-    fetchData('/api/v1/reservation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: item.reservation_id, reserved: reserved }), signal: request.signal }).then(function () {
+    writeReservation(item, reserved, request.signal).then(function () {
       if (epoch !== accountEpoch || generation !== seriesGeneration || !detailModalOpen) return;
       item.reserved = reserved; rememberReservationOverride(item, reserved); updateSeasonReservation(item.reservation_id, reserved);
       reservationPager.loaded = false; calendarPager.loaded = false;
@@ -5054,7 +5304,8 @@
     } else if (item.dataset.page === 'rank') {
       mainSurface.classList.add('has-workspace');
       rankPage.classList.remove('is-hidden');
-      if (!rankPager.loaded) loadRank(); else queueTailCheck();
+      setRankView(rankView, false);
+      if (rankView === 'official' && !rankPager.loaded) loadRank(); else if (rankView === 'official') queueTailCheck();
     } else if (item.dataset.page === 'new') {
       mainSurface.classList.add('has-workspace');
       newPage.classList.remove('is-hidden');
@@ -5236,6 +5487,22 @@
   document.getElementById('rank-filter-close').addEventListener('click', function () { closeRankFilter(true); });
   document.getElementById('rank-filter-cancel').addEventListener('click', function () { closeRankFilter(true); });
   document.getElementById('rank-filter-apply').addEventListener('click', applyRankFilter);
+  document.querySelectorAll('.rank-view-tab').forEach(function (button) {
+    button.addEventListener('click', function () { setRankView(button.dataset.rankView); });
+  });
+  document.querySelectorAll('[data-radar-official]').forEach(function (button) {
+    button.addEventListener('click', function () { setRadarOfficial(button.dataset.radarOfficial); });
+  });
+  document.querySelectorAll('[data-radar-view]').forEach(function (button) {
+    button.addEventListener('click', function () { setRadarView(button.dataset.radarView); });
+  });
+  document.querySelectorAll('[data-radar-metric]').forEach(function (button) {
+    button.addEventListener('click', function () { setRadarGrowthMetric(button.dataset.radarMetric); });
+  });
+  document.querySelectorAll('[data-radar-type]').forEach(function (button) {
+    button.addEventListener('click', function () { setRadarGrowthType(button.dataset.radarType); });
+  });
+  document.getElementById('radar-refresh').addEventListener('click', function () { loadRadar(true); });
   document.getElementById('detail-series-retry').addEventListener('click', loadSeriesSeasons);
   document.getElementById('end-recommendations-close').addEventListener('click', function () { endRecommendations.close(true); });
   document.getElementById('end-recommendations').addEventListener('click', function (event) { if (event.target === this) endRecommendations.close(true); });

@@ -4,8 +4,10 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'), 'utf8');
-test('reservation page keeps its existing tab behavior; success is reported in the current window', () => {
+test('reservation success is gated on cloud readback, not a local optimistic write', () => {
   assert.equal(source.includes('hongguo-tv-reservation-mode'), false);
+  assert.match(source, /function writeReservation\(item, reserved, signal\)/);
+  assert.match(source, /if \(!result\.confirmed\) throw new Error/);
   assert.match(source, /showNotice\('已预约' \+ label\)/);
   assert.match(source, /showNotice\('您已预约' \+ label \+ '，敬请期待'\)/);
   assert.match(source, /seriesMessage\(reserved \? '预约成功。'/);
@@ -74,10 +76,10 @@ function reservationConfirmationFixture({ fail = false } = {}) {
     applyReservationOverride(item) { return item; },
     showNotice(message) { calls.push(['notice', message]); },
     goFocus() {},
-    fetchData: async (url, options) => {
-      calls.push(['request', url, JSON.parse(options.body)]);
+    writeReservation: async (target, reserved) => {
+      calls.push(['request', '/api/v1/reservation', { item_id: target.reservation_id, reserved }]);
       if (fail) throw new Error('测试预约失败');
-      return {};
+      return { confirmed: true };
     }
   });
   const start = source.indexOf('  function offerNextSeasonReservation(');

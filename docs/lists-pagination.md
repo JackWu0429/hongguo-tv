@@ -10,8 +10,8 @@
 | 排行榜 | GET `/reading/bookapi/bookmall/cell/change/v` | `/api/v1/lists/rank` | 首批 tab_type=26、后续=18，服务器游标 |
 | 新剧 | GET `/reading/bookapi/bookmall/cell/change/v1/` | `/api/v1/lists/new` | cell=7431550523368554558，服务器游标 |
 | 上新日历 | GET `/reading/user/subscribe/list/v1/` | `/api/v1/lists/calendar` | 官方日期、next_offset、subscribe_offset |
-| 我的预约 | 同上，tab_type=13 | `/api/v1/lists/reservations` | 已上线/待上线分别请求，要求登录 |
-| 预约/取消预约 | POST `/reading/bookapi/search/uncover_subscribe/v` | POST `/api/v1/reservation` | 预约 item_id，op_type=1/2 |
+| 我的预约 | 同上，tab_type=2、subscribe_order_type=1、swipe_type=1 | `/api/v1/lists/reservations` | 对齐 Mac 客户端参数；已上线/待上线分别请求，要求登录 |
+| 预约/取消预约 | POST `/reading/bookapi/search/uncover_subscribe/v` | POST `/api/v1/reservation` | 预约 item_id，op_type=1/2；新增预约后用云端待上线列表按 item_id 回读确认 |
 | 推荐四频道 | GET `/reading/bookapi/bookmall/tab/v` 与 `/reading/bookapi/bookmall/cell/change/v` | `/api/v1/lists/recommend` | 关注=45、漫剧=36、真人剧=39、推荐=16；tab→cell 阶段 |
 | 当前集评论 | GET `/novel/commentapi/comment/list/{vid}/v1/` | `/api/v1/comments` | 原样传递 JSON 字符串 cursor |
 | 当前集弹幕 | 同上 | `/api/v1/danmaku` | 当前时间的 30 秒窗口 |

@@ -178,7 +178,7 @@ func TestLiveListsProbe(t *testing.T) {
 		q          url.Values
 	}{
 		{"calendar", "/reading/user/subscribe/list/v1/", url.Values{"tab_type": {"5"}, "tab_style": {"2"}, "active_panel": {"6"}, "gender_type": {"2"}, "need_calendar_schema": {"true"}}},
-		{"reservations", "/reading/user/subscribe/list/v1/", url.Values{"tab_type": {"13"}, "subscribe_order_type": {"0"}, "swipe_type": {"0"}, "need_calendar_schema": {"false"}, "offset": {"0"}, "subscribe_offset": {"0"}, "limit": {"20"}, "is_online": {"false"}}},
+		{"reservations", "/reading/user/subscribe/list/v1/", url.Values{"tab_type": {"2"}, "subscribe_order_type": {"1"}, "swipe_type": {"1"}, "need_calendar_schema": {"false"}, "offset": {"0"}, "subscribe_offset": {"0"}, "limit": {"20"}, "is_online": {"false"}}},
 		{"new", "/reading/bookapi/bookmall/cell/change/v1/", url.Values{"change_type": {"1"}, "selected_items": {"firstonlinetime_new"}, "client_req_type": {"1"}, "cell_id": {"7431550523368554558"}, "limit": {"20"}, "offset": {"0"}, "cell_gender": {"2"}}},
 		{"rank", "/reading/bookapi/bookmall/cell/change/v", url.Values{"tab_type": {"26"}, "client_req_type": {"2"}, "client_template": {"2"}, "background_selected_items": {""}, "category_id": {"0"}, "limit": {"20"}, "cell_sub_id": {"0"}, "gender": {"2"}, "cell_id": {"7470092475068071998"}, "selected_items": {""}, "sub_selected_items": {""}, "panel_selected_items": {""}, "offset": {"0"}}},
 		{"search", "/reading/bookapi/search/tab/v", url.Values{"bookshelf_search_plan": {"4"}, "use_correct": {"true"}, "query": {"万妖图录传"}, "count": {"100"}, "offset": {"0"}, "tab_type": {"11"}}},

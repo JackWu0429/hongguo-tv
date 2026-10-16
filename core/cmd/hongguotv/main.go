@@ -28,6 +28,7 @@ type server struct {
 	instanceID         string
 	startedAt          time.Time
 	hongguo            *hongguoClient
+	radar              *radarService
 	libraryStore       *libraryStore
 	accounts           *accountManager
 	numberInputs       *numberInputManager
@@ -62,7 +63,7 @@ func main() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	s := &server{instanceID: *instanceID, startedAt: time.Now().UTC(), hongguo: newHongguoClient(), libraryStore: library}
+	s := &server{instanceID: *instanceID, startedAt: time.Now().UTC(), hongguo: newHongguoClient(), radar: newRadarService(*dataDir, nil), libraryStore: library}
 	s.numberInputs = newNumberInputManager()
 	defer s.numberInputs.close()
 	s.searchHistoryStore, err = newSearchHistoryStore(*dataDir)
@@ -90,6 +91,7 @@ func main() {
 	mux.HandleFunc("/api/v1/Category", s.category)
 	mux.HandleFunc("/api/v1/rank", s.rank)
 	mux.HandleFunc("/api/v1/Rank", s.rank)
+	mux.HandleFunc("/api/v1/radar", s.radarSnapshot)
 	mux.HandleFunc("/api/v1/series/detail", s.seriesDetail)
 	mux.HandleFunc("/api/v1/SeriesDetail", s.seriesDetail)
 	mux.HandleFunc("/api/v1/series/next-season", s.nextSeason)
@@ -212,7 +214,7 @@ func (s *server) status(w http.ResponseWriter, r *http.Request) {
 		InstanceID:     s.instanceID,
 		Implementation: "go-api-adapter+embedded-playback",
 		StartedAt:      s.startedAt.Format(time.RFC3339),
-		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "search", "series-detail", "series-reviews", "related-series", "follow-updates", "notifications", "play-info", "embedded-playback", "cenc-mp4", "range-media", "local-history", "local-favorites", "local-likes", "resume-playback", "next-episode", "next-season", "account-login", "account-mfa", "cloud-library", "new-series", "release-calendar", "reservations", "recommend-feed", "comments", "danmaku", "infinite-scroll"},
+		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "ranking-radar", "search", "series-detail", "series-reviews", "related-series", "follow-updates", "notifications", "play-info", "embedded-playback", "cenc-mp4", "range-media", "local-history", "local-favorites", "local-likes", "resume-playback", "next-episode", "next-season", "account-login", "account-mfa", "cloud-library", "new-series", "release-calendar", "reservations", "recommend-feed", "comments", "danmaku", "infinite-scroll"},
 	})
 }
 
