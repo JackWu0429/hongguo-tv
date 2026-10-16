@@ -6,7 +6,7 @@ const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'
 const slice = (a,b) => source.slice(source.indexOf('  function '+a+'('), source.indexOf('  function '+b+'('));
 const tick = () => new Promise(r=>setImmediate(r));
 function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve}}
-function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,captureFailure=false,native=false,prefetchReady=false}={}) {
+function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,detailGate=null,captureFailure=false,native=false,prefetchReady=false}={}) {
   const gate=deferred(), calls=[], writes=[], notices=[], frames=new Map(), handlers={}, timers=[];let frameID=0;
   function classes(...initial){const names=new Set(initial);return {add(...x){x.forEach(n=>names.add(n))},remove(...x){x.forEach(n=>names.delete(n))},contains(n){return names.has(n)},toggle(n,on){if(on)names.add(n);else names.delete(n)},names}}
   const hero={classList:classes('is-feed'),style:{}};
@@ -16,10 +16,11 @@ function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,c
   const canvas={width:0,height:0,classList:classes(),style:{},parentNode:{getBoundingClientRect:()=>bounds},getContext(){return {drawImage(node){assert.equal(node,video);calls.push('capture');if(captureFailure===true)throw new Error('capture unavailable')},getImageData(){if(captureFailure==='read')throw new Error('tainted canvas');return {data:[12,34,56,255]}}}}};
   const elem={classList:classes(),style:{}};
   const paint=()=>{const pending=[...frames.values()];frames.clear();pending.forEach(fn=>fn())};
+  const document={hidden:false,documentElement:root,querySelector:()=>video,getElementById:id=>id==='hero-video'?video:id==='hero'?hero:id==='hero-last-frame'?canvas:elem,addEventListener(name,fn){handlers['document:'+name]=fn}};
   const c=vm.createContext({Promise,AbortController,URLSearchParams,Date,Object,Number,Math,clearTimeout,console,
     setTimeout(fn,delay){timers.push({fn,delay});return timers.length},
     requestAnimationFrame(fn){frames.set(++frameID,fn);return frameID},cancelAnimationFrame(id){frames.delete(id)},
-    engine,video,calls,writes,notices,gate,document:{hidden:false,documentElement:root,querySelector:()=>video,getElementById:id=>id==='hero-video'?video:id==='hero'?hero:id==='hero-last-frame'?canvas:elem},
+    engine,video,calls,writes,notices,gate,detailGate,document,
     fetch:async(url,options)=>{
       assert.equal(url,'/api/v1/library');const change=JSON.parse(options.body);calls.push('history:'+change.episode);writes.push(change);
       if(change.episode===1)await gate.promise;
@@ -43,7 +44,7 @@ function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,c
     var episodePrefetch={keepFor:function(){},consume:function(){return ${prefetchReady ? "{promise:Promise.resolve({path:'/media/prefetched.mp4',quality:'720P',mode:'full'}),timing:{started_at:1,ready_at:2},cancel:function(){}}" : 'null'}}};
     function pageMode(){return 'player'}function isPlaybackPage(){return true}function isLibraryPage(){return false}
     function basicDrama(x){return x}function firstVid(x){return x.vid_list[0]}
-    function getDetail(x){return Promise.resolve(x)}function libraryEntry(){return null}function resumeEpisode(){return 1}
+    function getDetail(x){return ${detailGate ? 'detailGate.promise.then(function () { return x; })' : 'Promise.resolve(x)'}}function libraryEntry(){return null}function resumeEpisode(){return 1}
     function closePlayerOptions(){}function closeDiscussion(){}function resetDanmaku(){}function cancelPlaybackPreparation(){}
     function clearRangeTransitionHint(){}function waitForPlaybackPrefetch(handoff){return handoff ? handoff.promise : Promise.resolve(null)}function recoverPlaybackAfterError(){return false}
     function updateFeedCounter(){}function setFeatured(){}function updateSeriesRows(){}function updatePlaybackControls(){}
@@ -53,9 +54,72 @@ function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,c
     function showNotice(x){notices.push(x)}function playMedia(){calls.push('play');return Promise.resolve()}
   `+slice('changeLibrary','toggleSaved')+slice('saveProgress','continueAfterEpisode')+
     slice('continueAfterEpisode','offerNextSeasonReservation')+slice('holdPlaybackAudio','renderFeed'),c);
-  vm.runInContext('var media=video;'+source.slice(source.indexOf("  media.addEventListener('playing'"),source.indexOf("  media.addEventListener('ended'")),c);
-  return {c,gate,calls,writes,notices,video,hero,canvas,bounds,root,paint,frames,handlers,timers};
+  vm.runInContext('var media=video;'+source.slice(source.indexOf("  media.addEventListener('playing'"),source.indexOf("  document.addEventListener('visibilitychange'")),c);
+  vm.runInContext("document.addEventListener('visibilitychange', function () { if (desktopShell) return; if (applicationHidden()) pauseForBackground(); else resumeFromBackground(); });",c);
+  return {c,gate,detailGate,calls,writes,notices,video,hero,canvas,bounds,root,document,paint,frames,handlers,timers};
 }
+function setHidden(f, hidden) {
+  f.document.hidden = hidden;
+  f.c.applicationInBackground = hidden;
+  if (hidden) f.c.continuationGeneration++;
+  else f.c.resumePendingContinuation(f.c.activePlayback);
+}
+async function settlePlayback(f, rounds=8) {
+  for (let i=0; i<rounds; i++) { f.paint(); await tick(); }
+}
+test('an ended episode observed in the background resumes the next episode after returning',async()=>{
+  const f=fixture();
+  setHidden(f, true);
+  f.handlers.ended();
+  assert.equal(f.c.activePlayback.endedPending, true);
+  setHidden(f, false);
+  await tick();await tick();f.paint();f.paint();await tick();await tick();
+  assert.equal(f.c.activePlayback.episode,2);
+  assert.equal(f.video.src,'/media/next.mp4');
+});
+test('a continuation request that settles in the background is retried in the foreground',async()=>{
+  const detailGate=deferred(),f=fixture({detailGate}),old=f.c.activePlayback;
+  old.completed = true;
+  f.c.continueAfterEpisode(old);
+  await tick();
+  assert.equal(old.continuationPending, true);
+  setHidden(f, true);
+  detailGate.resolve();
+  await tick();await tick();
+  assert.equal(old.endedPending, true);
+  assert.equal(f.video.src, undefined);
+  setHidden(f, false);
+  await settlePlayback(f, 30);
+  assert.equal(f.c.activePlayback.episode,2);
+  assert.equal(f.video.src,'/media/next.mp4');
+});
+test('a native frame followed by ended can continue before the WebView playing callback',async()=>{
+  const f=await prepared();
+  assert.equal(f.c.activePlayback.started, false);
+  f.c.activePlayback.presentation.rendered = true;
+  f.handlers.ended();
+  await tick();await tick();f.paint();f.paint();await tick();await tick();
+  assert.equal(f.c.activePlayback.episode,3);
+  assert.equal(f.video.src,'/media/next.mp4');
+});
+test('a stale pending continuation cannot resume after the session generation changes',async()=>{
+  const f=fixture();
+  setHidden(f, true);f.handlers.ended();
+  assert.equal(f.c.activePlayback.endedPending, true);
+  f.c.feedGeneration++;
+  setHidden(f, false);
+  await tick();await tick();
+  assert.equal(f.video.src, undefined);
+  assert.equal(f.c.activePlayback.episode, 1);
+});
+test('a manual season switch keeps the episode boundary from starting an automatic continuation',async()=>{
+  const f=fixture();
+  f.c.seasonSwitchRequest = {};
+  f.handlers.ended();
+  await tick();await tick();
+  assert.equal(f.video.src, undefined);
+  assert.equal(f.c.activePlayback.continuationPending, undefined);
+});
 test('automatic next starts while the completed history fsync is still pending, then saves both episodes in order',async()=>{
   const f=fixture(),old=f.c.activePlayback;
   f.c.saveProgress(true,true);f.c.continueAfterEpisode(old);

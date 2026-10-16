@@ -153,12 +153,15 @@ func passportXOR(s string) string {
 	return hex.EncodeToString(b)
 }
 
-var accountPhoneRE = regexp.MustCompile(`^1[3-9][0-9]{9}$`)
 var accountCodeRE = regexp.MustCompile(`^[0-9]{4,8}$`)
 var accountPrivateDigitsRE = regexp.MustCompile(`[0-9]{7,}`)
 
 func passportForm(phone string) url.Values {
-	return url.Values{"mobile": {passportXOR("+86" + phone)}, "account_sdk_source": {"app"}, "passport_support_flow": {"captcha,verify"}, "mix_mode": {"1"}}
+	canonical, err := canonicalAccountPhone(phone)
+	if err != nil {
+		canonical = phone
+	}
+	return url.Values{"mobile": {passportXOR(canonical)}, "account_sdk_source": {"app"}, "passport_support_flow": {"captcha,verify"}, "mix_mode": {"1"}}
 }
 
 func (c *passportClient) sendCode(ctx context.Context, phone string) (map[string]any, error) {

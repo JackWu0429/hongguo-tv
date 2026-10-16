@@ -59,3 +59,14 @@ test('account number fields are buttons, not editable elements or IME bridge cli
   }
   assert.doesNotMatch(source,/HongguoTVInput\.startAccountEditing|accountEditingInput|accountInputBlur/);
 });
+test('country selector is a TV-focusable modal with mainland default and restores to phone entry',()=>{
+  const html=fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/index.html'),'utf8');
+  const countries=fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/phone-countries.js'),'utf8');
+  assert.match(html,/id="account-country"[^>]*aria-haspopup="dialog"/);
+  assert.match(html,/id="account-country-modal"[^>]*aria-hidden="true"/);
+  assert.match(source,/accountPhoneCountryCode = '\+86'/);
+  assert.match(source,/closeAccountCountryModal\(true\)/);
+  assert.match(source,/closeAccountCountryModal\(false\)/);
+  assert.match(countries,/\{ code: '\+852', name: '中国香港', minLength: 8, maxLength: 8 \}/);
+  assert.match(source,/country_code: accountPhoneCountryCode/);
+});

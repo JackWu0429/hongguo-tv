@@ -39,6 +39,13 @@
       input.addEventListener('compositionend', function () { input.composing = false; input.dispatchEvent(new win.Event('input')); });
       old.parentNode.replaceChild(input, old);
     });
+    doc.addEventListener('phonecountrychange', function (event) {
+      var input = doc.getElementById('account-phone');
+      if (input && event.detail && event.detail.maxLength) {
+        input.maxLength = event.detail.maxLength;
+        if (input.value.length > input.maxLength) input.value = input.value.slice(0, input.maxLength);
+      }
+    });
     var help = doc.querySelector('.account-input-help');
     if (help) help.textContent = '直接输入或粘贴手机号和验证码；按 Tab 切换，按 Enter 提交。';
     win.HongguoTVUpdates = createUpdateBridge(win, config);

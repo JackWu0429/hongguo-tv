@@ -32,6 +32,7 @@ type accountStatus struct {
 	Profile      *accountProfile    `json:"profile,omitempty"`
 	Phase        string             `json:"phase"`
 	Phone        string             `json:"phone,omitempty"`
+	CountryCode  string             `json:"country_code,omitempty"`
 	RetryAfter   int                `json:"retry_after"`
 	SMSState     string             `json:"sms_state,omitempty"`
 	SMSNumber    string             `json:"sms_number,omitempty"`
@@ -194,6 +195,7 @@ func (m *accountManager) statusLocked() accountStatus {
 	}
 	if m.login != nil {
 		s.Phone = maskPhone(m.login.phone)
+		s.CountryCode = accountPhoneCountryCode(m.login.phone)
 		if m.login.mfa != nil && m.phase == "mfa" && time.Now().Before(m.login.mfaExpires) {
 			s.SMSNumber = m.login.mfa.Number
 			s.SMSContent = m.login.mfa.Content
@@ -245,13 +247,31 @@ func (m *accountManager) rejectExpiredMFA(g uint64, p map[string]any) error {
 	return err
 }
 func maskPhone(phone string) string {
-	if len(phone) == 11 {
-		return phone[:3] + "****" + phone[7:]
+	canonical, err := canonicalAccountPhone(phone)
+	if err != nil {
+		return ""
 	}
-	return ""
+	code := accountPhoneCountryCode(canonical)
+	local := strings.TrimPrefix(canonical, code)
+	if code == "+86" && len(local) == 11 {
+		return local[:3] + "****" + local[7:]
+	}
+	if len(local) < 5 {
+		return code + "****"
+	}
+	keep := 2
+	if len(local) > 8 {
+		keep = 3
+	}
+	return code + local[:keep] + "****" + local[len(local)-2:]
 }
 
 func (m *accountManager) beginLogin(ctx context.Context, phone string, send bool) (*loginAttempt, uint64, error) {
+	canonical, err := canonicalAccountPhone(phone)
+	if err != nil {
+		return nil, 0, err
+	}
+	phone = canonical
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.disk.Profile != nil {
@@ -593,8 +613,9 @@ func (s *server) account(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Phone string `json:"phone"`
-		Code  string `json:"code"`
+		Phone       string `json:"phone"`
+		CountryCode string `json:"country_code"`
+		Code        string `json:"code"`
 	}
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048))
 	d.DisallowUnknownFields()
@@ -605,16 +626,22 @@ func (s *server) account(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch r.URL.Path {
 	case "/api/v1/account/send-code":
-		if !accountPhoneRE.MatchString(input.Phone) {
-			err = errors.New("请输入正确的手机号")
+		phone, normalizeErr := normalizeAccountPhone(input.CountryCode, input.Phone)
+		if normalizeErr != nil {
+			err = normalizeErr
 		} else {
-			err = s.accounts.sendCode(r.Context(), input.Phone)
+			err = s.accounts.sendCode(r.Context(), phone)
 		}
 	case "/api/v1/account/login":
-		if !accountPhoneRE.MatchString(input.Phone) || !accountCodeRE.MatchString(input.Code) {
-			err = errors.New("请输入手机号和验证码")
+		phone, normalizeErr := normalizeAccountPhone(input.CountryCode, input.Phone)
+		if normalizeErr != nil || !accountCodeRE.MatchString(input.Code) {
+			if normalizeErr != nil {
+				err = normalizeErr
+			} else {
+				err = errors.New("请输入手机号和验证码")
+			}
 		} else {
-			err = s.accounts.loginSMS(r.Context(), input.Phone, input.Code)
+			err = s.accounts.loginSMS(r.Context(), phone, input.Code)
 		}
 	case "/api/v1/account/verify":
 		err = s.accounts.verifyLogin(r.Context())

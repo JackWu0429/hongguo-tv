@@ -35,7 +35,7 @@
     radarGrowthItems: '.radar-growth-row',
     rankSubnav: '.rank-subtab',
     rankItems: '.rank-row',
-    rankActions: '.rank-row-play, .rank-row-detail',
+    rankActions: '.rank-row-play, .rank-row-detail, .rank-row-actor',
     newTabs: '.new-tab',
     newFilters: '.new-filter',
     newItems: '.new-card',
@@ -54,6 +54,7 @@
     playbackModes: '.playback-mode-action',
     support: '.support-card, .support-close',
     rankModal: '.rank-filter-option, .rank-filter-close, .rank-filter-apply',
+    actorWorks: '.actor-works-close, .actor-works-retry, .actor-work-card',
     confirmation: '.confirm-button',
     playerOptions: '.player-option, #player-compose-input, #player-diagnostics-scroll',
     endRecommendations: '.end-recommendation-card, #end-recommendations-close',
@@ -65,6 +66,8 @@
     ,followActions: '.follow-action'
     ,followNotifications: '.follow-notification-row, .follow-notification-action'
     ,libraryTypeFilters: '.library-type-filter'
+    ,accountCountry: '#account-country'
+    ,accountCountryItems: '.account-country-item, #account-country-close'
   };
   var status = document.getElementById('core-status');
   var notice = document.getElementById('action-notice');
@@ -93,6 +96,10 @@
   document.documentElement.classList.toggle('desktop-shell', desktopShell);
   var numericKeypad;
   var accountNumberScan;
+  var accountPhoneCountries = window.HongguoPhoneCountries || [];
+  var accountPhoneCountryCode = '+86';
+  var accountCountryModalOpen = false;
+  var accountCountryReturnFocus = null;
   var searchNumberScan;
   var danmakuNumberScan;
   var searchScanOpen = false;
@@ -193,6 +200,11 @@
   var rankSelection = { rank: 'all', rank_sub: 'ranklist_hot_play_sc', rank_panel: '' };
   var rankFilterOpen = false;
   var rankDraftSelection = null;
+  var actorWorksOpen = false;
+  var actorWorksReturnFocus = null;
+  var actorWorksItem = null;
+  var actorWorksRequest = null;
+  var actorWorksGeneration = 0;
   var rankView = 'official';
   var radarView = 'official';
   var radarData = null;
@@ -295,12 +307,12 @@
         pageMode() === 'player' && playback.completed && document.getElementById('hero-video').ended && !applicationInBackground && !applicationHidden());
     },
     canPresent: function () {
-      return !scanModalOpen() && !accountKeypadOpen() && !supportModalOpen && !rankFilterOpen && !confirmOpen &&
+      return !scanModalOpen() && !accountKeypadOpen() && !supportModalOpen && !rankFilterOpen && !(typeof actorWorksOpen !== 'undefined' && actorWorksOpen) && !confirmOpen &&
         !detailModalOpen && !playerOptionsOpen && !discussionOpen && zoneOf(document.activeElement) === 'feed';
     },
     canAutoplay: function () {
       var track = document.getElementById('end-recommendations-track');
-      return !scanModalOpen() && !accountKeypadOpen() && !supportModalOpen && !rankFilterOpen && !confirmOpen &&
+      return !scanModalOpen() && !accountKeypadOpen() && !supportModalOpen && !rankFilterOpen && !(typeof actorWorksOpen !== 'undefined' && actorWorksOpen) && !confirmOpen &&
         !detailModalOpen && !playerOptionsOpen && !discussionOpen && (!document.hasFocus || document.hasFocus()) && document.activeElement === track.children[0];
     },
     now: function () { return window.performance && typeof window.performance.now === 'function' ? window.performance.now() : Date.now(); },
@@ -440,7 +452,7 @@
       if (row && row.__replyPager && !row.querySelector('.discussion-replies').classList.contains('is-hidden') && row.__replyPager.hasMore()) return row.__replyPager;
       return discussionPager;
     }
-    if (detailModalOpen || confirmOpen || playerOptionsOpen) return null;
+    if (detailModalOpen || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || confirmOpen || playerOptionsOpen) return null;
     if (pageMode() === 'search') return searchPager;
     if (pageMode() === 'rank') return rankPager;
     if (pageMode() === 'new') return newMode === 'calendar' ? calendarPager : newPager;
@@ -723,9 +735,11 @@
       var style = window.getComputedStyle(element);
       var insideModal = element.closest && element.closest('#detail-modal');
       if (scanModalOpen()) { if (!element.closest('#search-scan-modal')) return; }
+      else if (accountCountryModalOpen) { if (!element.closest('#account-country-modal')) return; }
       else if (accountKeypadOpen()) { if (!element.closest('#account-keypad-modal')) return; }
       else if (supportModalOpen) { if (!element.closest('#support-modal')) return; }
       else if (rankFilterOpen) { if (!element.closest('#rank-filter-modal')) return; }
+      else if (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) { if (!element.closest('#actor-works-modal')) return; }
       else if (confirmOpen) { if (!element.closest('#confirm-modal')) return; }
       else if (playerOptionsOpen) { if (!element.closest('#player-options')) return; }
       else if (discussionOpen) { if (!element.closest('#discussion-panel')) return; }
@@ -754,6 +768,8 @@
     if (element.classList.contains('search-scan-action')) return 'searchScan';
     if (element.classList.contains('search-history-action')) return 'searchHistory';
     if (element.classList.contains('account-keypad-key')) return 'accountKeypad';
+    if (element.classList.contains('account-country-button')) return 'accountCountry';
+    if (element.classList.contains('account-country-item') || element.classList.contains('account-country-close')) return 'accountCountryItems';
     if (element.classList.contains('support-card') || element.classList.contains('support-close')) return 'support';
     if (element.classList.contains('discussion-item') || element.classList.contains('discussion-close')) return 'discussion';
     if (element.classList.contains('side-item')) return 'sidebar';
@@ -779,7 +795,7 @@
     if (element.classList.contains('rank-filter-open')) return 'rankTabs';
     if (element.classList.contains('rank-subtab')) return 'rankSubnav';
     if (element.classList.contains('rank-row')) return 'rankItems';
-    if (element.classList.contains('rank-row-play') || element.classList.contains('rank-row-detail')) return 'rankActions';
+    if (element.classList.contains('rank-row-play') || element.classList.contains('rank-row-detail') || element.classList.contains('rank-row-actor')) return 'rankActions';
     if (element.classList.contains('radar-refresh')) return 'radarRefresh';
     if (element.dataset && element.dataset.radarOfficial) return 'radarOfficialTabs';
     if (element.dataset && element.dataset.radarMetric) return 'radarGrowthMetrics';
@@ -808,6 +824,7 @@
     if (element.classList.contains('review-card')) return 'detailReviews';
     if (element.classList.contains('related-card')) return 'detailRelated';
     if (element.classList.contains('rank-filter-option') || element.classList.contains('rank-filter-close') || element.classList.contains('rank-filter-apply')) return 'rankModal';
+    if (element.classList.contains('actor-works-close') || element.classList.contains('actor-works-retry') || element.classList.contains('actor-work-card')) return 'actorWorks';
     if (element.classList.contains('follow-action')) return 'followActions';
     if (element.classList.contains('follow-notification-row') || element.classList.contains('follow-notification-action')) return 'followNotifications';
     if (element.classList.contains('follow-card')) return 'followItems';
@@ -837,7 +854,10 @@
       var scrollTarget = element.closest('.settings-card') || element;
       try { scrollTarget.scrollIntoView(false); } catch (ignored) {}
     }
-    if (!scanModalOpen() && !accountKeypadOpen() && !detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zoneOf(element) !== 'sidebar') {
+    if (accountCountryModalOpen && element.classList.contains('account-country-item')) {
+      try { element.scrollIntoView(false); } catch (ignoredCountryScroll) {}
+    }
+    if (!scanModalOpen() && !accountCountryModalOpen && !accountKeypadOpen() && !detailModalOpen && !(typeof actorWorksOpen !== 'undefined' && actorWorksOpen) && !confirmOpen && !playerOptionsOpen && !discussionOpen && zoneOf(element) !== 'sidebar') {
       lastContentFocus = element;
       lastPageFocus[pageMode()] = element;
     }
@@ -999,6 +1019,15 @@
       if (direction === 'up' || direction === 'down') return moveWithinZone('rankModal', current, direction);
       return null;
     }
+    if (zone === 'actorWorks') {
+      if (current.classList.contains('actor-works-close') || current.classList.contains('actor-works-retry')) {
+        return direction === 'down' ? firstVisible('.actor-work-card') : (direction === 'right' ? firstVisible('.actor-work-card') : null);
+      }
+      if (direction === 'left' || direction === 'right') return moveGrid('.actor-work-card', current, direction) || (direction === 'left' ? document.getElementById('actor-works-close') : null);
+      if (direction === 'up') return moveGrid('.actor-work-card', current, direction) || document.getElementById('actor-works-close');
+      if (direction === 'down') return moveGrid('.actor-work-card', current, direction);
+      return null;
+    }
     if (zone === 'detailTabs') {
       if (direction === 'left' || direction === 'right') return moveWithinZone('detailTabs', current, direction);
       if (direction === 'up') return document.getElementById('detail-close');
@@ -1038,9 +1067,16 @@
 
   function moveFrom(current, direction) {
     if (scanModalOpen()) return direction === 'left' || direction === 'right' ? moveWithinZone('searchScan', current, direction) : null;
+    if (typeof accountCountryModalOpen !== 'undefined' && accountCountryModalOpen) {
+      if (current.id === 'account-country-close') return direction === 'down' ? document.querySelector('.account-country-item.is-selected') || firstVisible('.account-country-item') : null;
+      if (direction === 'up') return moveWithinZone('accountCountryItems', current, direction) || document.getElementById('account-country-close');
+      if (direction === 'down') return moveWithinZone('accountCountryItems', current, direction) || current;
+      return null;
+    }
     if (supportModalOpen) return document.getElementById('support-close');
     if (confirmOpen) return direction === 'left' || direction === 'right' ? moveWithinZone('confirmation', current, direction) : null;
     if (rankFilterOpen) return moveModalFrom(current, direction);
+    if (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) return moveModalFrom(current, direction);
     if (playerOptionsOpen) {
       if (document.getElementById('player-options').classList.contains('is-diagnostics')) {
         return moveDiagnosticFocus(current, direction);
@@ -1056,6 +1092,10 @@
       return moveDiscussion(current, direction);
     }
     var zone = zoneOf(current);
+    if (zone === 'accountCountry') {
+      if (direction === 'right' || direction === 'down') return document.getElementById('account-phone');
+      return direction === 'left' || direction === 'up' ? activeSidebar() : null;
+    }
     if (zone === 'support') {
       if (direction === 'left' || direction === 'right') return moveWithinZone('support', current, direction) || (direction === 'left' ? activeSidebar() : null);
       return direction === 'up' ? activeSidebar() : null;
@@ -1266,6 +1306,7 @@
         if (current.id === 'account-phone' && firstVisible('#account-code')) return document.getElementById('account-code');
         return firstVisible('#account-login') || firstVisible('#account-send-code') || firstVisible('#account-change-phone');
       }
+      if (zone === 'accountInputs' && current.id === 'account-phone' && direction === 'left') return document.getElementById('account-country');
       if (zone === 'accountActions' && direction === 'up') {
         return firstVisible('#account-code') || firstVisible('#account-phone') || moveGrid(leftSelector, current, direction);
       }
@@ -1358,7 +1399,7 @@
       if (direction === 'up') return moveWithinZone(zone, current, direction) || firstRankFilterEntry();
       if (direction === 'down') return moveWithinZone(zone, current, direction) || listBoundary(rankPager, current, direction);
       if (direction === 'left') return firstVisible('.rank-subtab.is-active');
-      if (direction === 'right') return current.querySelector('.rank-row-play');
+      if (direction === 'right') return current.querySelector('.rank-row-play, .rank-row-actor');
       return null;
     }
     if (zone === 'rankActions') {
@@ -1421,12 +1462,80 @@
     field.classList.toggle('is-empty', !field.value);
     field.setAttribute('aria-label', (code ? '短信验证码' : '手机号') + (desktopShell ? '' : '，确认键输入'));
   }
+  function accountPhoneCountry() {
+    for (var i = 0; i < accountPhoneCountries.length; i++) if (accountPhoneCountries[i].code === accountPhoneCountryCode) return accountPhoneCountries[i];
+    return accountPhoneCountries[0] || { code: '+86', name: '中国大陆', minLength: 11, maxLength: 11 };
+  }
+  function accountPhoneValid(value, country) {
+    country = country || accountPhoneCountry();
+    if (!country || typeof value !== 'string' || value.length < country.minLength || value.length > country.maxLength || !/^[0-9]+$/.test(value)) return false;
+    return country.code !== '+86' || /^1[3-9][0-9]{9}$/.test(value);
+  }
+  function setAccountPhoneCountry(code, clearPhone) {
+    var country = null;
+    for (var i = 0; i < accountPhoneCountries.length; i++) if (accountPhoneCountries[i].code === code) { country = accountPhoneCountries[i]; break; }
+    if (!country) return false;
+    var changed = accountPhoneCountryCode !== country.code;
+    accountPhoneCountryCode = country.code;
+    try { window.localStorage.setItem('hongguo.account.phoneCountryCode', country.code); } catch (ignoredPhoneCountryStorage) {}
+    document.getElementById('account-country-name').textContent = country.name;
+    document.getElementById('account-country-code').textContent = country.code;
+    var phone = document.getElementById('account-phone');
+    phone.setAttribute('data-country-code', country.code);
+    if (clearPhone && changed) { phone.value = ''; renderAccountNumber(phone); }
+    if (desktopShell && phone.tagName === 'INPUT') phone.maxLength = country.maxLength;
+    try {
+      var countryEvent;
+      if (typeof CustomEvent === 'function') countryEvent = new CustomEvent('phonecountrychange', { detail: { code: country.code, maxLength: country.maxLength } });
+      else { countryEvent = document.createEvent('CustomEvent'); countryEvent.initCustomEvent('phonecountrychange', false, false, { code: country.code, maxLength: country.maxLength }); }
+      document.dispatchEvent(countryEvent);
+    } catch (ignoredPhoneCountryEvent) {}
+    document.querySelectorAll('.account-country-item').forEach(function (item) {
+      var selected = item.getAttribute('data-country-code') === country.code;
+      item.classList.toggle('is-selected', selected);
+      item.setAttribute('aria-selected', selected ? 'true' : 'false');
+    });
+    return true;
+  }
+  function buildAccountCountryList() {
+    var list = document.getElementById('account-country-list');
+    list.innerHTML = '';
+    accountPhoneCountries.forEach(function (country) {
+      var item = document.createElement('button');
+      item.type = 'button'; item.className = 'account-country-item';
+      item.setAttribute('role', 'option'); item.setAttribute('data-country-code', country.code);
+      item.setAttribute('data-focus', 'account-country-' + country.code.slice(1));
+      var name = document.createElement('span'); name.className = 'account-country-item-name'; name.textContent = country.name;
+      var code = document.createElement('span'); code.className = 'account-country-item-code'; code.textContent = country.code;
+      item.appendChild(name); item.appendChild(code);
+      item.addEventListener('click', function () { setAccountPhoneCountry(country.code, true); closeAccountCountryModal(true); });
+      list.appendChild(item);
+    });
+  }
+  function openAccountCountryModal() {
+    if (accountCountryModalOpen || accountBusy || pageMode() !== 'account' || accountData && accountData.phase === 'code') return;
+    accountCountryReturnFocus = document.activeElement;
+    accountCountryModalOpen = true;
+    var modal = document.getElementById('account-country-modal');
+    modal.classList.remove('is-hidden'); modal.setAttribute('aria-hidden', 'false');
+    setAccountPhoneCountry(accountPhoneCountryCode, false);
+    goFocus(document.querySelector('.account-country-item.is-selected') || firstVisible('.account-country-item'));
+  }
+  function closeAccountCountryModal(selected) {
+    if (!accountCountryModalOpen) return;
+    accountCountryModalOpen = false;
+    var modal = document.getElementById('account-country-modal');
+    modal.classList.add('is-hidden'); modal.setAttribute('aria-hidden', 'true');
+    var target = selected ? document.getElementById('account-phone') : accountCountryReturnFocus;
+    accountCountryReturnFocus = null;
+    goFocus(target && focusables().indexOf(target) >= 0 ? target : document.getElementById('account-country'));
+  }
   function openAccountKeypad(field) {
     if (!numericKeypad || !field || field.disabled || accountBusy || pageMode() !== 'account' || accountKeypadOpen()) return;
     accountKeypadReturnFocus = field;
     accountKeypadPhase = accountData && accountData.phase || 'phone';
     var kind = field.id === 'account-code' ? 'code' : 'phone';
-    if (numericKeypad.open(kind, field.value) && !desktopShell && accountNumberScan) accountNumberScan.start(kind);
+    if (numericKeypad.open(kind, field.value, kind === 'phone' ? accountPhoneCountry() : null) && !desktopShell && accountNumberScan) accountNumberScan.start(kind, kind === 'phone' ? accountPhoneCountry() : null);
   }
 
   function normalizedKey(event) {
@@ -1460,6 +1569,13 @@
     }
     if (current && current.classList.contains('player-text-input') && ['Escape', 'ArrowUp', 'ArrowDown'].indexOf(key) < 0) return;
     var direction = ({ ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' })[key];
+
+    if (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) {
+      if (key === 'Escape' || key === 'Backspace') handleBack();
+      else if (key === 'Enter' && !event.repeat && current && typeof current.click === 'function') current.click();
+      else if (direction) { var actorTarget = moveModalFrom(current, direction); if (actorTarget) goFocus(actorTarget); }
+      event.preventDefault(); event.stopPropagation(); return;
+    }
 
     var command = ({ MediaPlayPause: 'toggle', MediaPlay: 'play', MediaPause: 'pause', MediaFastForward: 'forward', MediaRewind: 'rewind', ' ': 'toggle' })[key];
     if (command && (!event.repeat || command === 'forward' || command === 'rewind') && handleMediaCommand(command)) {
@@ -1549,7 +1665,7 @@
     var playerMode = pageMode() === 'player';
     var fullscreenRecommendation = pageMode() === 'recommend' && shell.classList.contains('is-cinema');
     if ((!playerMode && !fullscreenRecommendation) || zoneOf(document.activeElement) !== 'feed' ||
-      detailModalOpen || playerOptionsOpen || confirmOpen || discussionOpen) return false;
+      detailModalOpen || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || playerOptionsOpen || confirmOpen || discussionOpen) return false;
     step = Number(step);
     if (step !== -1 && step !== 1) return false;
 
@@ -1621,7 +1737,7 @@
     button.disabled = !enabled;
   }
   function notificationCanPopup() {
-    return !applicationInBackground && !applicationHidden() && !isPlaybackPage() && !detailModalOpen && !playerOptionsOpen && !discussionOpen && !confirmOpen && !supportModalOpen;
+    return !applicationInBackground && !applicationHidden() && !isPlaybackPage() && !detailModalOpen && !(typeof actorWorksOpen !== 'undefined' && actorWorksOpen) && !playerOptionsOpen && !discussionOpen && !confirmOpen && !supportModalOpen;
   }
   function notificationHidePopup() {
     clearTimeout(notificationPopupTimer);
@@ -1725,7 +1841,7 @@
   function scheduleControlsHide() {
     clearTimeout(controlsTimer);
     var video = document.getElementById('hero-video');
-    if (!isPlaybackPage() || shell.classList.contains('is-controls-hidden') || video.paused || video.ended || detailModalOpen || confirmOpen || playerOptionsOpen || discussionOpen || ['sidebar', 'channels'].indexOf(zoneOf(document.activeElement)) >= 0) return;
+    if (!isPlaybackPage() || shell.classList.contains('is-controls-hidden') || video.paused || video.ended || detailModalOpen || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || confirmOpen || playerOptionsOpen || discussionOpen || ['sidebar', 'channels'].indexOf(zoneOf(document.activeElement)) >= 0) return;
     controlsTimer = setTimeout(function () { hideControls(); }, 4000);
   }
   function revealControls() {
@@ -1734,7 +1850,7 @@
   }
   function hideControls() {
     clearTimeout(controlsTimer);
-    if (!isPlaybackPage() || detailModalOpen || confirmOpen || playerOptionsOpen || discussionOpen || zoneOf(document.activeElement) === 'sidebar') return;
+    if (!isPlaybackPage() || detailModalOpen || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || confirmOpen || playerOptionsOpen || discussionOpen || zoneOf(document.activeElement) === 'sidebar') return;
     shell.classList.add('is-controls-hidden');
     goFocus(document.getElementById('hero-feed-focus'));
   }
@@ -2163,10 +2279,12 @@
     if (endRecommendations && endRecommendations.close(true)) return true;
     if (searchScanOpen) { closeSearchScan(true); return true; }
     if (typeof danmakuScanOpen !== 'undefined' && danmakuScanOpen) { closeDanmakuScan(true); return true; }
+    if (accountCountryModalOpen) { closeAccountCountryModal(false); return true; }
     if (accountKeypadOpen()) { numericKeypad.close('back'); return true; }
     if (supportModalOpen) { closeSupportQR(); return true; }
     if (followNotificationViewOpen) { closeFollowNotifications(); return true; }
     if (rankFilterOpen) { closeRankFilter(true); return true; }
+    if (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) { closeActorWorks(true); return true; }
     if (confirmOpen) closeConfirmation();
     else if (playerOptionsOpen) closePlayerOptions();
     else if (detailModalOpen) closeDetail();
@@ -2207,6 +2325,10 @@
     cancelQualitySwitch();
     cancelSeasonSwitch();
     ++continuationGeneration;
+    // An ended source may have started its detail request just before the
+    // app was backgrounded. Keep that completed session eligible for one
+    // foreground retry after the stale request settles.
+    if (activePlayback && activePlayback.continuationPending && activePlayback.completed) activePlayback.endedPending = true;
     if (activePlayback && activePlayback.continuationPending) setPlayerStatus('');
     saveProgress(true);
     video.pause();
@@ -2216,6 +2338,7 @@
   function resumeFromBackground() {
     applicationInBackground = false;
     updatePlaybackControls();
+    resumePendingContinuation(activePlayback);
     if (pageMode() === 'account' && document.activeElement && document.activeElement.closest('#account-keypad-modal')) goFocus(firstContentFocus());
     notificationCheck(false);
     flushNotificationPopup();
@@ -2234,7 +2357,7 @@
   }
   function canShowAppUpdate() {
     var current = document.activeElement;
-    return !applicationInBackground && !applicationHidden() && !isPlaybackPage() && !supportModalOpen && !detailModalOpen && !discussionOpen && !confirmOpen && !playerOptionsOpen && !accountBusy && !accountKeypadOpen() && !(current && /INPUT|TEXTAREA/.test(current.tagName));
+    return !applicationInBackground && !applicationHidden() && !isPlaybackPage() && !supportModalOpen && !detailModalOpen && !(typeof actorWorksOpen !== 'undefined' && actorWorksOpen) && !discussionOpen && !confirmOpen && !playerOptionsOpen && !accountBusy && !accountKeypadOpen() && !(current && /INPUT|TEXTAREA/.test(current.tagName));
   }
   // Old native IME callbacks are irrelevant to the app-owned numeric keypad.
   window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, desktopFullscreenChanged: desktopFullscreenChanged, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {} };
@@ -2580,6 +2703,7 @@
     var owner = data.profile && data.profile.uid || '';
     var previousOwner = previous && previous.profile && previous.profile.uid || '';
     accountData = data;
+    if (data.country_code) setAccountPhoneCountry(data.country_code, false);
     updateFollowNotificationAccess();
     if (smsVerification) smsVerification.setSession(!data.logged_in && data.phase === 'mfa' && data.mfa_expires_at ? { key: String(data.mfa_expires_at) + ':' + (data.sms_number || '') + ':' + (data.sms_content || ''), expiresAt: data.mfa_expires_at } : null);
     accountCountdownUntil = Date.now() + (data.retry_after || 0) * 1000;
@@ -2638,7 +2762,8 @@
     document.getElementById('account-change-phone').classList.toggle('is-hidden', data.phase !== 'code');
     var phoneInput = document.getElementById('account-phone');
     document.querySelectorAll('.account-input').forEach(function (node) { node.disabled = accountBusy; renderAccountNumber(node); });
-    phoneInput.disabled = accountBusy || data.phase === 'code' && /^1[3-9]\d{9}$/.test(phoneInput.value) && !(accountKeypadOpen() && numericKeypad.snapshot().kind === 'phone');
+    document.getElementById('account-country').disabled = accountBusy || data.phase === 'code';
+    phoneInput.disabled = accountBusy || data.phase === 'code' && accountPhoneValid(phoneInput.value) && !(accountKeypadOpen() && numericKeypad.snapshot().kind === 'phone');
     document.querySelectorAll('#account-page .account-action').forEach(function (node) { node.disabled = accountBusy; });
     document.getElementById('account-cancel').disabled = false;
     document.getElementById('account-verify').disabled = accountBusy || mfaExpired || verification.state === 'waiting';
@@ -2732,8 +2857,8 @@
   }
   function accountSendCode() {
     var phone = document.getElementById('account-phone').value.trim();
-    if (!/^1[3-9]\d{9}$/.test(phone)) { setAccountMessage('请输入正确的手机号'); goFocus(document.getElementById('account-phone')); return; }
-    accountRequest('send-code', { phone: phone }).then(function (ok) {
+    if (!accountPhoneValid(phone)) { setAccountMessage('请输入正确的' + accountPhoneCountry().name + '手机号'); goFocus(document.getElementById('account-phone')); return; }
+    accountRequest('send-code', { phone: phone, country_code: accountPhoneCountryCode }).then(function (ok) {
       if (pageMode() === 'account') goFocus(ok ? document.getElementById('account-code') : firstVisible('.account-input'));
     });
   }
@@ -2741,7 +2866,7 @@
     var phone = document.getElementById('account-phone').value.trim();
     var code = document.getElementById('account-code').value.trim();
     if (!/^\d{4,8}$/.test(code)) { setAccountMessage('请输入短信验证码'); goFocus(document.getElementById('account-code')); return; }
-    accountRequest('login', { phone: phone, code: code }).then(function (ok) {
+    accountRequest('login', { phone: phone, country_code: accountPhoneCountryCode, code: code }).then(function (ok) {
       if (!ok) { if (pageMode() === 'account') goFocus(document.getElementById('account-code')); return; }
       document.getElementById('account-code').value = '';
       renderAccountNumber(document.getElementById('account-code'));
@@ -3164,15 +3289,41 @@
       (!playback.continuationToken || playback.continuationToken === continuationGeneration) && !applicationInBackground && !applicationHidden();
   }
 
+  function deferContinuation(playback) {
+    if (!playback || activePlayback !== playback || playback.generation !== feedGeneration || playback.owner !== accountEpoch ||
+        !isPlaybackPage() || !applicationInBackground && !applicationHidden()) return false;
+    playback.endedPending = true;
+    return true;
+  }
+
+  function resumePendingContinuation(playback) {
+    if (!playback || !playback.endedPending || playback.continuationPending || applicationInBackground || applicationHidden()) return false;
+    if (!canContinuePlayback(playback)) return false;
+    playback.endedPending = false;
+    continueAfterEpisode(playback);
+    return true;
+  }
+
   function continueAfterEpisode(playback) {
-    if (!canContinuePlayback(playback) || playback.continuationPending || seasonSwitchRequest) return;
+    if (!canContinuePlayback(playback)) { deferContinuation(playback); return; }
+    if (playback.continuationPending) { playback.endedPending = true; return; }
+    // A user-initiated season switch owns this transition. Do not let an
+    // episode boundary race it and start a different source underneath.
+    if (seasonSwitchRequest) return;
     // Android 6 WebViews can support Promise without Promise.finally.
-    function finishContinuation() { playback.continuationPending = false; playback.continuationToken = 0; }
+    function finishContinuation() {
+      playback.continuationPending = false;
+      playback.continuationToken = 0;
+      if (playback.endedPending && canContinuePlayback(playback)) {
+        playback.endedPending = false;
+        setTimeout(function () { if (activePlayback === playback) continueAfterEpisode(playback); }, 0);
+      }
+    }
     playback.continuationPending = true;
     playback.continuationToken = ++continuationGeneration;
     setPlayerStatus(episodeLoadingText(playback.item.episode_count > playback.episode ? playback.episode + 1 : 0));
     getDetail(playback.item).then(function (detail) {
-      if (!canContinuePlayback(playback)) return;
+      if (!canContinuePlayback(playback)) { deferContinuation(playback); return; }
       if (detail.vid_list && detail.vid_list[playback.episode]) {
         playFeedItem(feedIndex, playback.episode + 1, 0, playback);
         return;
@@ -3188,10 +3339,11 @@
           return payload.data;
         }); })
         .then(function (result) {
-          if (!canContinuePlayback(playback)) return;
+          if (!canContinuePlayback(playback)) { deferContinuation(playback); return; }
           var epoch = accountEpoch;
           return fetchData('/api/v1/series/seasons?series_id=' + encodeURIComponent(playback.item.series_id)).then(function (series) {
-            if (!canContinuePlayback(playback) || epoch !== accountEpoch) return;
+            if (!canContinuePlayback(playback)) { deferContinuation(playback); return; }
+            if (epoch !== accountEpoch) return;
             if (!Array.isArray(series.items)) throw new Error('系列剧响应无效');
             var current = series.items.filter(function (item) { return item.series_id === playback.item.series_id; })[0];
             var season = current && current.season_index || result.current_season;
@@ -3225,7 +3377,7 @@
 
         });
     }).catch(function (error) {
-      if (!canContinuePlayback(playback)) return;
+      if (!canContinuePlayback(playback)) { deferContinuation(playback); return; }
       setPlayerStatus(''); revealControls();
       showNotice('连续播放已暂停：' + error.message);
     }).then(finishContinuation, finishContinuation);
@@ -3725,6 +3877,7 @@
         if (!vid) throw new Error('第' + episode + '集暂无视频数据');
         var playing = Object.assign({}, item, detail, { start_episode: episode, vid: vid });
         activePlayback = { item: playing, episode: episode, vid: vid, position: position, generation: generation, owner: accountEpoch, started: false, stableSince: 0, lastWrite: 0, completed: false,
+          endedPending: false,
           mode: '', rangeFallback: '', rangeFallbackAttempted: false,
           recoveryAttempts: recovery && recovery.recoveryAttempts || 0,
           timing: { episode: episode, automatic_next: fastContinuation, started_at: switchStartedAt, ready_at: 0, prefetch_ms: null, prepared_before_switch: false, reported: false } };
@@ -4204,6 +4357,77 @@
     document.getElementById('rank-filter-modal').classList.add('is-hidden'); document.getElementById('rank-filter-modal').setAttribute('aria-hidden', 'true');
     if (restore) goFocus(document.getElementById('rank-filter-open'));
   }
+
+  function renderActorWorks(result) {
+    var modal = document.getElementById('actor-works-modal');
+    var list = document.getElementById('actor-works-list');
+    var progress = document.getElementById('actor-works-progress');
+    var retry = document.getElementById('actor-works-retry');
+    document.getElementById('actor-works-name').textContent = result.actor && result.actor.name ? result.actor.name : '演员作品';
+    var avatar = document.getElementById('actor-works-avatar');
+    if (result.actor && result.actor.avatar) { avatar.src = result.actor.avatar; avatar.classList.remove('is-hidden'); } else { avatar.removeAttribute('src'); avatar.classList.add('is-hidden'); }
+    document.getElementById('actor-works-description').textContent = result.actor && result.actor.description ? result.actor.description : '';
+    list.innerHTML = '';
+    retry.classList.add('is-hidden');
+    var items = result.items || [];
+    if (!items.length) { progress.textContent = '暂时没有找到该演员的作品'; return; }
+    progress.textContent = '共 ' + items.length + ' 部作品';
+    items.forEach(function (item, index) {
+      var card = document.createElement('button');
+      card.className = 'actor-work-card'; card.dataset.focus = 'actor-work-' + item.series_id;
+      var image = document.createElement('img'); image.className = 'actor-work-image'; setCover(image, item);
+      var title = document.createElement('strong'); title.className = 'actor-work-title'; title.textContent = item.title || '未命名短剧';
+      var meta = document.createElement('span'); meta.className = 'actor-work-meta'; meta.textContent = dramaMeta(item);
+      card.appendChild(image); card.appendChild(title); card.appendChild(meta);
+      card.addEventListener('click', function () { var returnFocus = actorWorksReturnFocus; closeActorWorks(false); startPlayer(item, returnFocus); });
+      list.appendChild(card);
+    });
+    goFocus(firstVisible('.actor-work-card'));
+  }
+
+  function openActorWorks(item, preserveReturnFocus) {
+    if (!item || !item.actor_id) return;
+    if (actorWorksRequest && actorWorksRequest.abort) actorWorksRequest.abort();
+    if (!preserveReturnFocus) actorWorksReturnFocus = document.activeElement;
+    actorWorksItem = item;
+    actorWorksOpen = true;
+    var generation = ++actorWorksGeneration;
+    var modal = document.getElementById('actor-works-modal');
+    modal.classList.remove('is-hidden'); modal.setAttribute('aria-hidden', 'false');
+    document.getElementById('actor-works-name').textContent = item.title || '演员作品';
+    document.getElementById('actor-works-avatar').classList.add('is-hidden');
+    document.getElementById('actor-works-description').textContent = item.intro || '';
+    document.getElementById('actor-works-progress').textContent = '正在读取作品…';
+    document.getElementById('actor-works-list').innerHTML = '';
+    document.getElementById('actor-works-retry').classList.add('is-hidden');
+    goFocus(document.getElementById('actor-works-close'));
+    actorWorksRequest = typeof AbortController === 'function' ? new AbortController() : null;
+    fetchData('/api/v1/actors/works?actor_id=' + encodeURIComponent(item.actor_id), actorWorksRequest ? { signal: actorWorksRequest.signal } : {}).then(function (data) {
+      if (!actorWorksOpen || generation !== actorWorksGeneration) return;
+      renderActorWorks(data);
+    }).catch(function (error) {
+      if (!actorWorksOpen || generation !== actorWorksGeneration || error.name === 'AbortError') return;
+      document.getElementById('actor-works-progress').textContent = '作品读取失败：' + error.message;
+      document.getElementById('actor-works-retry').classList.remove('is-hidden');
+      goFocus(document.getElementById('actor-works-retry'));
+    }).then(function () { if (generation === actorWorksGeneration) actorWorksRequest = null; });
+  }
+
+  function closeActorWorks(restore) {
+    if (actorWorksRequest && actorWorksRequest.abort) actorWorksRequest.abort();
+    actorWorksRequest = null; ++actorWorksGeneration; actorWorksOpen = false;
+    var modal = document.getElementById('actor-works-modal');
+    modal.classList.add('is-hidden'); modal.setAttribute('aria-hidden', 'true');
+    var target = actorWorksReturnFocus && document.contains(actorWorksReturnFocus) ? actorWorksReturnFocus : firstRankRow();
+    actorWorksReturnFocus = null;
+    actorWorksItem = null;
+    if (restore !== false) goFocus(target);
+  }
+
+  function retryActorWorks() {
+    if (!actorWorksItem) return;
+    openActorWorks(actorWorksItem, true);
+  }
   function applyRankFilter() {
     if (!rankDraftSelection) { closeRankFilter(true); return; }
     rankSelection = Object.assign({}, rankDraftSelection); closeRankFilter(false); renderRankSelectors(rankOptions); loadRank(); goFocus(document.getElementById('rank-filter-open'));
@@ -4391,6 +4615,7 @@
       row.setAttribute('aria-label', (item.actor_id ? '演员：' : '播放：') + item.title);
       row.dataset.index = String(index);
       row.dataset.focus = 'rank-item-' + item.series_id;
+      row.__rankItem = item;
       var rank = document.createElement('span');
       rank.className = 'rank-row-rank';
       rank.textContent = String(item.rank || index + 1);
@@ -4422,9 +4647,14 @@
       detail.textContent = '详情';
       play.addEventListener('click', function (event) { event.stopPropagation(); startPlayer(item, play); });
       detail.addEventListener('click', function (event) { event.stopPropagation(); openDetail(item); });
-      if (!item.actor_id) { side.appendChild(play); side.appendChild(detail); }
+      if (item.actor_id) {
+        var actor = document.createElement('button');
+        actor.className = 'rank-row-actor'; actor.textContent = '查看作品'; actor.dataset.focus = 'rank-actor-' + item.actor_id;
+        actor.addEventListener('click', function (event) { event.stopPropagation(); openActorWorks(item); });
+        side.appendChild(actor);
+      } else { side.appendChild(play); side.appendChild(detail); }
       row.appendChild(rank); row.appendChild(item.actor_id ? image : dramaPoster(image, item)); row.appendChild(copy); row.appendChild(side);
-      row.addEventListener('click', function (event) { if (!item.actor_id && !event.target.closest('button')) startPlayer(item, row); });
+      row.addEventListener('click', function (event) { if (item.actor_id) openActorWorks(item); else if (!event.target.closest('button')) startPlayer(item, row); });
       row.addEventListener('focus', function () { try { row.scrollIntoView({ block: 'nearest' }); } catch (ignore) {} });
       rankList.appendChild(row);
     });
@@ -5269,6 +5499,7 @@
     if (supportModalOpen) closeSupportQR();
     if (accountKeypadOpen()) numericKeypad.close('page');
     engagement.clear();
+    if (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) closeActorWorks(false);
     if (detailModalOpen) closeDetail();
     closePlayerOptions(false);
     var recommendation = rememberRecommendation();
@@ -5362,6 +5593,8 @@
       scrollEndRecommendationIntoView(event.target);
     } else setTimeout(flushEndRecommendations, 0);
     if (scanModalOpen() && !event.target.closest('#search-scan-modal')) { goFocus(document.getElementById('search-scan-close')); return; }
+    if (accountCountryModalOpen && !event.target.closest('#account-country-modal')) { goFocus(document.querySelector('.account-country-item.is-selected') || document.getElementById('account-country-close')); return; }
+    if (typeof actorWorksOpen !== 'undefined' && actorWorksOpen && !event.target.closest('#actor-works-modal')) { goFocus(document.getElementById('actor-works-close')); return; }
     if (detailModalOpen && event.target.id !== 'detail-tab-episodes') detailFocusPending = false;
     if (accountKeypadOpen()) {
       if (!event.target.closest('#account-keypad-modal')) { goFocus(accountKeypadFocus()); return; }
@@ -5383,7 +5616,7 @@
     if (zone === 'sidebar') clearTimeout(controlsTimer);
     else if (isPlaybackPage() && ['controls', 'timeline', 'actions', 'channels'].indexOf(zone) >= 0) revealControls();
     else if (isPlaybackPage() && zone === 'feed') scheduleControlsHide();
-    if (!scanModalOpen() && !accountKeypadOpen() && !detailModalOpen && !confirmOpen && !playerOptionsOpen && !discussionOpen && zone !== 'sidebar') {
+    if (!scanModalOpen() && !accountKeypadOpen() && !detailModalOpen && !(typeof actorWorksOpen !== 'undefined' && actorWorksOpen) && !confirmOpen && !playerOptionsOpen && !discussionOpen && zone !== 'sidebar') {
       lastContentFocus = event.target;
       lastPageFocus[pageMode()] = event.target;
     }
@@ -5487,6 +5720,8 @@
   document.getElementById('rank-filter-close').addEventListener('click', function () { closeRankFilter(true); });
   document.getElementById('rank-filter-cancel').addEventListener('click', function () { closeRankFilter(true); });
   document.getElementById('rank-filter-apply').addEventListener('click', applyRankFilter);
+  document.getElementById('actor-works-close').addEventListener('click', function () { closeActorWorks(true); });
+  document.getElementById('actor-works-retry').addEventListener('click', retryActorWorks);
   document.querySelectorAll('.rank-view-tab').forEach(function (button) {
     button.addEventListener('click', function () { setRankView(button.dataset.rankView); });
   });
@@ -5511,6 +5746,7 @@
   });
   document.getElementById('account-send-code').addEventListener('click', accountSendCode);
   document.getElementById('account-login').addEventListener('click', accountLogin);
+  document.getElementById('account-country-close').addEventListener('click', function () { closeAccountCountryModal(false); });
   document.getElementById('account-verify').addEventListener('click', verifyAccountSMS);
   document.getElementById('account-cancel').addEventListener('click', cancelAccountVerification);
   document.getElementById('account-change-phone').addEventListener('click', cancelAccountVerification);
@@ -5682,8 +5918,18 @@
   media.addEventListener('ended', function () {
     clearRangeStallTimer();
     var playback = activePlayback;
-    if (!playback || !playback.started || playback.generation !== feedGeneration) return;
+    if (!playback || playback.generation !== feedGeneration) return;
+    // Native Media3 can report the terminal state before its playing callback
+    // reaches WebView. A real rendered frame plus ended is sufficient proof
+    // that this session did play; do not lose automatic continuation solely
+    // because the two callbacks crossed.
+    if (!playback.started && !(playback.presentation && playback.presentation.rendered)) return;
+    if (!playback.started) playback.started = true;
     saveProgress(true, true);
+    if (applicationInBackground || applicationHidden()) {
+      playback.endedPending = true;
+      return;
+    }
     continueAfterEpisode(playback);
   });
   document.addEventListener('visibilitychange', function () { if (desktopShell) return; if (applicationHidden()) pauseForBackground(); else resumeFromBackground(); });
@@ -5717,7 +5963,7 @@
       document.getElementById('account-keypad-title').textContent = state.kind === 'code' ? '输入验证码' : '输入手机号';
       var value = document.getElementById('account-keypad-value');
       value.textContent = state.value || '请输入数字'; value.classList.toggle('is-empty', !state.value);
-      document.getElementById('account-keypad-hint').textContent = state.open ? state.value.length + ' / ' + state.maxLength + ' 位 · 也可使用遥控器数字键' : '';
+      document.getElementById('account-keypad-hint').textContent = state.open ? state.value.length + ' / ' + state.maxLength + ' 位 · ' + state.countryName + ' · 也可使用遥控器数字键' : '';
       document.getElementById('account-keypad-error').textContent = state.error;
       if (state.open && document.activeElement !== accountKeypadFocus()) goFocus(accountKeypadFocus());
     },
@@ -5744,9 +5990,16 @@
       }, 0);
     }
   });
-  function requestScanInput(method, session, kind) {
+  try {
+    var savedPhoneCountry = window.localStorage.getItem('hongguo.account.phoneCountryCode');
+    if (savedPhoneCountry) accountPhoneCountryCode = savedPhoneCountry;
+  } catch (ignoredPhoneCountryRead) {}
+  buildAccountCountryList();
+  if (!setAccountPhoneCountry(accountPhoneCountryCode, false)) setAccountPhoneCountry('+86', false);
+  document.getElementById('account-country').addEventListener('click', openAccountCountryModal);
+  function requestScanInput(method, session, kind, meta) {
       var options = { method: method };
-      if (method === 'POST') { options.headers = { 'Content-Type': 'application/json' }; options.body = JSON.stringify({ kind: kind }); }
+      if (method === 'POST') { options.headers = { 'Content-Type': 'application/json' }; options.body = JSON.stringify({ kind: kind, country_code: meta && meta.country_code || '' }); }
       return fetchData('/api/v1/number-input' + (session ? '?session=' + encodeURIComponent(session) : ''), options);
   }
   searchHistory = window.HongguoSearchHistory.create({

@@ -8,11 +8,19 @@
   var keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'delete', '0', 'done'];
   function create(options) {
     var active = false, kind = '', value = '', error = '', index = 0;
-    function snapshot() { return { open: active, kind: kind, value: value, error: error, index: index, maxLength: kind === 'phone' ? 11 : 8 }; }
+    var phonePolicy = { code: '+86', name: '中国大陆', minLength: 11, maxLength: 11 };
+    function phoneValid(digits) {
+      if (!phonePolicy || digits.length < phonePolicy.minLength || digits.length > phonePolicy.maxLength || !/^[0-9]+$/.test(digits)) return false;
+      return phonePolicy.code !== '+86' || /^1[3-9][0-9]{9}$/.test(digits);
+    }
+    function snapshot() { return { open: active, kind: kind, value: value, error: error, index: index,
+      minLength: kind === 'phone' ? phonePolicy.minLength : 4, maxLength: kind === 'phone' ? phonePolicy.maxLength : 8,
+      countryCode: kind === 'phone' ? phonePolicy.code : '', countryName: kind === 'phone' ? phonePolicy.name : '' }; }
     function render() { if (options.render) options.render(snapshot()); }
-    function open(field, initial) {
+    function open(field, initial, policy) {
       if (active || (field !== 'phone' && field !== 'code')) return false;
-      active = true; kind = field; value = String(initial || '').replace(/[^0-9]/g, '').slice(0, field === 'phone' ? 11 : 8); error = ''; index = 0;
+      if (field === 'phone' && policy) phonePolicy = policy;
+      active = true; kind = field; value = String(initial || '').replace(/[^0-9]/g, '').slice(0, field === 'phone' ? phonePolicy.maxLength : 8); error = ''; index = 0;
       render(); return true;
     }
     function close(reason) {
@@ -38,13 +46,13 @@
     function press(key) {
       if (!active) return false;
       if (key === 'done') {
-        var valid = kind === 'phone' ? /^1[3-9][0-9]{9}$/.test(value) : /^[0-9]{4,8}$/.test(value);
-        if (!valid) { error = kind === 'phone' ? '请输入正确的11位手机号' : '请输入4至8位验证码'; render(); return true; }
+        var valid = kind === 'phone' ? phoneValid(value) : /^[0-9]{4,8}$/.test(value);
+        if (!valid) { error = kind === 'phone' ? '请输入正确的' + phonePolicy.name + '手机号' : '请输入4至8位验证码'; render(); return true; }
         return close('complete');
       }
       if (key === 'delete') value = value.slice(0, -1);
       else if (/^[0-9]$/.test(key)) {
-        if (value.length >= (kind === 'phone' ? 11 : 8)) { error = kind === 'phone' ? '手机号最多11位' : '验证码最多8位'; render(); return true; }
+        if (value.length >= (kind === 'phone' ? phonePolicy.maxLength : 8)) { error = kind === 'phone' ? '手机号最多' + phonePolicy.maxLength + '位' : '验证码最多8位'; render(); return true; }
         value += key;
       } else return false;
       error = '';
@@ -64,7 +72,7 @@
       return true;
     }
     function completeRemote(field, digits) {
-      if (!active || field !== kind || typeof digits !== 'string' || !(kind === 'phone' ? /^1[3-9][0-9]{9}$/.test(digits) : /^[0-9]{4,8}$/.test(digits))) return false;
+      if (!active || field !== kind || typeof digits !== 'string' || !(kind === 'phone' ? phoneValid(digits) : /^[0-9]{4,8}$/.test(digits))) return false;
       value = digits;
       if (options.change) options.change(kind, value);
       return close('complete');

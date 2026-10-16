@@ -122,6 +122,20 @@ type SearchResult struct {
 	Items []Drama `json:"items"`
 }
 
+// ActorWorksResult is returned by the public actor search page. Actor IDs are
+// kept as strings because Hongguo uses 19-digit identifiers.
+type ActorWorksResult struct {
+	Actor ActorSummary `json:"actor"`
+	Items []Drama      `json:"items"`
+}
+
+type ActorSummary struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Avatar      string `json:"avatar,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
 type RankRequest struct {
 	Path string
 }
@@ -637,6 +651,58 @@ func (c *hongguoClient) Search(ctx context.Context, query string) (SearchResult,
 	for _, row := range rows {
 		drama, valid := normalizeDrama(row)
 		if !valid || drama.SeriesID == "" || seen[drama.SeriesID] {
+			continue
+		}
+		seen[drama.SeriesID] = true
+		result.Items = append(result.Items, drama)
+	}
+	return result, nil
+}
+
+// ActorWorks uses the public character page used by the web client. The page
+// carries actor metadata in userInfo and the real works in videoList.
+func (c *hongguoClient) ActorWorks(ctx context.Context, actorID string) (ActorWorksResult, error) {
+	actorID = strings.TrimSpace(actorID)
+	if !validID(actorID) || actorID == "0" {
+		return ActorWorksResult{}, errors.New("actor_id 无效")
+	}
+	body, err := c.getBytes(ctx, c.webBase+"/character/"+url.PathEscape(actorID), "text/html")
+	if err != nil {
+		return ActorWorksResult{}, err
+	}
+	router, err := extractRouterData(body)
+	if err != nil {
+		return ActorWorksResult{}, err
+	}
+	routerObject, ok := asMap(router)
+	if !ok {
+		return ActorWorksResult{}, errors.New("演员作品响应根数据无效")
+	}
+	loaderData, ok := asMap(routerObject["loaderData"])
+	if !ok {
+		return ActorWorksResult{}, errors.New("演员作品响应缺少 loaderData")
+	}
+	page, ok := asMap(loaderData["character_(id)/page"])
+	if !ok {
+		return ActorWorksResult{}, errors.New("演员作品响应缺少详情页面数据")
+	}
+	result := ActorWorksResult{Actor: ActorSummary{ID: actorID}, Items: []Drama{}}
+	user, userOK := asMap(page["userInfo"])
+	if !userOK {
+		return ActorWorksResult{}, errors.New("演员作品响应缺少 userInfo")
+	}
+	id := firstNonEmpty(asString(user["actor_id"]), asString(user["actor_id_str"]), asString(user["person_id"]))
+	if id != actorID {
+		return ActorWorksResult{}, errors.New("演员作品响应与请求不一致")
+	}
+	result.Actor.Name = firstNonEmpty(asString(user["user_name"]), asString(user["name"]), "未知演员")
+	result.Actor.Avatar = firstNonEmpty(asString(user["user_avatar"]), asString(user["avatar"]))
+	result.Actor.Description = firstNonEmpty(asString(user["description"]), asString(user["intro"]))
+	works, _ := page["videoList"].([]any)
+	seen := map[string]bool{}
+	for _, work := range works {
+		drama, valid := normalizeDrama(work)
+		if !valid || !validID(drama.SeriesID) || drama.SeriesID == "0" || seen[drama.SeriesID] {
 			continue
 		}
 		seen[drama.SeriesID] = true

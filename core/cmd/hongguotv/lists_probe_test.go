@@ -102,6 +102,7 @@ func TestLiveListAdapters(t *testing.T) {
 	t.Logf("danmaku count=%d window-end=%d", len(out.Items), out.WindowEnd)
 }
 
+
 func TestLiveRemainingReadProtocols(t *testing.T) {
 	dir := os.Getenv("HONGGUO_REMAINING_READ_PROBE_DIR")
 	if dir == "" {

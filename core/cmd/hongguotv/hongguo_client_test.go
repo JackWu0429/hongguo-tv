@@ -176,6 +176,41 @@ func TestSeriesDetailCreatesLockedEpisodes(t *testing.T) {
 	}
 }
 
+func TestActorWorksParsesNestedVideoList(t *testing.T) {
+	html := `<!doctype html><script>window._ROUTER_DATA = {"loaderData":{"character_layout":{"videoList":[]},"character_(id)/page":{"userInfo":{"actor_id":"7377326001203713305","user_name":"测试演员","user_avatar":"https://avatar","description":"演员简介"},"videoList":[{"series_id":"1234567890123456789","series_title":"第一部","series_cover":"https://cover-1","series_intro":"简介1","episode_cnt":12,"vid_list":["1111111111111111111"]},{"series_id":"2234567890123456789","series_title":"第二部","series_cover":"https://cover-2","series_intro":"简介2","episode_cnt":8,"vid_list":["2222222222222222222"]}]}}};</script>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/character/7377326001203713305" {
+			t.Fatalf("unexpected actor path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(html))
+	}))
+	defer server.Close()
+	client := newHongguoClient()
+	client.webBase = server.URL
+	result, err := client.ActorWorks(context.Background(), "7377326001203713305")
+	if err != nil {
+		t.Fatalf("ActorWorks failed: %v", err)
+	}
+	if result.Actor.ID != "7377326001203713305" || result.Actor.Name != "测试演员" || len(result.Items) != 2 {
+		t.Fatalf("unexpected actor result: %#v", result)
+	}
+	if result.Items[0].SeriesID != "1234567890123456789" || result.Items[0].Title != "第一部" || result.Items[1].VidList[0] != "2222222222222222222" {
+		t.Fatalf("nested works were not normalized: %#v", result.Items)
+	}
+}
+
+func TestActorWorksRejectsMismatchedActor(t *testing.T) {
+	html := `<!doctype html><script>window._ROUTER_DATA = {"loaderData":{"character_(id)/page":{"userInfo":{"actor_id":"9999999999999999999"},"videoList":[]}}};</script>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(html)) }))
+	defer server.Close()
+	client := newHongguoClient()
+	client.webBase = server.URL
+	if _, err := client.ActorWorks(context.Background(), "7377326001203713305"); err == nil || !strings.Contains(err.Error(), "不一致") {
+		t.Fatalf("mismatched actor should fail, got %v", err)
+	}
+}
+
 func TestNormalizeDramaReadsTopLevelAndNestedSeriesStatus(t *testing.T) {
 	ongoing, ok := normalizeDrama(map[string]any{
 		"series_id": "1234567890123456789", "series_title": "连载剧", "series_status": json.Number("0"),

@@ -1,0 +1,10 @@
+{
+  "id": "com.aston314.hongguo.webos.service",
+  "description": "红果短剧 webOS 实验版本机服务",
+  "services": [
+    {
+      "name": "com.aston314.hongguo.webos.service",
+      "description": "红果短剧 webOS 实验版本机服务"
+    }
+  ]
+}

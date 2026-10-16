@@ -6,7 +6,7 @@ function deferred(){let resolve,reject;const promise=new Promise((r,j)=>{resolve
 const flush=()=>new Promise(r=>setImmediate(r));
 function fixture(){
   let now=0;const requests=[],render=[],completed=[],timers=[];
-  const scan=create({request:(method,id,kind)=>{let d=deferred();requests.push({method,id,kind,...d});return d.promise},
+  const scan=create({request:(method,id,kind,meta)=>{let d=deferred();requests.push({method,id,kind,meta,...d});return d.promise},
     render:s=>render.push(s),complete:(kind,value)=>completed.push({kind,value}),now:()=>now,
     schedule:fn=>{const timer={fn,active:true};timers.push(timer);return timer},unschedule:t=>{if(t)t.active=false}});
   return {scan,requests,render,completed,timers,advance:t=>now+=t,tick:()=>{const timer=timers.find(t=>t.active);assert.ok(timer);timer.active=false;timer.fn()}};
@@ -35,6 +35,15 @@ test('text scan accepts Chinese/letters/spaces but isolates late completion and 
 test('late create after Back is cancelled and cannot resurrect a QR',async()=>{
   const f=fixture();f.scan.start('phone');f.scan.stop();ready(f.requests[0],'old','phone');await flush();
   assert.equal(f.requests[1].method,'DELETE');assert.equal(f.requests[1].id,'old');assert.equal(f.render.at(-1).state,'closed');assert.equal(f.completed.length,0);
+});
+test('phone QR sends selected country metadata and validates the matching local number',async()=>{
+  const f=fixture(),policy={code:'+852',name:'中国香港',minLength:8,maxLength:8};
+  f.scan.start('phone',policy);assert.deepEqual(f.requests[0].meta,{country_code:'+852'});
+  ready(f.requests[0],'hk','phone');await flush();f.tick();
+  f.requests[1].resolve({state:'completed',kind:'phone',value:'61234567'});await flush();
+  assert.deepEqual(f.completed,[{kind:'phone',value:'61234567'}]);
+  const invalid=fixture();invalid.scan.start('phone',policy);ready(invalid.requests[0],'hk','phone');await flush();invalid.tick();
+  invalid.requests[1].resolve({state:'completed',kind:'phone',value:'1234567'});await flush();assert.equal(invalid.completed.length,0);
 });
 test('late poll or old create cannot replace the new field or cancel its session',async()=>{
   const f=fixture();f.scan.start('phone');ready(f.requests[0],'old','phone');await flush();f.tick();

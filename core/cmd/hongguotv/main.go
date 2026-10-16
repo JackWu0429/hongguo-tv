@@ -97,6 +97,7 @@ func main() {
 	mux.HandleFunc("/api/v1/series/next-season", s.nextSeason)
 	mux.HandleFunc("/api/v1/series/seasons", s.seriesSeasons)
 	mux.HandleFunc("/api/v1/search", s.search)
+	mux.HandleFunc("/api/v1/actors/works", s.actorWorks)
 	mux.HandleFunc("/api/v1/lists/", s.lists)
 	mux.HandleFunc("/api/v1/follow", s.follow)
 	mux.HandleFunc("/api/v1/notifications", s.notifications)
@@ -214,7 +215,7 @@ func (s *server) status(w http.ResponseWriter, r *http.Request) {
 		InstanceID:     s.instanceID,
 		Implementation: "go-api-adapter+embedded-playback",
 		StartedAt:      s.startedAt.Format(time.RFC3339),
-		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "ranking-radar", "search", "series-detail", "series-reviews", "related-series", "follow-updates", "notifications", "play-info", "embedded-playback", "cenc-mp4", "range-media", "local-history", "local-favorites", "local-likes", "resume-playback", "next-episode", "next-season", "account-login", "account-mfa", "cloud-library", "new-series", "release-calendar", "reservations", "recommend-feed", "comments", "danmaku", "infinite-scroll"},
+		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "actor-works", "ranking-radar", "search", "series-detail", "series-reviews", "related-series", "follow-updates", "notifications", "play-info", "embedded-playback", "cenc-mp4", "range-media", "local-history", "local-favorites", "local-likes", "resume-playback", "next-episode", "next-season", "account-login", "account-mfa", "cloud-library", "new-series", "release-calendar", "reservations", "recommend-feed", "comments", "danmaku", "infinite-scroll"},
 	})
 }
 
@@ -281,6 +282,24 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := s.hongguo.Search(r.Context(), r.URL.Query().Get("q"))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": result})
+}
+
+func (s *server) actorWorks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	actorID := strings.TrimSpace(r.URL.Query().Get("actor_id"))
+	if !validID(actorID) || actorID == "0" {
+		writeError(w, http.StatusBadRequest, "actor_id 无效")
+		return
+	}
+	result, err := s.hongguo.ActorWorks(r.Context(), actorID)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
