@@ -3,6 +3,8 @@ name: webOS experimental package
 on:
   workflow_dispatch:
   push:
+    branches:
+      - codex/webos-experimental
     paths:
       - 'webos/**'
       - 'scripts/build_webos.sh'
@@ -27,9 +29,35 @@ jobs:
         run: ./scripts/verify_webos.sh
       - name: Package experimental ipk
         run: ./scripts/build_webos.sh
-      - name: Upload experimental artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: hongguo-webos-experimental
-          path: dist/webos/*.ipk
-          if-no-files-found: error
+      - name: Prepare test release assets
+        id: release
+        run: |
+          version=$(node -p "require('./webos/appinfo.json').version")
+          tag="webos-v${version}-test.1"
+          ipk=$(find dist/webos -maxdepth 1 -type f -name '*.ipk' -print -quit)
+          test -n "$ipk"
+          asset="dist/webos/hongguo-webos-${version}-test.1.ipk"
+          mv "$ipk" "$asset"
+          (cd dist/webos && sha256sum "$(basename "$asset")" > SHA256SUMS.txt)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "asset=$asset" >> "$GITHUB_OUTPUT"
+      - name: Publish webOS test release to public downloads
+        env:
+          GH_TOKEN: ${{ secrets.HONGGUO_RELEASES_TOKEN }}
+        run: |
+          test -n "$GH_TOKEN" || { echo "Missing HONGGUO_RELEASES_TOKEN" >&2; exit 1; }
+          cat > "$RUNNER_TEMP/webos-release-notes.md" <<'EOF'
+          ## LG webOS 测试版
+
+          这是供 LG webOS TV 用户验证的实验版本。真实红果请求签名、视频解密和本地 Range 媒体服务已通过文件级验证；尚无 LG 真机验证，因此不代表所有型号都能正常加载或播放。
+
+          请先阅读公开仓库 README 中的「LG webOS 测试版」说明，并反馈电视型号、webOS 版本、页面加载情况、播放/声音情况、视频清晰度及错误现象。
+          EOF
+          gh release create "${{ steps.release.outputs.tag }}" \
+            "${{ steps.release.outputs.asset }}" \
+            "dist/webos/SHA256SUMS.txt" \
+            --repo aston314/hongguo-tv-releases \
+            --title "红果短剧 webOS 测试版 ${{ steps.release.outputs.version }}" \
+            --prerelease \
+            --notes-file "$RUNNER_TEMP/webos-release-notes.md"
