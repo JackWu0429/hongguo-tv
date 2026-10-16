@@ -1,0 +1,17 @@
+{
+  "id": "com.aston314.hongguo.webos",
+  "version": "0.2.72",
+  "vendor": "aston314",
+  "type": "web",
+  "main": "index.html",
+  "title": "红果短剧",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "resolution": "1920x1080",
+  "iconColor": "#ff5c45",
+  "bgColor": "#101014",
+  "disableBackHistoryAPI": true,
+  "handlesRelaunch": false,
+  "requiredACG": [],
+  "transparent": false
+}

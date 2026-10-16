@@ -1,0 +1,35 @@
+name: webOS experimental package
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'webos/**'
+      - 'scripts/build_webos.sh'
+      - 'scripts/verify_webos.sh'
+      - 'core/cmd/hongguotv/ui/**'
+      - 'desktop/resources/appicon.png'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install webOS CLI
+        run: npm install --global --ignore-scripts @webos-tools/cli
+      - name: Verify webOS source
+        run: ./scripts/verify_webos.sh
+      - name: Package experimental ipk
+        run: ./scripts/build_webos.sh
+      - name: Upload experimental artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hongguo-webos-experimental
+          path: dist/webos/*.ipk
+          if-no-files-found: error
