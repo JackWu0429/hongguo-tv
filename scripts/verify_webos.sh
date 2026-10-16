@@ -28,6 +28,11 @@ if (adapter.indexOf('playbackVerified: false') < 0 || adapter.indexOf('isAvailab
 if (adapter.indexOf('PalmServiceBridge') < 0 || adapter.indexOf('wakeService') < 0) fail('adapter must wake the Luna service before HTTP calls');
 var serviceJs = read(path.join(root, 'webos', 'service', 'service.js'));
 ['webos-service', '127.0.0.1', 'WEBOS_PROVIDER_NOT_IMPLEMENTED', '/api/v1/status', 'idleTimer'].forEach(function (term) { if (serviceJs.indexOf(term) < 0) fail('service missing ' + term); });
+var providerJs = read(path.join(root, 'webos', 'service', 'provider.js'));
+var signerJs = read(path.join(root, 'webos', 'service', 'passport-sign.js'));
+['video_model', 'spade_a', 'decryptMP4', 'serveMedia', 'randomBytes', 'cenc-aes-ctr'].forEach(function (term) { if (providerJs.indexOf(term) < 0 && serviceJs.indexOf(term) < 0) fail('real provider missing ' + term); });
+['X-Medusa', 'X-Helios', 'passportF13', 'aesV3'].forEach(function (term) { if (signerJs.indexOf(term) < 0) fail('passport signer missing ' + term); });
+if (serviceJs.indexOf("require('./provider')") < 0) fail('service does not load first-party provider');
 if (/127\.0\.0\.1:(?:8787|8797|57828)/.test(adapter + serviceJs)) fail('developer-only port leaked into webOS adapter/service');
 console.log('webOS verify: PASS');
 console.log(JSON.stringify({ appId: app.id, version: app.version, serviceId: service.services[0].name, sharedUiAssets: scripts.length, playbackVerified: false }, null, 2));

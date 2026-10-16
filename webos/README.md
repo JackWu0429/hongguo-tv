@@ -2,14 +2,18 @@
 
 这个目录是 LG webOS TV 的实验性 Web App 外壳。它复用 Android、桌面和浏览器预览使用的 Web UI，并通过 webOS JavaScript Service 提供本机 HTTP 边界。
 
-当前包可以验证：
+当前包已接入真实业务链路，可以验证：
 
 - `file://` 页面加载和相对资源路径；
 - TV Web App 的应用元数据、图标和 Luna Service 注册；
-- 本机 `127.0.0.1` 健康检查、状态诊断和结构化未实现错误；
+- 本机 `127.0.0.1` 健康检查、状态诊断和结构化错误；
+- 红果 `video_model` 请求、一次性设备身份和 Passport 签名（`X-Gorgon`、`X-Helios`、`X-Medusa`）；
+- `main_url` 地址解析、`spade_a` CENC 密钥解码、MP4 AES-CTR 样本解密和 `hvc1/mp4a` 恢复；
+- 本地媒体缓存和 `Range` 代理，页面继续使用同一套 HTML5 播放接口；
+- 分类、推荐、排行榜、搜索和剧集详情的真实数据接口；
 - `ares-package` 生成 `.ipk` 的构建链。
 
-当前包不会伪装成完整的红果客户端：红果签名请求、CENC 解密、设备身份轮换和真实媒体 Range 代理还没有从 Go 核心移植到 JS Service。因此服务对业务/媒体路由返回明确的 `501 WEBOS_PROVIDER_NOT_IMPLEMENTED`，真实 LG 设备上的 HEVC、bytevc1 和音画表现也没有验证。
+协议、解密和媒体文件已在 macOS 网络环境中用真实上游数据验证，能够得到可被 `ffprobe` 识别的 HEVC/AAC MP4。LG webOS 真机尚未接入验证，因此不能把 `playback_verified` 视为已通过；具体电视的 HEVC、AAC、Range 行为仍需真机确认。当前实现是完整下载后再解密，启动和磁盘占用会高于 Android Go 的分段方案；账号、预约、追更、评论和弹幕等需要登录态的接口仍保留为后续接入项。
 
 ## 构建
 
@@ -34,6 +38,6 @@ ARES_DIR="$HOME/.local/webos" bash scripts/build_webos.sh
 
 应用 ID 是 `com.aston314.hongguo.webos`，Service ID 是 `com.aston314.hongguo.webos.service`。安装和签名需要开发者模式、设备密钥和 LG 的 `ares-install`/`ares-launch` 工具；本仓库不保存这些密钥。
 
-## 后续接入边界
+## 当前边界
 
-优先把现有 Go provider 的请求签名、一次性设备身份、地址刷新和 Range 缓存逐步移植到 Service。媒体必须继续由本机代理提供，页面只消费 HTTP 地址；不要把签名密钥放进页面 JavaScript，也不要复制带 GPL 许可限制的第三方 provider 实现。
+签名、解密和媒体代理都在 Service 内执行，页面只消费本机 HTTP 地址；不要把签名逻辑放进页面 JavaScript，也不要复制带 GPL 许可限制的第三方 provider 实现。

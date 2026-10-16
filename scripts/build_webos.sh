@@ -19,6 +19,9 @@ cp "$repo_dir/webos/app/webos-adapter.js" "$app_stage/webos-adapter.js"
 cp "$repo_dir/desktop/resources/appicon.png" "$app_stage/icon.png"
 cp "$repo_dir/desktop/resources/appicon.png" "$app_stage/largeIcon.png"
 cp -R "$repo_dir/webos/service/." "$service_stage/"
+# Test vectors stay in the source tree and are exercised by CI; do not ship
+# them in the TV service package.
+rm -f "$service_stage/passport-sign.test.js"
 
 # A file:// document cannot resolve the shared UI's root-absolute assets.
 index="$app_stage/index.html"
