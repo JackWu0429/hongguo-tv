@@ -370,9 +370,12 @@ func (c *passportClient) SubscriptionList(ctx context.Context, q url.Values, cal
 			params.Set("target_date", date)
 		}
 	} else {
-		params.Set("tab_type", "13")
-		params.Set("subscribe_order_type", "0")
-		params.Set("swipe_type", "0")
+		// Match the official desktop reservation query. The old TV query used
+		// different category/order values and could fail to surface reservations
+		// accepted by the account service.
+		params.Set("tab_type", "2")
+		params.Set("subscribe_order_type", "1")
+		params.Set("swipe_type", "1")
 		params.Set("need_calendar_schema", "false")
 		params.Set("limit", "20")
 		params.Set("is_online", strconv.FormatBool(q.Get("mode") != "upcoming"))
@@ -449,6 +452,53 @@ func (c *passportClient) SetReservation(ctx context.Context, id string, reserve 
 	body := map[string]any{"item_id": id, "item_type": int64(1), "op_type": op, "shark_param": map[string]any{"enter_from": "BulletActivity", "previous_page": "MainFragmentActivity", "page_list": "MainFragmentActivity,BulletActivity"}, "wish_list_all_del": 0}
 	_, e := c.cloudJSON(ctx, "/reading/bookapi/search/uncover_subscribe/v", http.MethodPost, nil, body)
 	return e
+}
+
+func (c *passportClient) SetReservationAndConfirm(ctx context.Context, id string, reserve bool) (bool, error) {
+	if err := c.SetReservation(ctx, id, reserve); err != nil {
+		return false, err
+	}
+	if !reserve {
+		return true, nil
+	}
+	verifyCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+	delays := []time.Duration{0, 250 * time.Millisecond, 600 * time.Millisecond, time.Second}
+	for _, delay := range delays {
+		if delay > 0 {
+			timer := time.NewTimer(delay)
+			select {
+			case <-verifyCtx.Done():
+				timer.Stop()
+				if ctx.Err() != nil {
+					return false, ctx.Err()
+				}
+				return false, nil
+			case <-timer.C:
+			}
+		}
+		page, err := c.SubscriptionList(verifyCtx, url.Values{"mode": {"upcoming"}, "offset": {"0"}}, false)
+		if err != nil {
+			if ctx.Err() != nil {
+				return false, ctx.Err()
+			}
+			if verifyCtx.Err() != nil {
+				return false, nil
+			}
+			continue
+		}
+		found := false
+		for _, item := range page.Items {
+			if item.ReservationID == id {
+				found = true
+				break
+			}
+		}
+		if found == reserve {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (c *passportClient) SearchList(ctx context.Context, q url.Values) (ListResult, error) {
@@ -586,7 +636,7 @@ func (s *server) reservation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 401, e.Error())
 		return
 	}
-	e = c.SetReservation(r.Context(), body.ItemID, *body.Reserved)
+	confirmed, e := c.SetReservationAndConfirm(r.Context(), body.ItemID, *body.Reserved)
 	if !s.accounts.sameGeneration(g) {
 		writeError(w, 409, errAccountChanged.Error())
 		return
@@ -595,5 +645,9 @@ func (s *server) reservation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 502, e.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true})
+	message := ""
+	if !confirmed {
+		message = "红果待上线预约列表暂未读到这条记录。请求已提交，但尚不能确认是否同步，请稍后刷新核对。"
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "data": map[string]any{"confirmed": confirmed, "message": message}})
 }

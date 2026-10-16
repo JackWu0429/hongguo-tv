@@ -58,7 +58,7 @@ func TestLiveAuthenticatedListShapes(t *testing.T) {
 		}
 	}
 	for _, mode := range []string{"true", "false"} {
-		q := url.Values{"offset": {"0"}, "subscribe_offset": {"0"}, "tab_type": {"13"}, "subscribe_order_type": {"0"}, "swipe_type": {"0"}, "need_calendar_schema": {"false"}, "limit": {"20"}, "is_online": {mode}}
+		q := url.Values{"offset": {"0"}, "subscribe_offset": {"0"}, "tab_type": {"2"}, "subscribe_order_type": {"1"}, "swipe_type": {"1"}, "need_calendar_schema": {"false"}, "limit": {"20"}, "is_online": {mode}}
 		p, e := c.cloudJSON(ctx, "/reading/user/subscribe/list/v1/", http.MethodGet, q, nil)
 		if e != nil {
 			t.Fatal("reservations read failed")

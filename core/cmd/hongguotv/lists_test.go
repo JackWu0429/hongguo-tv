@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func listFixtureClient(handler http.HandlerFunc) (*passportClient, func()) {
@@ -67,7 +68,8 @@ func TestReservationWriteUsesItemIDAndConfirmedResponse(t *testing.T) {
 
 func TestReservationCountersAndMissingCursor(t *testing.T) {
 	c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("is_online") != "true" || r.URL.Query().Get("limit") != "20" {
+		q := r.URL.Query()
+		if q.Get("is_online") != "true" || q.Get("limit") != "20" || q.Get("tab_type") != "2" || q.Get("subscribe_order_type") != "1" || q.Get("swipe_type") != "1" {
 			t.Error("wrong reservation mode")
 		}
 		ioJSON(w, `{"code":0,"data":{"online_total_count":48,"offline_total_count":0,"has_more":true,"subscribe_items":[{"item_id":"7692049770637954110","is_online":true,"subscribe_data":{"series_id":"7690163276214176792","title":"已上线剧","episode_cnt":80}}]}}`)
@@ -76,6 +78,70 @@ func TestReservationCountersAndMissingCursor(t *testing.T) {
 	out, err := c.SubscriptionList(context.Background(), url.Values{"mode": {"online"}, "offset": {"20"}}, false)
 	if err != nil || out.OnlineTotal == nil || *out.OnlineTotal != 48 || out.OfflineTotal == nil || *out.OfflineTotal != 0 || out.NextOffset != 40 || !out.HasMore || len(out.Items) != 1 || out.Items[0].Upcoming {
 		t.Fatalf("bad counts/cursor: %+v %v", out, err)
+	}
+}
+
+func TestSetReservationAndConfirmUsesCloudList(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		resultAt   int
+		wantResult bool
+		wantReads  int
+	}{
+		{name: "eventually visible after reserve", resultAt: 3, wantResult: true, wantReads: 3},
+		{name: "accepted write that never appears is unconfirmed", resultAt: 0, wantResult: false, wantReads: 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reads := 0
+			c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					if r.URL.Path != "/reading/bookapi/search/uncover_subscribe/v" {
+						t.Errorf("wrong write path: %s", r.URL.Path)
+					}
+					ioJSON(w, `{"code":0,"data":{}}`)
+					return
+				}
+				reads++
+				q := r.URL.Query()
+				if q.Get("tab_type") != "2" || q.Get("subscribe_order_type") != "1" || q.Get("swipe_type") != "1" || q.Get("is_online") != "false" || q.Get("offset") != "0" {
+					t.Errorf("wrong cloud readback query: %v", q)
+				}
+				confirmedState := tc.resultAt > 0 && reads >= tc.resultAt
+				if confirmedState {
+					ioJSON(w, `{"code":0,"data":{"subscribe_items":[{"item_id":"7692049770637954110","name":"待上线剧","is_online":false}]}}`)
+					return
+				}
+				ioJSON(w, `{"code":0,"data":{"subscribe_items":[]}}`)
+			})
+			defer close()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			confirmed, err := c.SetReservationAndConfirm(ctx, "7692049770637954110", true)
+			if err != nil || confirmed != tc.wantResult {
+				t.Fatalf("confirmed=%v err=%v", confirmed, err)
+			}
+			if reads != tc.wantReads {
+				t.Fatalf("expected %d cloud confirmation reads, got %d", tc.wantReads, reads)
+			}
+		})
+	}
+}
+
+func TestSetReservationAndConfirmKeepsCancelWriteBehavior(t *testing.T) {
+	reads, writes := 0, 0
+	c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			writes++
+			ioJSON(w, `{"code":0,"data":{}}`)
+			return
+		}
+		reads++
+		ioJSON(w, `{"code":0,"data":{"subscribe_items":[]}}`)
+	})
+	defer close()
+	confirmed, err := c.SetReservationAndConfirm(context.Background(), "7692049770637954110", false)
+	if err != nil || !confirmed || writes != 1 || reads != 0 {
+		t.Fatalf("confirmed=%v err=%v writes=%d reads=%d", confirmed, err, writes, reads)
 	}
 }
 func TestSearchGroupingAndPagination(t *testing.T) {

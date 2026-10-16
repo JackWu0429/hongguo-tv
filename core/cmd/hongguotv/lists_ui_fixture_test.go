@@ -175,7 +175,7 @@ func TestListsBrowserFixture(t *testing.T) {
 			reserved = asBool(action["reserved"])
 			mu.Unlock()
 		}
-		writeJSON(w, 200, map[string]any{"ok": true})
+		writeJSON(w, 200, map[string]any{"ok": true, "data": map[string]any{"confirmed": true}})
 	})
 	if seriesFixture {
 		mux.HandleFunc("/fixture/series/state", func(w http.ResponseWriter, r *http.Request) {
