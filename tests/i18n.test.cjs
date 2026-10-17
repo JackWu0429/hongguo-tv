@@ -7,6 +7,7 @@ const localeSource = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/l
 const traditionalLocaleSource = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/locales/zh-TW.js'), 'utf8');
 const japaneseLocaleSource = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/locales/ja-JP.js'), 'utf8');
 const i18nSource = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/i18n.js'), 'utf8');
+const appHtml = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/index.html'), 'utf8');
 const paginationSource = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/pagination.js'), 'utf8');
 
 function runtime() {
@@ -142,6 +143,24 @@ test('traditional Chinese and Japanese resources are complete and selectable', (
   const sourceKeys = Object.keys(context.HongguoLocales['zh-CN']).sort();
   assert.deepEqual(Array.from(Object.keys(context.HongguoLocales['zh-TW'])).sort(), sourceKeys);
   assert.deepEqual(Array.from(Object.keys(context.HongguoLocales['ja-JP'])).sort(), sourceKeys);
+});
+
+test('localized status rendering is not overwritten by static locale application', () => {
+  const { context, document } = multilingualRuntime();
+  const label = { textContent: context.HongguoI18n.t('ui.serviceConnected') };
+  assert.match(appHtml, /<span id="core-status-label">/);
+  assert.doesNotMatch(appHtml, /<span id="core-status-label"[^>]*data-i18n=/);
+  document.querySelectorAll = (selector) => selector === '[data-i18n]' ? [] : [];
+  context.HongguoI18n.onChange(() => { label.textContent = context.HongguoI18n.t('ui.serviceConnected'); });
+
+  context.HongguoI18n.apply(document);
+  assert.equal(label.textContent, '已连接');
+  assert.equal(context.HongguoI18n.setLocale('zh-TW'), true);
+  context.HongguoI18n.apply(document);
+  assert.equal(label.textContent, '已連線');
+  assert.equal(context.HongguoI18n.setLocale('ja-JP'), true);
+  context.HongguoI18n.apply(document);
+  assert.equal(label.textContent, '接続済み');
 });
 
 test('locale preference uses the Android bridge and does not change on persistence failure', () => {

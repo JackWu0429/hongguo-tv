@@ -22,10 +22,11 @@ button:focus { outline: none; }
 .brand { display: flex; flex-shrink: 0; align-items: center; gap: 11px; height: 48px; padding: 0 9px; color: #f8f8fb; font-size: 21px; font-weight: 700; letter-spacing: .03em; white-space: nowrap; }
 .brand-mark { display: grid; place-items: center; width: 29px; height: 29px; color: #fff; background: #ff693e; border-radius: 9px; }
 .brand-mark svg { width: 18px; height: 18px; fill: currentColor; }
-.side-nav { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; gap: 5px; overflow-y: auto; margin-top: 20px; scrollbar-width: none; }
+.side-nav { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; gap: 5px; overflow-y: auto; margin-top: 20px; padding: 6px 8px; scrollbar-width: none; }
 .side-nav::-webkit-scrollbar { display: none; }
 .side-item { display: flex; align-items: center; gap: 15px; width: 100%; min-height: 54px; padding: 0 16px; font-size: 20px; text-align: left; color: #c5c5ce; background: transparent; border-radius: 13px; transition: background .12s, color .12s, transform .12s; }
 .side-item.is-active { color: #f35d7b; background: rgba(243,93,123,.22); font-weight: 700; }
+/* Leave room for the transformed focus ring inside the independently scrolling nav. */
 .side-item.is-focused, .side-item:focus { color: #fff; background: rgba(255,255,255,.17); box-shadow: 0 0 0 2px #fff; transform: scale(1.018); }
 .side-icon { display: inline-block; flex: 0 0 32px; width: 32px; height: 32px; fill: none; color: currentColor; }
 .sidebar-bottom { flex: 0 0 auto; margin-top: 8px; padding-top: 16px; }

@@ -71,11 +71,27 @@
     ,accountCountryItems: '.account-country-item, #account-country-close'
   };
   var status = document.getElementById('core-status');
+  var coreStatusLabel = document.getElementById('core-status-label');
+  var coreStatusState = 'connecting';
+  var coreStatusVersion = '';
   var notice = document.getElementById('action-notice');
   var shell = document.querySelector('.app-shell');
   function uiText(key, fallback, params) {
     return window.HongguoI18n && typeof window.HongguoI18n.t === 'function' ? window.HongguoI18n.t(key, params, fallback) : (fallback === undefined ? key : fallback);
   }
+  function renderCoreStatus() {
+    var message = {
+      connecting: ['core.connecting', '连接核心服务…'],
+      connected: ['ui.serviceConnected', '已连接'],
+      error: ['ui.serviceError', '连接异常'],
+      unavailable: ['ui.serviceUnavailable', '本机服务连接失败，请重新打开应用']
+    }[coreStatusState] || ['core.connecting', '连接核心服务…'];
+    coreStatusLabel.textContent = uiText(message[0], message[1]);
+    status.dataset.ok = coreStatusState === 'connected' ? 'true' : 'false';
+    if (coreStatusState === 'connected' && coreStatusVersion) status.title = uiText('common.version', '版本 {version}', { version: coreStatusVersion });
+    else status.removeAttribute('title');
+  }
+  if (window.HongguoI18n && typeof window.HongguoI18n.onChange === 'function') window.HongguoI18n.onChange(renderCoreStatus);
   function apiError(payload, status, key, fallback) {
     var detail = payload && (payload.error || payload.message);
     var i18n = window.HongguoI18n;
@@ -5938,14 +5954,14 @@
     var request = new XMLHttpRequest();
     request.open('GET', '/api/v1/status', true);
     request.timeout = 8000;
-    var label = document.getElementById('core-status-label');
-  function failed() { label.textContent = uiText('ui.serviceUnavailable', '本机服务连接失败，请重新打开应用'); status.dataset.ok = 'false'; }
+    function failed() { coreStatusState = 'unavailable'; coreStatusVersion = ''; renderCoreStatus(); }
+    renderCoreStatus();
     request.onload = function () {
       try {
         var data = JSON.parse(request.responseText);
-        label.textContent = request.status === 200 && data.ok ? uiText('ui.serviceConnected', '已连接') : uiText('ui.serviceError', '连接异常');
-        status.dataset.ok = request.status === 200 && data.ok ? 'true' : 'false';
-        if (request.status === 200 && data.ok) status.title = uiText('common.version', '版本 {version}', { version: data.version });
+        coreStatusState = request.status === 200 && data.ok ? 'connected' : 'error';
+        coreStatusVersion = coreStatusState === 'connected' ? data.version || '' : '';
+        renderCoreStatus();
       } catch (error) { failed(); }
     };
     request.onerror = failed; request.ontimeout = failed;
