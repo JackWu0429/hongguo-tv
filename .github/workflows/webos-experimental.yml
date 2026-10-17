@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - codex/webos-experimental
+    tags:
+      - 'v*'
     paths:
       - 'webos/**'
       - 'scripts/build_webos.sh'
