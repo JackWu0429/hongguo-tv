@@ -68,7 +68,11 @@ jobs:
         run: |
           python3 scripts/prepare_mpv.py
           python3 scripts/package_mpv_sources.py --out "$RUNNER_TEMP/hongguo-tv-mpv-library-source-$APP_VERSION.zip"
-      - name: Build and lint both debug APKs
-        run: gradle -p android testStandardDebugUnitTest testMpvDebugUnitTest assembleStandardDebug assembleMpvDebug lintStandardDebug lintMpvDebug
+      # Keep flavor packaging in separate Gradle invocations; AGP's native
+      # library splitter can race when both APK variants package together.
+      - name: Build and lint standard debug APK
+        run: gradle --no-daemon --max-workers=1 -p android testStandardDebugUnitTest assembleStandardDebug lintStandardDebug
+      - name: Build and lint MPV debug APK
+        run: gradle --no-daemon --max-workers=1 -p android testMpvDebugUnitTest assembleMpvDebug lintMpvDebug
       - name: Verify debug edition isolation
         run: python3 scripts/verify_apks.py --standard android/app/build/outputs/apk/standard/debug/app-standard-debug.apk --mpv android/app/build/outputs/apk/mpv/debug/app-mpv-debug.apk --version "$APP_VERSION" --standard-code "$APP_VERSION_CODE" --mpv-code "$MPV_VERSION_CODE" --debug
