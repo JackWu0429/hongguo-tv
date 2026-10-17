@@ -2,6 +2,9 @@
   'use strict';
   function create(options) {
     var bridge = options.bridge, mode = '', supported = false, message = '';
+    function text(key, fallback, params) {
+      return root.HongguoI18n && typeof root.HongguoI18n.t === 'function' ? root.HongguoI18n.t(key, params, fallback) : fallback;
+    }
     function read() {
       if (!bridge || typeof bridge.engine !== 'function' || bridge.engine() !== 'mpv' ||
           typeof bridge.decoderMode !== 'function' || typeof bridge.setDecoderMode !== 'function') return false;
@@ -17,10 +20,10 @@
       try {
         bridge.setDecoderMode(value);
         if (!read() || mode !== value) throw new Error('Preference not saved');
-        message = '已选择' + (mode === 'mpv_auto' ? '自动解码' : '软件解码') + '，下次播放或切集时生效。';
+        message = text('settings.decoderApplied', '已选择{mode}，下次播放或切集时生效。', { mode: mode === 'mpv_auto' ? text('settings.autoDecode', '自动解码') : text('settings.softwareDecode', '软件解码') });
         render(); return true;
       } catch (ignoredSave) {
-        message = '设置未能保存，请重试。'; render(); return false;
+        message = text('settings.saveFailed', '设置未能保存，请重试。'); render(); return false;
       }
     } };
   }

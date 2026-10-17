@@ -2,15 +2,16 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+require('./helpers/app-text.cjs');
 
 const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'), 'utf8');
 test('reservation success is gated on cloud readback, not a local optimistic write', () => {
   assert.equal(source.includes('hongguo-tv-reservation-mode'), false);
   assert.match(source, /function writeReservation\(item, reserved, signal\)/);
   assert.match(source, /if \(!result\.confirmed\) throw new Error/);
-  assert.match(source, /showNotice\('已预约' \+ label\)/);
-  assert.match(source, /showNotice\('您已预约' \+ label \+ '，敬请期待'\)/);
-  assert.match(source, /seriesMessage\(reserved \? '预约成功。'/);
+  assert.match(source, /showNotice\(uiText\('content\.reserved'/);
+  assert.match(source, /uiText\('content\.nextSeasonReserved'/);
+  assert.match(source, /seriesMessage\(reserved \? uiText\('ui\.reservationSuccess'/);
 });
 
 test('reservation confirmation bridges eventual consistency without becoming permanent', () => {

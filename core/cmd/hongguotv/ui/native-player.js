@@ -1,5 +1,9 @@
 (function () {
   'use strict';
+  function t(key, fallback, params) {
+    var i18n = window.HongguoI18n;
+    return i18n && i18n.t ? i18n.t(key, params, fallback) : fallback;
+  }
 
   // WebView HTML video is the default on every supported Android version.
   // Media3 is kept as a bounded fallback for devices whose WebView cannot
@@ -189,7 +193,7 @@
           throw error;
         });
       }
-      if (!state.source) return Promise.reject(new Error('没有播放地址'));
+      if (!state.source) return Promise.reject(new Error(t('content.noMediaUrl', '没有播放地址')));
       state.paused = false; state.ended = false;
       if (nativeRequested && bridge.resume) { try { bridge.resume(); } catch (ignored) {} }
       else invokePlay();
@@ -247,7 +251,7 @@
           state.paused = true; state.started = false; state.readyState = 0;
           nativeRequested = false;
           loadId = 'hongguo-' + (++sequence);
-          proxy.error = { code: 3, message: detail.kind || 'MPV 播放失败' };
+          proxy.error = { code: 3, message: detail.kind || t('content.mpvFailed', 'MPV 播放失败') };
           dispatch('error', { type: 'error', target: proxy, detail: detail });
         } else fallbackToDom();
       }

@@ -5,17 +5,28 @@
   else root.HongguoNumericKeypad = api;
 }(typeof window !== 'undefined' ? window : this, function () {
   'use strict';
+  function t(key, fallback, params) {
+    var i18n = typeof window !== 'undefined' && window.HongguoI18n;
+    if (i18n && i18n.t) return i18n.t(key, params, fallback);
+    return String(fallback === undefined ? key : fallback).replace(/\{([a-zA-Z0-9_]+)\}/g, function (_, name) {
+      return params && params[name] !== undefined && params[name] !== null ? String(params[name]) : '';
+    });
+  }
+  function countryName(policy) {
+    var i18n = typeof window !== 'undefined' && window.HongguoI18n;
+    return policy && policy.localeKey && i18n && i18n.t ? i18n.t(policy.localeKey) : policy && (policy.name || policy.code) || '';
+  }
   var keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'delete', '0', 'done'];
   function create(options) {
     var active = false, kind = '', value = '', error = '', index = 0;
-    var phonePolicy = { code: '+86', name: '中国大陆', minLength: 11, maxLength: 11 };
+    var phonePolicy = { code: '+86', localeKey: 'country.mainlandChina', minLength: 11, maxLength: 11 };
     function phoneValid(digits) {
       if (!phonePolicy || digits.length < phonePolicy.minLength || digits.length > phonePolicy.maxLength || !/^[0-9]+$/.test(digits)) return false;
       return phonePolicy.code !== '+86' || /^1[3-9][0-9]{9}$/.test(digits);
     }
     function snapshot() { return { open: active, kind: kind, value: value, error: error, index: index,
       minLength: kind === 'phone' ? phonePolicy.minLength : 4, maxLength: kind === 'phone' ? phonePolicy.maxLength : 8,
-      countryCode: kind === 'phone' ? phonePolicy.code : '', countryName: kind === 'phone' ? phonePolicy.name : '' }; }
+      countryCode: kind === 'phone' ? phonePolicy.code : '', countryName: kind === 'phone' ? countryName(phonePolicy) : '' }; }
     function render() { if (options.render) options.render(snapshot()); }
     function open(field, initial, policy) {
       if (active || (field !== 'phone' && field !== 'code')) return false;
@@ -47,12 +58,12 @@
       if (!active) return false;
       if (key === 'done') {
         var valid = kind === 'phone' ? phoneValid(value) : /^[0-9]{4,8}$/.test(value);
-        if (!valid) { error = kind === 'phone' ? '请输入正确的' + phonePolicy.name + '手机号' : '请输入4至8位验证码'; render(); return true; }
+        if (!valid) { error = kind === 'phone' ? t('content.phoneInvalid', '请输入正确的{country}手机号', { country: countryName(phonePolicy) }) : t('content.codeInvalid', '请输入4至8位验证码'); render(); return true; }
         return close('complete');
       }
       if (key === 'delete') value = value.slice(0, -1);
       else if (/^[0-9]$/.test(key)) {
-        if (value.length >= (kind === 'phone' ? phonePolicy.maxLength : 8)) { error = kind === 'phone' ? '手机号最多' + phonePolicy.maxLength + '位' : '验证码最多8位'; render(); return true; }
+        if (value.length >= (kind === 'phone' ? phonePolicy.maxLength : 8)) { error = kind === 'phone' ? t('content.phoneMax', '手机号最多{count}位', { count: phonePolicy.maxLength }) : t('content.codeMax', '验证码最多8位'); render(); return true; }
         value += key;
       } else return false;
       error = '';

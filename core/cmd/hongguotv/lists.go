@@ -370,15 +370,23 @@ func (c *passportClient) SubscriptionList(ctx context.Context, q url.Values, cal
 			params.Set("target_date", date)
 		}
 	} else {
-		// Match the official desktop reservation query. The old TV query used
-		// different category/order values and could fail to surface reservations
-		// accepted by the account service.
-		params.Set("tab_type", "2")
-		params.Set("subscribe_order_type", "1")
-		params.Set("swipe_type", "1")
+		// The account reservation page uses the dedicated tab_type=13 contract.
+		// The former TV values (tab_type=2/order=1/swipe=1) can return a list
+		// that does not match the account's actual "已上线/待上线" reservations.
+		// The service also treats session_id as a server-side snapshot cursor:
+		// omit it on the first page and only continue with the value it returns.
+		params.Set("tab_type", "13")
+		params.Set("subscribe_order_type", "0")
+		params.Set("swipe_type", "0")
 		params.Set("need_calendar_schema", "false")
 		params.Set("limit", "20")
+		params.Set("subscribe_offset", "0")
 		params.Set("is_online", strconv.FormatBool(q.Get("mode") != "upcoming"))
+		if sessionID := q.Get("session_id"); sessionID != "" {
+			params.Set("session_id", sessionID)
+		} else {
+			params.Del("session_id")
+		}
 	}
 	p, e := c.cloudJSON(ctx, "/reading/user/subscribe/list/v1/", http.MethodGet, params, nil)
 	if e != nil {

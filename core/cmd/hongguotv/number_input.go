@@ -26,7 +26,15 @@ const numberInputTTL = 5 * time.Minute
 
 var numberPhoneRE = regexp.MustCompile(`^1[3-9][0-9]{9}$`)
 var numberCodeRE = regexp.MustCompile(`^[0-9]{4,8}$`)
-var numberPage = template.Must(template.New("number-input").ParseFS(uiFiles, "ui/number-input.html"))
+var numberPage = template.Must(template.New("number-input").Funcs(template.FuncMap{
+	"title":        func(t numberInputLocale, kind string) string { return t.Title(kind) },
+	"description":  func(t numberInputLocale, kind string) string { return t.Description(kind) },
+	"label":        func(t numberInputLocale, kind string) string { return t.Label(kind) },
+	"placeholder":  func(t numberInputLocale, kind string) string { return t.Placeholder(kind) },
+	"submit":       func(t numberInputLocale, kind string) string { return t.Submit(kind) },
+	"hint":         func(t numberInputLocale, kind string) string { return t.Hint(kind) },
+	"completeCopy": func(t numberInputLocale, kind string) string { return t.CompleteCopy(kind) },
+}).ParseFS(uiFiles, "ui/number-input.html"))
 
 const numberTextLimit = 100
 
@@ -257,7 +265,7 @@ func (m *numberInputManager) mobile(session *numberInputSession, w http.Response
 	defer m.mu.Unlock()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if m.active != session || session.completed || !time.Now().Before(session.expires) {
-		renderNumberPage(w, http.StatusGone, map[string]any{"Expired": true})
+		renderNumberPage(w, http.StatusGone, map[string]any{"Expired": true, "Kind": session.kind, "Text": numberInputLocaleFor(r.Header.Get("Accept-Language"), session.kind, session.phoneCountryCode)})
 		return
 	}
 	phoneCountry, _ := accountPhoneCountryForCode(session.phoneCountryCode)
@@ -265,7 +273,8 @@ func (m *numberInputManager) mobile(session *numberInputSession, w http.Response
 	if phoneCountry.Code == "+86" {
 		phonePattern = "1[3-9][0-9]{9}"
 	}
-	data := map[string]any{"Phone": session.kind == "phone", "PhoneCountryCode": session.phoneCountryCode, "PhoneMinLength": phoneCountry.Min, "PhoneMaxLength": phoneCountry.Max, "PhonePattern": phonePattern, "Search": session.kind == "search", "Danmaku": session.kind == "danmaku", "Action": r.URL.Path, "FormKey": session.formKey}
+	copy := numberInputLocaleFor(r.Header.Get("Accept-Language"), session.kind, session.phoneCountryCode)
+	data := map[string]any{"Phone": session.kind == "phone", "PhoneCountryCode": session.phoneCountryCode, "PhoneMinLength": phoneCountry.Min, "PhoneMaxLength": phoneCountry.Max, "PhonePattern": phonePattern, "Search": session.kind == "search", "Danmaku": session.kind == "danmaku", "Kind": session.kind, "Action": r.URL.Path, "FormKey": session.formKey, "Text": copy}
 	status := http.StatusOK
 	if r.Method == http.MethodPost {
 		limit := int64(1024)
@@ -279,11 +288,11 @@ func (m *numberInputManager) mobile(session *numberInputSession, w http.Response
 		}
 		if len(r.PostForm["value"]) != 1 || len(r.PostForm) != 2 || !validNumberInput(session.kind, r.PostForm.Get("value"), session.phoneCountryCode) {
 			status = http.StatusBadRequest
-			data["Error"] = "请填写正确的数字后重试"
+			data["Error"] = copy.GenericError
 			if session.kind == "search" {
-				data["Error"] = "请输入不超过100字的剧名或关键词"
+				data["Error"] = copy.SearchError
 			} else if session.kind == "danmaku" {
-				data["Error"] = "请输入不超过100字的弹幕"
+				data["Error"] = copy.DanmakuError
 			}
 		} else {
 			session.value = r.PostForm.Get("value")

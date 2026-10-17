@@ -5,6 +5,10 @@
   else root.HongguoNumberInput = api;
 }(typeof window !== 'undefined' ? window : this, function () {
   'use strict';
+  function t(key, fallback, params) {
+    var i18n = typeof window !== 'undefined' && window.HongguoI18n;
+    return i18n && i18n.t ? i18n.t(key, params, fallback) : fallback;
+  }
   function validValue(kind, value, phonePolicy) {
     if (typeof value !== 'string') return false;
     if (kind === 'search') return value.trim().length > 0 && value.length <= 100 && !/[\x00-\x1f\x7f-\x9f]/.test(value);
@@ -26,10 +30,10 @@
     }
     function start(field, policy) {
       stop(); active = true; kind = field;
-      phonePolicy = field === 'phone' ? policy || { code: '+86', name: '中国大陆', minLength: 11, maxLength: 11 } : null;
+      phonePolicy = field === 'phone' ? policy || { code: '+86', localeKey: 'country.mainlandChina', minLength: 11, maxLength: 11 } : null;
       var current = generation, failures = 0;
-      var fallback = field === 'search' ? '扫码暂不可用，可继续使用搜索框' : '扫码暂不可用，可使用左侧数字键盘';
-      var expired = field === 'search' ? '二维码已失效，请刷新二维码或返回搜索框' : '二维码已失效，可重新打开输入框或使用左侧键盘';
+      var fallback = field === 'search' ? t('content.scanUnavailableSearch', '扫码暂不可用，可继续使用搜索框') : t('content.scanUnavailableKeypad', '扫码暂不可用，可使用左侧数字键盘');
+      var expired = field === 'search' ? t('content.scanExpiredSearch', '二维码已失效，请刷新二维码或返回搜索框') : t('content.scanExpiredKeypad', '二维码已失效，可重新打开输入框或使用左侧键盘');
       options.render({ state: 'creating' });
       function fail(message) {
         if (!active || current !== generation) return;

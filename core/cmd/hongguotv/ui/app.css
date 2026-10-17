@@ -17,17 +17,19 @@ button:focus { outline: none; }
 .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 
 .app-shell { display: flex; width: 100vw; height: 100vh; min-width: 960px; min-height: 540px; background: #0c0d12; }
-.sidebar { display: flex; flex: 0 0 200px; flex-direction: column; overflow-y: auto; padding: 20px 15px 16px; background: #15151c; border-right: 1px solid rgba(255,255,255,.04); scrollbar-width: none; }
+.sidebar { display: flex; flex: 0 0 200px; flex-direction: column; overflow-y: auto; min-height: 0; padding: 20px 15px 16px; background: #15151c; border-right: 1px solid rgba(255,255,255,.04); scrollbar-width: none; }
 .sidebar::-webkit-scrollbar { display: none; }
 .brand { display: flex; flex-shrink: 0; align-items: center; gap: 11px; height: 48px; padding: 0 9px; color: #f8f8fb; font-size: 21px; font-weight: 700; letter-spacing: .03em; white-space: nowrap; }
 .brand-mark { display: grid; place-items: center; width: 29px; height: 29px; color: #fff; background: #ff693e; border-radius: 9px; }
 .brand-mark svg { width: 18px; height: 18px; fill: currentColor; }
-.side-nav { display: flex; flex-direction: column; gap: 5px; margin-top: 20px; }
+.side-nav { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; gap: 5px; overflow-y: auto; margin-top: 20px; scrollbar-width: none; }
+.side-nav::-webkit-scrollbar { display: none; }
 .side-item { display: flex; align-items: center; gap: 15px; width: 100%; min-height: 54px; padding: 0 16px; font-size: 20px; text-align: left; color: #c5c5ce; background: transparent; border-radius: 13px; transition: background .12s, color .12s, transform .12s; }
 .side-item.is-active { color: #f35d7b; background: rgba(243,93,123,.22); font-weight: 700; }
 .side-item.is-focused, .side-item:focus { color: #fff; background: rgba(255,255,255,.17); box-shadow: 0 0 0 2px #fff; transform: scale(1.018); }
 .side-icon { display: inline-block; flex: 0 0 32px; width: 32px; height: 32px; fill: none; color: currentColor; }
-.sidebar-bottom { margin-top: auto; padding-top: 16px; }
+.sidebar-bottom { flex: 0 0 auto; margin-top: 8px; padding-top: 16px; }
+.sidebar-bottom .side-item { flex-shrink: 0; }
 .sidebar-bottom .side-item + .side-item { margin-top: 5px; }
 .side-item-secondary { color: #c5c5ce; }
 

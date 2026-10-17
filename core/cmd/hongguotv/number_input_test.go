@@ -42,6 +42,22 @@ func postInput(t *testing.T, m *numberInputManager, address, value string) (int,
 	return response.StatusCode, string(body)
 }
 
+func TestNumberInputLocaleUsesRegisteredLanguageFamily(t *testing.T) {
+	original := numberInputLocales["en-US"]
+	numberInputLocales["en-US"] = numberInputLocale{DocumentTitle: "English", PhoneTitle: "Phone %s", PhoneLabel: "Phone %s"}
+	t.Cleanup(func() {
+		if original.DocumentTitle == "" {
+			delete(numberInputLocales, "en-US")
+		} else {
+			numberInputLocales["en-US"] = original
+		}
+	})
+	got := numberInputLocaleFor("en-GB,en;q=0.9,zh-CN;q=0.8", "phone", "+1")
+	if got.DocumentTitle != "English" || got.PhoneTitle != "Phone +1" || got.PhoneLabel != "Phone +1" {
+		t.Fatalf("locale family was not selected: %+v", got)
+	}
+}
+
 func TestNumberInputMobileRoundTripAndOneTimeConsumption(t *testing.T) {
 	for _, item := range []struct{ kind, value string }{{"phone", "13800000000"}, {"code", "012345"}, {"danmaku", "测试弹幕"}} {
 		t.Run(item.kind, func(t *testing.T) {

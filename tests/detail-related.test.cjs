@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+require('./helpers/app-text.cjs');
 
 const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'), 'utf8');
 const render = source.slice(source.indexOf('  function renderDetailSocial('), source.indexOf('  function loadSeriesSeasons('));

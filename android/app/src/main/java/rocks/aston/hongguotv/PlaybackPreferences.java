@@ -37,4 +37,19 @@ final class PlaybackPreferences {
             throw new IllegalStateException("sidebar display was not saved");
         }
     }
+
+    @JavascriptInterface
+    public String readLocale() {
+        return preferences.getString("locale", "zh-CN");
+    }
+
+    @JavascriptInterface
+    public void writeLocale(String value) {
+        if (!"zh-CN".equals(value) && !"zh-TW".equals(value) && !"ja-JP".equals(value)) {
+            throw new IllegalArgumentException("invalid locale");
+        }
+        if (!preferences.edit().putString("locale", value).commit()) {
+            throw new IllegalStateException("locale was not saved");
+        }
+    }
 }

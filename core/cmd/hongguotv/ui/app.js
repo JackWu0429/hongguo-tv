@@ -50,6 +50,7 @@
     accountKeypad: '.account-keypad-key',
     accountActions: '.account-action',
     appUpdates: '.app-update-action',
+    localeActions: '.locale-action',
     sidebarDisplay: '.sidebar-display-action',
     playbackModes: '.playback-mode-action',
     support: '.support-card, .support-close',
@@ -72,6 +73,25 @@
   var status = document.getElementById('core-status');
   var notice = document.getElementById('action-notice');
   var shell = document.querySelector('.app-shell');
+  function uiText(key, fallback, params) {
+    return window.HongguoI18n && typeof window.HongguoI18n.t === 'function' ? window.HongguoI18n.t(key, params, fallback) : (fallback === undefined ? key : fallback);
+  }
+  function apiError(payload, status, key, fallback) {
+    var detail = payload && (payload.error || payload.message);
+    var i18n = window.HongguoI18n;
+    // Keep detailed upstream/server wording in the source locale. Once a
+    // translated locale is active, use the stable UI key instead of leaking
+    // Chinese backend text into the translated interface.
+    if (detail && (!i18n || typeof i18n.locale !== 'function' || i18n.locale() === i18n.defaultLocale)) return String(detail);
+    return uiText(key, fallback || (status ? 'HTTP {status}' : '请求失败'), status ? { status: status } : null);
+  }
+  function localizedError(error, key, fallback) {
+    var detail = error && typeof error === 'object' ? error.message : error;
+    return apiError(detail ? { error: detail } : null, 0, key, fallback);
+  }
+  function phoneCountryName(country) {
+    return window.HongguoPhoneCountryName ? window.HongguoPhoneCountryName(country) : country && (country.name || country.code) || '';
+  }
   var sidebarStorage;
   try { sidebarStorage = window.localStorage; } catch (ignoredStorage) {}
   var sidebarSettings = window.HongguoSidebarSettings.create({
@@ -84,10 +104,21 @@
         button.classList.toggle('account-primary', selected);
         button.setAttribute('aria-pressed', selected ? 'true' : 'false');
       });
-      document.getElementById('sidebar-display-state').textContent = '当前：' + (data.mode === 'icons' ? '仅显示图标' : '展开显示');
+      document.getElementById('sidebar-display-state').textContent = data.mode === 'icons' ? uiText('settings.currentIcons', '当前：仅显示图标') : uiText('settings.currentExpanded', '当前：展开显示');
       syncNativePlayerBounds();
     }
   });
+  function renderLocaleSettings() {
+    var i18n = window.HongguoI18n;
+    var current = i18n && typeof i18n.locale === 'function' ? i18n.locale() : 'zh-CN';
+    document.querySelectorAll('.locale-action').forEach(function (button) {
+      var selected = button.getAttribute('data-locale') === current;
+      button.classList.toggle('account-primary', selected);
+      button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
+    var state = document.getElementById('language-state');
+    if (state) state.textContent = uiText('settings.currentLanguage', '当前：{language}', { language: current === 'zh-TW' ? uiText('settings.languageChineseTraditional', '繁體中文') : current === 'ja-JP' ? uiText('settings.languageJapanese', '日本語') : uiText('settings.languageChineseSimplified', '简体中文') });
+  }
   var androidShell = /HongguoTV-Android/.test(navigator.userAgent);
   // Explicit Wails configuration or ?platform=desktop; TV browser previews
   // retain the Android interaction model.
@@ -343,7 +374,7 @@
   function fetchData(url, options) {
     return fetch(url, options).then(function (response) {
       return response.json().then(function (payload) {
-        if (!response.ok || !payload.ok) throw new Error(payload.error || '连接失败（' + response.status + '）');
+        if (!response.ok || !payload.ok) throw new Error(apiError(payload, response.status, 'common.networkFailed', '连接失败') + (payload && (payload.error || payload.message) ? '' : '（' + response.status + '）'));
         var data = payload.data || payload;
         if (data.path && window.HongguoDesktopUI) data.path = window.HongguoDesktopUI.mediaSource(data.path, window.HongguoDesktop);
         return data;
@@ -357,10 +388,10 @@
     if (pager.error) {
       var text = node.querySelector('span');
       if (!text) { node.innerHTML = ''; text = document.createElement('span'); node.appendChild(text); }
-      text.textContent = '加载失败：' + pager.error;
+      text.textContent = uiText('content.loadFailed', '加载失败：{error}', { error: localizedError(pager.error, 'common.networkFailed', '连接失败') });
       var retry = node.querySelector('button');
       if (!retry) {
-        retry = document.createElement('button'); retry.className = 'list-retry'; retry.textContent = '重试'; retry.dataset.focus = id + '-retry'; retry.__pager = pager;
+        retry = document.createElement('button'); retry.className = 'list-retry'; retry.textContent = uiText('common.retry', '重试'); retry.dataset.focus = id + '-retry'; retry.__pager = pager;
         retry.addEventListener('click', function () {
           var current = document.activeElement; var generation = pager.generation;
           pager.load(true).then(function (added) {
@@ -374,7 +405,7 @@
     } else {
       var oldRetry = node.querySelector('button');
       if (oldRetry && document.activeElement === oldRetry && pager.busy) { oldRetry.disabled = true; return; }
-      node.textContent = pager.busy ? '正在加载…' : pager.loaded && !pager.hasMore() && pager.items.length ? '已显示全部' : '';
+      node.textContent = pager.busy ? uiText('common.loading', '正在加载…') : pager.loaded && !pager.hasMore() && pager.items.length ? uiText('content.allShown', '已显示全部') : '';
     }
     node.setAttribute('aria-busy', String(pager.busy));
   }
@@ -388,7 +419,7 @@
   function createListPager(endpoint, container, selector, id, render, metadata) {
     var pager = HongguoPagination.create({
       request: function (params, signal) { var requestParams = Object.assign({}, params); if (endpoint === '/api/v1/follow') delete requestParams.shown; return fetchData((pager.endpoint || endpoint) + '?' + new URLSearchParams(requestParams).toString(), signal ? { signal: signal } : {}); },
-      clear: function () { if (container) renderMessage(container, 'list-empty', '正在加载…'); },
+      clear: function () { if (container) renderMessage(container, 'list-empty', uiText('common.loading', '正在加载…')); },
       render: function (items, append, p) {
         if (items.length && container) container.querySelectorAll('.list-empty, .calendar-empty, .search-result-empty, .rank-empty').forEach(function (node) { node.remove(); });
         render(items, append, p);
@@ -406,11 +437,11 @@
     // A single endpoint wrapper handles both contracts without changing cursors.
     pager = HongguoPagination.create({
       request: function (params, signal) { return fetchData((params.q ? '/api/v1/lists/search' : '/api/v1/category') + '?' + new URLSearchParams(params).toString(), signal ? { signal: signal } : {}); },
-      clear: function () { searchItems = []; document.getElementById('search-result-count').textContent = ''; renderMessage(searchResults, 'list-empty', '正在读取短剧…'); },
+      clear: function () { searchItems = []; document.getElementById('search-result-count').textContent = ''; renderMessage(searchResults, 'list-empty', uiText('content.loadingDrama', '正在读取短剧…')); },
       render: function (items, append) { if (items.length) searchResults.querySelectorAll('.list-empty, .search-result-empty').forEach(function (node) { node.remove(); }); renderSearchResults(items, append); },
       metadata: function (data) {
         if (searchKind === 'browse') {
-          if (searchPanelPending && (!data.filters || !data.filters.length)) throw new Error('筛选条件未返回');
+          if (searchPanelPending && (!data.filters || !data.filters.length)) throw new Error(uiText('content.filterMissing', '筛选条件未返回'));
           if (data.filters && data.filters.length) { searchPanelPending = false; renderFilterRows(data.filters); }
           document.getElementById('search-result-title').textContent = filterSummary(); document.getElementById('filter-state').textContent = filterSummary();
         } else if (!searchPager.loaded && searchPager.params.q && searchHistory && searchPager.historyEpoch === searchHistoryEpoch) {
@@ -437,8 +468,8 @@
     key: function (item) { return item.comment_id; },
     cursor: function (data) { return data.next_cursor ? { cursor: data.next_cursor } : {}; },
     request: function (params, signal) { return fetchData('/api/v1/comments?' + new URLSearchParams(params), signal ? { signal: signal } : {}); },
-    metadata: function (data) { if (discussionSession) { document.getElementById('discussion-title').textContent = '第' + discussionSession.episode + '集评论 · ' + (data.total || 0); engagement.commentTotal(discussionSession, data.total); } },
-    clear: function () { renderMessage(document.getElementById('discussion-list'), 'list-empty', '正在读取评论…'); },
+    metadata: function (data) { if (discussionSession) { document.getElementById('discussion-title').textContent = uiText('content.commentCount', '第{episode}集评论 · {count}', { episode: discussionSession.episode, count: data.total || 0 }); engagement.commentTotal(discussionSession, data.total); } },
+    clear: function () { renderMessage(document.getElementById('discussion-list'), 'list-empty', uiText('content.readingComments', '正在读取评论…')); },
     render: renderDiscussion,
     status: function (p) { listStatus(p, 'discussion-pagination'); }, after: queueTailCheck
   });
@@ -503,7 +534,7 @@
   }
   function needPlayerLogin(message) {
     if (accountData && accountData.logged_in) return false;
-    message.textContent = '请先到“我的 / 登录”登录红果账号'; return true;
+    message.textContent = uiText('content.loginRequired', '请先到“我的 / 登录”登录红果账号'); return true;
   }
   function discussionAction(text, focus, operation) {
     var button = document.createElement('button'); button.className = 'discussion-action'; button.textContent = text; button.dataset.focus = focus;
@@ -511,13 +542,13 @@
   }
   function commentAge(created) {
     var elapsed = Math.max(0, Date.now() / 1000 - created);
-    return !created ? '' : elapsed < 60 ? '刚刚' : elapsed < 3600 ? Math.floor(elapsed / 60) + '分钟前' : elapsed < 86400 ? Math.floor(elapsed / 3600) + '小时前' : Math.floor(elapsed / 86400) + '天前';
+    return !created ? '' : elapsed < 60 ? uiText('common.justNow', '刚刚') : elapsed < 3600 ? uiText('common.minuteAgo', '{value}分钟前', { value: Math.floor(elapsed / 60) }) : elapsed < 86400 ? uiText('common.hourAgo', '{value}小时前', { value: Math.floor(elapsed / 3600) }) : uiText('common.dayAgo', '{value}天前', { value: Math.floor(elapsed / 86400) });
   }
   function renderDiscussion(items, append) {
     var list = document.getElementById('discussion-list');
     if (!append) list.innerHTML = '';
     if (items.length) list.querySelectorAll('.list-empty').forEach(function (node) { node.remove(); });
-    if (!items.length && !list.children.length) renderMessage(list, 'list-empty', '本集暂无评论');
+    if (!items.length && !list.children.length) renderMessage(list, 'list-empty', uiText('content.noComments', '本集暂无评论'));
     items.forEach(function (item) {
       var row = document.createElement('div'); row.className = 'discussion-item'; row.tabIndex = 0; row.dataset.focus = 'comment-' + item.comment_id; row.__item = item;
       var main = document.createElement('div'); main.className = 'discussion-main';
@@ -525,16 +556,16 @@
       if (/^https?:\/\//.test(item.avatar || '')) avatar.src = item.avatar;
       avatar.addEventListener('error', function () { avatar.removeAttribute('src'); });
       var content = document.createElement('div'); content.className = 'discussion-copy';
-      var author = document.createElement('strong'); author.textContent = item.author || '红果用户';
+      var author = document.createElement('strong'); author.textContent = item.author || uiText('content.user', '红果用户');
       var copy = document.createElement('p'); copy.textContent = item.text;
       var meta = document.createElement('small'); meta.textContent = commentAge(item.created);
       var actions = document.createElement('div'); actions.className = 'discussion-actions';
-      actions.appendChild(discussionAction('回复', 'reply-' + item.comment_id, function () { selectDiscussionReply(item); }));
-      if (item.replies) actions.appendChild(discussionAction('展开 ' + item.replies + ' 条回复', 'expand-' + item.comment_id, function (button) { toggleReplies(row, button); }));
-      if (item.own) actions.appendChild(discussionAction('删除', 'delete-' + item.comment_id, function (button) { confirmDeleteComment(row, button); }));
+      actions.appendChild(discussionAction(uiText('content.reply', '回复'), 'reply-' + item.comment_id, function () { selectDiscussionReply(item); }));
+      if (item.replies) actions.appendChild(discussionAction(uiText('content.expandReplies', '展开 {count} 条回复', { count: item.replies }), 'expand-' + item.comment_id, function (button) { toggleReplies(row, button); }));
+      if (item.own) actions.appendChild(discussionAction(uiText('content.delete', '删除'), 'delete-' + item.comment_id, function (button) { confirmDeleteComment(row, button); }));
       var like = discussionAction('', 'comment-like-' + item.comment_id, function (button) { likeComment(row, button); }); like.classList.add('discussion-like');
       like.innerHTML = '<svg><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><small></small>';
-      like.setAttribute('aria-pressed', String(!!item.liked)); like.setAttribute('aria-label', '评论点赞'); like.querySelector('small').textContent = item.likes || 0;
+      like.setAttribute('aria-pressed', String(!!item.liked)); like.setAttribute('aria-label', uiText('content.commentLike', '评论点赞')); like.querySelector('small').textContent = item.likes || 0;
       content.appendChild(author); content.appendChild(copy); content.appendChild(meta); content.appendChild(actions); main.appendChild(avatar); main.appendChild(content); main.appendChild(like); row.appendChild(main);
       var replies = document.createElement('div'); replies.className = 'discussion-replies is-hidden'; row.appendChild(replies);
       row.addEventListener('focus', function () { main.scrollIntoView({ block: 'nearest' }); }); list.appendChild(row);
@@ -548,15 +579,15 @@
       if (epoch !== discussionEpoch) return;
       item.liked = value; item.likes = Math.max(0, (item.likes || 0) + (value ? 1 : -1));
       button.setAttribute('aria-pressed', String(value)); button.querySelector('small').textContent = item.likes;
-    }).catch(function (error) { if (epoch === discussionEpoch) document.getElementById('discussion-message').textContent = error.message; })
+    }).catch(function (error) { if (epoch === discussionEpoch) document.getElementById('discussion-message').textContent = localizedError(error, 'common.operationFailed', '操作未完成，请重试。'); })
       .then(function () { button.removeAttribute('aria-busy'); });
   }
   function confirmDeleteComment(row, button) {
     if (needPlayerLogin(document.getElementById('discussion-message'))) return;
     confirmOpen = true; confirmReturnFocus = button; ++confirmationGeneration;
-    document.getElementById('confirm-title').textContent = '删除这条评论？';
-    document.getElementById('confirm-copy').textContent = '会从红果账号的评论中删除，删除后无法恢复。';
-    document.getElementById('confirm-accept').textContent = '删除';
+    document.getElementById('confirm-title').textContent = uiText('content.deleteCommentTitle', '删除这条评论？');
+    document.getElementById('confirm-copy').textContent = uiText('content.deleteCommentCopy', '会从红果账号的评论中删除，删除后无法恢复。');
+    document.getElementById('confirm-accept').textContent = uiText('content.delete', '删除');
     document.getElementById('confirm-modal').classList.remove('is-hidden');
     document.getElementById('confirm-modal').setAttribute('aria-hidden', 'false');
     var session = { series_id: discussionSession.series_id, vid: discussionSession.vid }; var epoch = discussionEpoch;
@@ -568,30 +599,30 @@
         if (row.__replyPager) row.__replyPager.cancel();
         row.remove(); confirmReturnFocus = next && next.classList.contains('discussion-item') ? next : document.getElementById('discussion-input');
         return true;
-      }).catch(function (error) { if (epoch === discussionEpoch) document.getElementById('confirm-copy').textContent = error.message; return false; });
+      }).catch(function (error) { if (epoch === discussionEpoch) document.getElementById('confirm-copy').textContent = localizedError(error, 'common.operationFailed', '操作未完成，请重试。'); return false; });
     };
     goFocus(document.getElementById('confirm-cancel'));
   }
   function selectDiscussionReply(item) {
     discussionReplyTarget = item || null;
-    var target = document.getElementById('discussion-target'); target.classList.toggle('is-hidden', !item); target.textContent = item ? '回复 ' + (item.author || '红果用户') : '';
+    var target = document.getElementById('discussion-target'); target.classList.toggle('is-hidden', !item); target.textContent = item ? uiText('content.replyTo', '回复 {name}', { name: item.author || uiText('content.user', '红果用户') }) : '';
     document.getElementById('discussion-cancel-reply').classList.toggle('is-hidden', !item);
     if (item) goFocus(document.getElementById('discussion-input'));
   }
   function toggleReplies(row, button) {
     var panel = row.querySelector('.discussion-replies'); var item = row.__item;
-    var opening = panel.classList.contains('is-hidden'); panel.classList.toggle('is-hidden', !opening); button.textContent = opening ? '收起回复' : '展开 ' + item.replies + ' 条回复';
+    var opening = panel.classList.contains('is-hidden'); panel.classList.toggle('is-hidden', !opening); button.textContent = opening ? uiText('content.collapseReplies', '收起回复') : uiText('content.expandReplies', '展开 {count} 条回复', { count: item.replies });
     if (!opening) { if (row.__replyPager) row.__replyPager.cancel(); return; }
     if (!row.__replyPager) {
       var list = document.createElement('div'); panel.appendChild(list);
       var statusNode = document.createElement('div'); statusNode.className = 'list-status'; statusNode.id = 'replies-status-' + item.comment_id; panel.appendChild(statusNode);
       var pager = HongguoPagination.create({ key: function (reply) { return reply.comment_id; }, cursor: function (data) { return data.next_cursor ? { cursor: data.next_cursor } : {}; },
         request: function (params, signal) { return fetchData('/api/v1/replies?' + new URLSearchParams(params), signal ? { signal: signal } : {}); },
-        clear: function () { renderMessage(list, 'list-empty', '正在读取回复…'); },
+        clear: function () { renderMessage(list, 'list-empty', uiText('content.readingReplies', '正在读取回复…')); },
         render: function (replies, append) {
           if (!append) list.innerHTML = '';
-          if (!replies.length && !list.children.length) renderMessage(list, 'list-empty', '暂无回复');
-          replies.forEach(function (reply) { var node = document.createElement('div'); node.className = 'discussion-reply'; node.tabIndex = 0; node.dataset.focus = 'reply-row-' + reply.comment_id; var name = document.createElement('strong'); name.textContent = reply.author || '红果用户'; var text = document.createElement('p'); text.textContent = reply.text; node.appendChild(name); node.appendChild(text); node.addEventListener('focus', function () { node.scrollIntoView({ block: 'nearest' }); }); list.appendChild(node); });
+          if (!replies.length && !list.children.length) renderMessage(list, 'list-empty', uiText('content.noReplies', '暂无回复'));
+          replies.forEach(function (reply) { var node = document.createElement('div'); node.className = 'discussion-reply'; node.tabIndex = 0; node.dataset.focus = 'reply-row-' + reply.comment_id; var name = document.createElement('strong'); name.textContent = reply.author || uiText('content.user', '红果用户'); var text = document.createElement('p'); text.textContent = reply.text; node.appendChild(name); node.appendChild(text); node.addEventListener('focus', function () { node.scrollIntoView({ block: 'nearest' }); }); list.appendChild(node); });
         }, status: function (p) { listStatus(p, statusNode.id); }, after: queueTailCheck });
       pager.container = list; pager.selector = '.discussion-reply'; pager.statusID = statusNode.id; row.__replyPager = pager; replyPagers.push(pager);
       pager.reset(Object.assign({}, discussionSession, { comment_id: item.comment_id }));
@@ -601,27 +632,27 @@
   function sendDiscussion() {
     var input = document.getElementById('discussion-input'); var message = document.getElementById('discussion-message');
     if (discussionBusy || !discussionSession || needPlayerLogin(message)) return;
-    var text = input.value.trim(); if (!text || Array.from(text).length > 500) { message.textContent = '请输入 1～500 字的内容'; goFocus(input); return; }
+    var text = input.value.trim(); if (!text || Array.from(text).length > 500) { message.textContent = uiText('content.commentLength', '请输入 1～500 字的内容'); goFocus(input); return; }
     var epoch = discussionEpoch; var target = discussionReplyTarget;
     var body = Object.assign({}, discussionSession, { action: target ? 'reply' : 'comment', text: text }); delete body.episode;
     if (target) body.comment_id = target.comment_id;
-    discussionBusy = true; input.readOnly = true; message.textContent = '正在发送…'; document.getElementById('discussion-send').setAttribute('aria-busy', 'true');
+    discussionBusy = true; input.readOnly = true; message.textContent = uiText('common.submitting', '正在发送…'); document.getElementById('discussion-send').setAttribute('aria-busy', 'true');
     discussionRequest = typeof AbortController === 'function' ? new AbortController() : null;
     writePlayerAction(body, discussionRequest && discussionRequest.signal).then(function () {
       if (epoch !== discussionEpoch) return;
       input.value = ''; delete discussionDrafts[draftKey(discussionSession)]; selectDiscussionReply(null);
-      message.textContent = '已发送，审核通过后显示';
+      message.textContent = uiText('common.submitted', '已发送，审核通过后显示');
       goFocus(input);
-    }).catch(function (error) { if (epoch === discussionEpoch && error.name !== 'AbortError') message.textContent = error.message; })
+    }).catch(function (error) { if (epoch === discussionEpoch && error.name !== 'AbortError') message.textContent = localizedError(error, 'common.operationFailed', '操作未完成，请重试。'); })
       .then(function () { if (epoch === discussionEpoch) { discussionBusy = false; discussionRequest = null; input.readOnly = false; document.getElementById('discussion-send').removeAttribute('aria-busy'); } });
   }
   function openDiscussion(button) {
     var session = playbackSnapshot();
-    if (!session) { showNotice('开始播放后可查看本集评论'); return; }
+    if (!session) { showNotice(uiText('content.commentStarted', '开始播放后可查看本集评论')); return; }
     closePlayerOptions(false); clearTimeout(controlsTimer); discussionOpen = true; discussionReturn = button; discussionSession = session; ++discussionEpoch;
     shell.classList.add('is-discussion-open');
     var panel = document.getElementById('discussion-panel'); panel.classList.remove('is-hidden'); panel.setAttribute('aria-hidden', 'false');
-    document.getElementById('discussion-title').textContent = '第' + session.episode + '集评论';
+    document.getElementById('discussion-title').textContent = uiText('content.commentCount', '第{episode}集评论 · {count}', { episode: session.episode, count: 0 }).replace(/ · 0$/, '');
     document.getElementById('discussion-input').value = discussionDrafts[draftKey(session)] || ''; document.getElementById('discussion-message').textContent = ''; selectDiscussionReply(null);
     discussionPager.reset({ series_id: session.series_id, vid: session.vid });
     goFocus(document.getElementById('discussion-close'));
@@ -688,10 +719,10 @@
   function updateDanmakuButton() {
     var button = document.querySelector('.playback-buttons [data-action="danmaku"]');
     if (!button) return;
-    var label = danmakuEnabled ? '弹幕开' : '弹幕关';
+    var label = danmakuEnabled ? uiText('ui.danmakuOpen', '弹幕开') : uiText('ui.danmakuClosed', '弹幕关');
     var icon = danmakuEnabled ? 'icon-danmaku' : 'icon-danmaku-off';
     button.setAttribute('aria-pressed', String(danmakuEnabled));
-    button.setAttribute('aria-label', danmakuEnabled ? '弹幕已开启' : '弹幕已关闭');
+    button.setAttribute('aria-label', danmakuEnabled ? uiText('ui.danmakuEnabled', '弹幕已开启') : uiText('ui.danmakuDisabled', '弹幕已关闭'));
     button.querySelector('.control-label').textContent = label;
     var use = button.querySelector('use');
     use.setAttribute('href', '#' + icon);
@@ -709,7 +740,7 @@
       fetchData('/api/v1/danmaku?' + params, danmakuRequest ? { signal: danmakuRequest.signal } : {}).then(function (data) {
         if (generation !== danmakuGeneration) return;
         danmakuRows = (data.items || []).filter(function (item) { return item.offset_ms >= now - 1500 && item.offset_ms < windowStart + 30000; });
-      }).catch(function (error) { if (generation === danmakuGeneration && error.name !== 'AbortError') showNotice('弹幕暂时不可用，可关闭后重试'); })
+      }).catch(function (error) { if (generation === danmakuGeneration && error.name !== 'AbortError') showNotice(uiText('ui.danmakuUnavailable', '弹幕暂时不可用，可关闭后重试')); })
         .then(function () { if (generation === danmakuGeneration) { danmakuBusy = false; danmakuRequest = null; } });
     }
     var layer = document.getElementById('danmaku-layer'); var last = danmakuLast;
@@ -814,6 +845,7 @@
     if (element.classList.contains('library-remove')) return 'libraryRemovals';
     if (element.classList.contains('account-input')) return 'accountInputs';
     if (element.classList.contains('app-update-action')) return 'appUpdates';
+    if (element.classList.contains('locale-action')) return 'localeActions';
     if (element.classList.contains('sidebar-display-action')) return 'sidebarDisplay';
     if (element.classList.contains('playback-mode-action')) return 'playbackModes';
     if (element.classList.contains('account-action')) return 'accountActions';
@@ -891,6 +923,10 @@
 
   function selectedSidebarDisplay() {
     return firstVisible('.sidebar-display-action[aria-pressed="true"]') || firstVisible('.sidebar-display-action');
+  }
+
+  function selectedLocale() {
+    return firstVisible('.locale-action[aria-pressed="true"]') || firstVisible('.locale-action');
   }
 
   function activeChannel() {
@@ -1278,18 +1314,24 @@
     if (zone === 'sidebarDisplay') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
       if (direction === 'up') return activeSidebar();
+      if (direction === 'down') return firstVisible('.locale-action[aria-pressed="true"]') || firstVisible('.locale-action') || firstVisible('.app-update-action') || firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
+      return null;
+    }
+    if (zone === 'localeActions') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'up') return selectedSidebarDisplay() || activeSidebar();
       if (direction === 'down') return firstVisible('.app-update-action') || firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
       return null;
     }
     if (zone === 'appUpdates') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return selectedSidebarDisplay() || activeSidebar();
+      if (direction === 'up') return firstVisible('.locale-action[aria-pressed="true"]') || firstVisible('.locale-action') || selectedSidebarDisplay() || activeSidebar();
       if (direction === 'down') return firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
       return null;
     }
     if (zone === 'playbackModes') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstVisible('.app-update-action') || selectedSidebarDisplay() || activeSidebar();
+      if (direction === 'up') return firstVisible('.app-update-action') || firstVisible('.locale-action[aria-pressed="true"]') || firstVisible('.locale-action') || selectedSidebarDisplay() || activeSidebar();
       return null;
     }
     if (zone === 'accountInputs' || zone === 'accountActions') {
@@ -1456,15 +1498,15 @@
   }
   function renderAccountNumber(field) {
     var code = field.id === 'account-code';
-    var placeholder = code ? '请输入验证码' : accountData && accountData.phase === 'code' && accountData.phone ? '请重新输入 ' + accountData.phone + ' 的完整手机号' : '请输入手机号';
+    var placeholder = code ? uiText('content.inputCode', '请输入验证码') : accountData && accountData.phase === 'code' && accountData.phone ? uiText('content.phoneComplete', '请重新输入 {phone} 的完整手机号', { phone: accountData.phone }) : uiText('content.inputPhone', '请输入手机号');
     if (desktopShell) field.placeholder = placeholder;
     else field.textContent = field.value || placeholder;
     field.classList.toggle('is-empty', !field.value);
-    field.setAttribute('aria-label', (code ? '短信验证码' : '手机号') + (desktopShell ? '' : '，确认键输入'));
+    field.setAttribute('aria-label', (code ? uiText('content.codeLabel', '短信验证码') : uiText('content.phoneLabel', '手机号')) + (desktopShell ? '' : uiText('ui.phoneComplete', '，确认键输入')));
   }
   function accountPhoneCountry() {
     for (var i = 0; i < accountPhoneCountries.length; i++) if (accountPhoneCountries[i].code === accountPhoneCountryCode) return accountPhoneCountries[i];
-    return accountPhoneCountries[0] || { code: '+86', name: '中国大陆', minLength: 11, maxLength: 11 };
+    return accountPhoneCountries[0] || { code: '+86', localeKey: 'country.mainlandChina', minLength: 11, maxLength: 11 };
   }
   function accountPhoneValid(value, country) {
     country = country || accountPhoneCountry();
@@ -1478,7 +1520,7 @@
     var changed = accountPhoneCountryCode !== country.code;
     accountPhoneCountryCode = country.code;
     try { window.localStorage.setItem('hongguo.account.phoneCountryCode', country.code); } catch (ignoredPhoneCountryStorage) {}
-    document.getElementById('account-country-name').textContent = country.name;
+    document.getElementById('account-country-name').textContent = phoneCountryName(country);
     document.getElementById('account-country-code').textContent = country.code;
     var phone = document.getElementById('account-phone');
     phone.setAttribute('data-country-code', country.code);
@@ -1505,7 +1547,7 @@
       item.type = 'button'; item.className = 'account-country-item';
       item.setAttribute('role', 'option'); item.setAttribute('data-country-code', country.code);
       item.setAttribute('data-focus', 'account-country-' + country.code.slice(1));
-      var name = document.createElement('span'); name.className = 'account-country-item-name'; name.textContent = country.name;
+      var name = document.createElement('span'); name.className = 'account-country-item-name'; name.textContent = phoneCountryName(country);
       var code = document.createElement('span'); code.className = 'account-country-item-code'; code.textContent = country.code;
       item.appendChild(name); item.appendChild(code);
       item.addEventListener('click', function () { setAccountPhoneCountry(country.code, true); closeAccountCountryModal(true); });
@@ -1640,7 +1682,7 @@
       zoneOf(current) === 'feed' && (direction === 'left' || direction === 'right') &&
       (shell.classList.contains('is-cinema') || shell.classList.contains('is-controls-hidden'))) {
       var seeked = seekBy(direction === 'left' ? -10 : 10, false);
-      if (!seeked) showNotice('视频准备好后才能快进或后退');
+      if (!seeked) showNotice(uiText('ui.videoReadySeek', '视频准备好后才能快进或后退'));
       event.preventDefault(); event.stopPropagation(); return;
     }
     if (isPlaybackPage() && !detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && (direction !== 'left' || shell.classList.contains('is-cinema') || zoneOf(current) !== 'feed')) revealControls();
@@ -1675,18 +1717,18 @@
     var current = playback && Number(playback.episode) || request && request.index === feedIndex && Number(request.episode) ||
       featuredItem && Number(featuredItem.start_episode) || 0;
     if (!current) {
-      showNotice('正在读取当前集数');
+      showNotice(uiText('ui.readingCurrentEpisode', '正在读取当前集数'));
       return true;
     }
     current = Math.max(1, Math.floor(current));
     var target = current + step;
     if (target < 1) {
-      showNotice('已经是第一集');
+      showNotice(uiText('ui.firstEpisode', '已经是第一集'));
       return true;
     }
     var total = Number(item && item.episode_count) || Number(featuredItem && featuredItem.episode_count) || 0;
     if (total > 0 && target > total) {
-      showNotice('已经是本季最后一集');
+      showNotice(uiText('ui.lastEpisode', '已经是本季最后一集'));
       return true;
     }
 
@@ -1749,8 +1791,8 @@
     var popup = document.getElementById('notification-popup');
     if (!popup) return;
     popup.textContent = '';
-    var title = document.createElement('strong'); title.textContent = item.kind === 'reservation_online' ? '预约提醒' : '追更提醒';
-    var message = document.createElement('span'); message.textContent = item.message || item.title || '有新的短剧更新';
+    var title = document.createElement('strong'); title.textContent = item.kind === 'reservation_online' ? uiText('ui.reservationNotification', '预约提醒') : uiText('ui.followNotification', '追更提醒');
+    var message = document.createElement('span'); message.textContent = item.message || item.title || uiText('ui.newDramaUpdate', '有新的短剧更新');
     popup.appendChild(title); popup.appendChild(message); popup.classList.remove('is-hidden');
     clearTimeout(notificationPopupTimer);
     notificationPopupTimer = setTimeout(notificationHidePopup, 7000);
@@ -1769,11 +1811,11 @@
     if (!followNotificationList) return;
     followNotificationList.innerHTML = '';
     if (!followNotificationItems.length) {
-      var empty = document.createElement('div'); empty.className = 'follow-notification-empty'; empty.textContent = '暂无更新提醒'; followNotificationList.appendChild(empty); return;
+      var empty = document.createElement('div'); empty.className = 'follow-notification-empty'; empty.textContent = uiText('ui.noUpdateNotifications', '暂无更新提醒'); followNotificationList.appendChild(empty); return;
     }
     followNotificationItems.slice().reverse().forEach(function (item) {
       var row = document.createElement('button'); row.type = 'button'; row.className = 'follow-notification-row' + (item.read ? '' : ' is-unread'); row.dataset.focus = 'follow-notice-' + item.id;
-      var copy = document.createElement('span'); var title = document.createElement('strong'); title.textContent = item.title || '短剧更新'; var message = document.createElement('span'); message.textContent = item.message || ''; copy.appendChild(title); copy.appendChild(message);
+      var copy = document.createElement('span'); var title = document.createElement('strong'); title.textContent = item.title || uiText('ui.dramaUpdate', '短剧更新'); var message = document.createElement('span'); message.textContent = item.message || ''; copy.appendChild(title); copy.appendChild(message);
       var time = document.createElement('time'); time.textContent = formatNotificationTime(item.created_at); row.appendChild(copy); row.appendChild(time);
       row.addEventListener('click', function () { markNotificationRead(item.id, row); });
       followNotificationList.appendChild(row);
@@ -1811,7 +1853,7 @@
       }
       acceptNotificationData(data, !first);
       return true;
-    }).catch(function (error) { if (followNotificationViewOpen) showNotice('更新提醒暂时读取失败'); return false; })
+    }).catch(function (error) { if (followNotificationViewOpen) showNotice(uiText('ui.followReadFailed', '更新提醒暂时读取失败')); return false; })
       .then(function (ok) { notificationCheckBusy = false; flushNotificationPopup(); return ok; });
   }
   function openFollowNotifications() {
@@ -1834,7 +1876,7 @@
     fetchData('/api/v1/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id }) }).then(function (data) {
       acceptNotificationData(data, false);
       if (target && followNotificationViewOpen) goFocus(document.querySelector('[data-focus="' + target.replace(/"/g, '') + '"]') || document.getElementById('follow-notifications-back'));
-    }).catch(function () { showNotice('更新提醒暂时无法标记'); });
+    }).catch(function () { showNotice(uiText('ui.followMarkFailed', '更新提醒暂时无法标记')); });
   }
 
   function isPlaybackPage() { return pageMode() === 'recommend' || pageMode() === 'player'; }
@@ -1883,7 +1925,7 @@
       if (zoneOf(document.activeElement) === 'feed') goFocus(document.getElementById('player-retry'));
     }
   }
-  function episodeLoadingText(episode) { return episode > 0 ? '第 ' + episode + ' 集' : '…'; }
+  function episodeLoadingText(episode) { return episode > 0 ? uiText('content.episodeNumber', '第{episode}集', { episode: episode }) : '…'; }
   function setControlIcon(action, label, icon) {
     var button = document.querySelector('[data-action="' + action + '"]');
     var text = button.querySelector('.control-label');
@@ -1907,20 +1949,20 @@
     progress.setAttribute('aria-valuetext', clockText(position) + ' / ' + clockText(duration));
     progress.querySelector('span').style.width = (duration ? position / duration * 100 : 0) + '%';
     var paused = video.paused || video.ended;
-    setControlIcon('pause', paused ? '播放' : '暂停', paused ? 'icon-play' : 'icon-pause');
+    setControlIcon('pause', paused ? uiText('ui.play', '播放') : uiText('ui.pause', '暂停'), paused ? 'icon-play' : 'icon-pause');
     setControlIcon('speed', video.playbackRate + 'x', 'icon-speed');
     var muted = (playbackAudioHold ? playbackAudioHold.muted : video.muted) || !video.volume;
-    setControlIcon('volume', muted ? '静音' : '音量 ' + Math.round(video.volume * 100) + '%', muted ? 'icon-volume-muted' : 'icon-volume');
-    setControlIcon('quality', playbackQuality ? (playbackPreferences.quality ? '' : '自动 · ') + playbackQuality : '清晰度', 'icon-quality');
+    setControlIcon('volume', muted ? uiText('ui.mute', '静音') : uiText('ui.volume', '音量') + ' ' + Math.round(video.volume * 100) + '%', muted ? 'icon-volume-muted' : 'icon-volume');
+    setControlIcon('quality', playbackQuality ? (playbackPreferences.quality ? '' : uiText('diagnostic.auto', '自动') + ' · ') + playbackQuality : uiText('ui.quality', '清晰度'), 'icon-quality');
     var cinema = shell.classList.contains('is-cinema');
-    setControlIcon('fullscreen', cinema ? '退出全屏' : '全屏', cinema ? 'icon-fullscreen-exit' : 'icon-fullscreen');
+    setControlIcon('fullscreen', cinema ? uiText('ui.exitFullscreen', '退出全屏') : uiText('ui.fullscreen', '全屏'), cinema ? 'icon-fullscreen-exit' : 'icon-fullscreen');
   }
   function savePlaybackPreferences() {
     try {
       var value = JSON.stringify(playbackPreferences);
       if (androidShell && window.HongguoTVPreferences) window.HongguoTVPreferences.write(value);
       else localStorage.setItem('hongguo-tv-playback', value);
-    } catch (error) { showNotice('播放设置未保存'); }
+    } catch (error) { showNotice(uiText('ui.playbackSettingsSaveFailed', '播放设置未保存')); }
   }
   function restorePlaybackPreferences() {
     try {
@@ -1955,14 +1997,14 @@
     var width = window.innerWidth, height = window.innerHeight, dpr = window.devicePixelRatio;
     var userAgent = typeof navigator.userAgent === 'string' ? navigator.userAgent.replace(/[\x00-\x1f\x7f]/g, ' ') : '';
     function valid(value) { return typeof value === 'number' && isFinite(value) && value > 0; }
-    function dimensions(w, h) { return valid(w) && valid(h) ? w + ' × ' + h : '未取得'; }
-    var pixels = valid(width) && valid(height) && valid(dpr) ? dimensions(Math.round(width * dpr), Math.round(height * dpr)) : '未取得';
+    function dimensions(w, h) { return valid(w) && valid(h) ? w + ' × ' + h : uiText('ui.notObtained', '未取得'); }
+    var pixels = valid(width) && valid(height) && valid(dpr) ? dimensions(Math.round(width * dpr), Math.round(height * dpr)) : uiText('ui.notObtained', '未取得');
     return { userAgent: userAgent, rows: [
-      { label: '视口尺寸', value: dimensions(width, height) },
-      { label: '屏幕尺寸', value: dimensions(screen.width, screen.height) },
-      { label: 'DPR', value: valid(dpr) ? String(dpr) : '未取得' },
-      { label: '像素估算', value: pixels },
-      { label: 'User Agent', value: userAgent || '未取得', wide: true }
+      { label: uiText('ui.viewportSize', '视口尺寸'), value: dimensions(width, height) },
+      { label: uiText('ui.screenSize', '屏幕尺寸'), value: dimensions(screen.width, screen.height) },
+      { label: 'DPR', value: valid(dpr) ? String(dpr) : uiText('ui.notObtained', '未取得') },
+      { label: uiText('ui.pixelEstimate', '像素估算'), value: pixels },
+      { label: 'User Agent', value: userAgent || uiText('ui.notObtained', '未取得'), wide: true }
     ] };
   }
   function readDiagnosticVideo(video) {
@@ -1980,19 +2022,19 @@
   }
   function diagnosticFallbackReport(snapshot, reason) {
     var video = snapshot.video || {}, flags = snapshot.flags || {}, device = snapshot.device || {};
-    var current = snapshot.episode > 0 ? '第 ' + diagnosticNumber(snapshot.episode) + ' 集' : '集数尚未确定';
-    var state = video.ended ? '已结束' : video.paused ? '暂停' : '播放中';
-    if (flags.preparing) state += ' · 准备中';
-    if (flags.failed) state = '播放准备失败';
+    var current = snapshot.episode > 0 ? uiText('content.episodeNumber', '第{episode}集', { episode: diagnosticNumber(snapshot.episode) }) : uiText('ui.episodeUnknown', '集数尚未确定');
+    var state = video.ended ? uiText('diagnostic.ended', '已结束') : video.paused ? uiText('diagnostic.paused', '暂停') : uiText('diagnostic.playing', '播放中');
+    if (flags.preparing) state += ' · ' + uiText('ui.preparing', '准备中');
+    if (flags.failed) state = uiText('ui.playbackPrepareFailed', '播放准备失败');
     var size = diagnosticNumber(video.width) + ' × ' + diagnosticNumber(video.height);
     var deviceName = (typeof device.manufacturer === 'string' ? device.manufacturer : '') + ' ' + (typeof device.model === 'string' ? device.model : '');
-    return { summary: reason ? '基础诊断已显示；完整诊断组件未加载' : '基础播放状态', rows: [
-      { label: '当前视频', value: current },
-      { label: '设备型号', value: deviceName.replace(/^\s+|\s+$/g, '') || '设备信息未取得' },
-      { label: '视频画面', value: size },
-      { label: '播放时钟', value: Math.floor(diagnosticNumber(video.position)) + ' 秒 / ' + (video.duration ? Math.floor(diagnosticNumber(video.duration)) + ' 秒' : '未知时长') },
-      { label: '播放状态', value: state },
-      { label: '诊断状态', value: reason ? '请更新应用后重试' : '已读取' }
+    return { summary: reason ? uiText('ui.basicDiagnostics', '基础诊断已显示；完整诊断组件未加载') : uiText('ui.basicPlaybackState', '基础播放状态'), rows: [
+      { label: uiText('diagnostic.currentVideo', '当前视频'), value: current },
+      { label: uiText('diagnostic.deviceModel', '设备型号'), value: deviceName.replace(/^\s+|\s+$/g, '') || uiText('diagnostic.deviceUnavailable', '设备信息未取得') },
+      { label: uiText('diagnostic.videoPicture', '视频画面'), value: size },
+      { label: uiText('diagnostic.playbackClock', '播放时钟'), value: Math.floor(diagnosticNumber(video.position)) + ' 秒 / ' + (video.duration ? Math.floor(diagnosticNumber(video.duration)) + ' 秒' : uiText('diagnostic.durationUnknown', '未知时长')) },
+      { label: uiText('diagnostic.playbackState', '播放状态'), value: state },
+      { label: uiText('diagnostic.recentError', '最近错误'), value: reason ? uiText('ui.updateStateDefault', '请更新应用后重试') : uiText('ui.read', '已读取') }
     ].concat(snapshot.environmentRows || []), capturedAt: snapshot.capturedAt || '—' };
   }
   function moveDiagnosticFocus(current, direction) {
@@ -2033,7 +2075,7 @@
       var value = document.createElement('span'); value.className = 'diagnostic-value'; value.textContent = item.value;
       row.appendChild(label); row.appendChild(value); rows.appendChild(row);
     });
-    document.getElementById('player-diagnostics-time').textContent = '快照 ' + report.capturedAt;
+    document.getElementById('player-diagnostics-time').textContent = uiText('ui.snapshot', '快照 {value}', { value: report.capturedAt });
     // Clearing the rows can temporarily clamp scrollTop to zero. Restore it
     // after both the synchronous snapshot and the asynchronous core report.
     scroll.scrollTop = scrollTop;
@@ -2134,13 +2176,13 @@
     qualityPrevious = { playback: playback, playing: !video.paused && !video.ended };
     var previous = qualityPrevious; var position = video.currentTime;
     clearRangeStallTimer();
-    video.pause(); document.getElementById('player-options-message').textContent = '正在准备 ' + (value || '自动清晰度') + '…';
+    video.pause(); document.getElementById('player-options-message').textContent = uiText('ui.preparingQuality', '正在准备 {quality}…', { quality: value || uiText('ui.autoQuality', '自动清晰度') });
     qualityRequest = typeof AbortController === 'function' ? new AbortController() : null;
     var q = new URLSearchParams({ series_id: playback.item.series_id, vid: playback.vid, quality: value });
     if (rangePlaybackEnabled()) q.set('mode', 'range');
     fetchData('/api/v1/play/info?' + q, qualityRequest ? { signal: qualityRequest.signal } : {}).then(function (data) {
       if (epoch !== qualityEpoch || generation !== feedGeneration || activePlayback !== playback || !playerOptionsOpen) return;
-      if (!data.path) throw new Error('服务没有返回视频地址');
+      if (!data.path) throw new Error(uiText('ui.mediaUrlMissing', '服务没有返回视频地址'));
       qualityPrevious = null; qualityRequest = null;
       playback.position = position; playback.started = false; playback.completed = false;
       playbackQuality = data.quality || ''; playbackQualities = data.qualities || [];
@@ -2155,28 +2197,28 @@
     }).catch(function (error) {
       if (epoch !== qualityEpoch || generation !== feedGeneration) return;
       qualityPrevious = null; qualityRequest = null;
-      document.getElementById('player-options-message').textContent = error.message + '，原视频保留';
+      document.getElementById('player-options-message').textContent = localizedError(error, 'content.switchFailed', '切换失败') + uiText('ui.originalRetained', '，原视频保留');
       if (previous.playing && !applicationHidden() && !applicationInBackground) playMedia(video).catch(function () {});
     });
   }
   function sendDanmaku() {
     var input = document.getElementById('player-compose-input'); var message = document.getElementById('player-options-message');
     if (composeBusy || !composeSession || needPlayerLogin(message)) return;
-    var text = input.value.trim(); if (!text || Array.from(text).length > 100) { message.textContent = '请输入 1～100 字的弹幕'; goFocus(input); return; }
+    var text = input.value.trim(); if (!text || Array.from(text).length > 100) { message.textContent = uiText('content.danmakuLimit', '请输入 1～100 字的弹幕'); goFocus(input); return; }
     var epoch = composeEpoch; var session = Object.assign({}, composeSession); delete session.episode; session.action = 'danmaku'; session.text = text;
-    composeBusy = true; input.readOnly = true; document.getElementById('player-compose-send').setAttribute('aria-busy', 'true'); message.textContent = '正在发送…';
+    composeBusy = true; input.readOnly = true; document.getElementById('player-compose-send').setAttribute('aria-busy', 'true'); message.textContent = uiText('common.submitting', '正在发送…');
     composeRequest = typeof AbortController === 'function' ? new AbortController() : null;
     writePlayerAction(session, composeRequest && composeRequest.signal).then(function () {
       if (epoch !== composeEpoch) return;
       input.value = ''; delete danmakuDrafts[draftKey(composeSession)]; composeRequest = null;
-      closePlayerOptions(); showNotice('弹幕已发送，审核通过后显示');
-    }).catch(function (error) { if (epoch === composeEpoch && error.name !== 'AbortError') message.textContent = error.message; })
+      closePlayerOptions(); showNotice(uiText('content.danmakuSent', '弹幕已发送，审核通过后显示'));
+    }).catch(function (error) { if (epoch === composeEpoch && error.name !== 'AbortError') message.textContent = localizedError(error, 'common.operationFailed', '操作未完成，请重试。'); })
       .then(function () { if (epoch === composeEpoch) { composeBusy = false; composeRequest = null; input.readOnly = false; document.getElementById('player-compose-send').removeAttribute('aria-busy'); } });
   }
   function openPlayerOptions(kind, entry) {
     if (!isPlaybackPage()) return;
-    if (kind === 'quality' && (!activePlayback || !document.getElementById('hero-video').getAttribute('src'))) { showNotice('视频准备好后可选择清晰度'); return; }
-    if (kind === 'send-danmaku' && !playbackSnapshot()) { showNotice('开始播放后可发送弹幕'); return; }
+    if (kind === 'quality' && (!activePlayback || !document.getElementById('hero-video').getAttribute('src'))) { showNotice(uiText('ui.selectQualityHint', '视频准备好后可选择清晰度')); return; }
+    if (kind === 'send-danmaku' && !playbackSnapshot()) { showNotice(uiText('ui.sendDanmakuHint', '开始播放后可发送弹幕')); return; }
     if (playerOptionsOpen) closePlayerOptions(false);
     revealControls(); clearTimeout(controlsTimer);
     playerOptionsReturn = entry;
@@ -2186,7 +2228,7 @@
     document.getElementById('player-diagnostics-shade').classList.toggle('is-hidden', kind !== 'diagnostics');
     if (kind === 'diagnostics') {
       document.getElementById('player-options').classList.remove('is-composer');
-      document.getElementById('player-options-title').textContent = '播放诊断';
+      document.getElementById('player-options-title').textContent = uiText('ui.playbackDiagnostics', '播放诊断');
       document.getElementById('player-options-list').classList.add('is-hidden');
       document.getElementById('player-compose').classList.add('is-hidden');
       document.getElementById('player-options-message').textContent = '';
@@ -2199,15 +2241,15 @@
     var video = document.getElementById('hero-video');
     var values = kind === 'speed' ? playbackSpeeds : kind === 'quality' ? [''].concat(playbackQualities) : [0, 25, 50, 75, 100];
     var selected = kind === 'speed' ? video.playbackRate : kind === 'quality' ? playbackPreferences.quality : (playbackAudioHold ? playbackAudioHold.muted : video.muted) ? 0 : Math.round(video.volume * 100);
-    document.getElementById('player-options-title').textContent = ({ speed: '播放倍速', volume: '音量', quality: '清晰度', 'send-danmaku': '发弹幕' })[kind];
-    document.getElementById('player-options-message').textContent = kind === 'quality' ? '切换后从当前时间继续播放' : '';
+    document.getElementById('player-options-title').textContent = ({ speed: uiText('ui.playbackSpeed', '播放倍速'), volume: uiText('ui.volume', '音量'), quality: uiText('ui.quality', '清晰度'), 'send-danmaku': uiText('player.sendDanmaku', '发弹幕') })[kind];
+    document.getElementById('player-options-message').textContent = kind === 'quality' ? uiText('ui.continueFromCurrent', '切换后从当前时间继续播放') : '';
     document.getElementById('player-options').classList.toggle('is-composer', kind === 'send-danmaku');
     document.getElementById('player-compose').classList.toggle('is-hidden', kind !== 'send-danmaku');
     var list = document.getElementById('player-options-list'); list.innerHTML = '';
     list.classList.toggle('is-hidden', kind === 'send-danmaku');
     if (kind === 'send-danmaku') {
       composeSession = playbackSnapshot(); composeSession.offset_ms = Math.floor(video.currentTime * 1000); ++composeEpoch;
-      document.getElementById('player-compose-label').textContent = '第' + composeSession.episode + '集 · ' + clockText(video.currentTime);
+      document.getElementById('player-compose-label').textContent = uiText('content.episodeNumber', '第{episode}集', { episode: composeSession.episode }) + ' · ' + clockText(video.currentTime);
       document.getElementById('player-compose-input').value = danmakuDrafts[draftKey(composeSession)] || '';
       document.getElementById('player-options').classList.remove('is-hidden'); goFocus(document.getElementById('player-compose-input')); return;
     }
@@ -2215,14 +2257,14 @@
       var option = document.createElement('button');
       option.className = 'player-option' + (value === selected ? ' is-selected' : '');
       option.dataset.focus = 'player-option-' + index;
-      option.textContent = kind === 'speed' ? value + 'x' : kind === 'quality' ? value || '自动' : value === 0 ? '静音' : value + '%';
+      option.textContent = kind === 'speed' ? value + 'x' : kind === 'quality' ? value || uiText('ui.auto', '自动') : value === 0 ? uiText('ui.mute', '静音') : value + '%';
       option.addEventListener('click', function () {
         if (kind === 'quality') { switchQuality(value); return; }
         try {
           if (kind === 'speed') { video.playbackRate = value; video.defaultPlaybackRate = value; playbackPreferences.speed = value; }
           else { video.volume = value / 100; setPlaybackMuted(value === 0); playbackPreferences.volume = value; }
           updatePlaybackControls(); savePlaybackPreferences(); closePlayerOptions();
-        } catch (error) { showNotice(kind === 'speed' ? '设备不支持这个倍速' : '请用遥控器音量键调整音量'); }
+        } catch (error) { showNotice(kind === 'speed' ? uiText('ui.speedUnsupported', '设备不支持这个倍速') : uiText('ui.remoteVolume', '请用遥控器音量键调整音量')); }
       });
       list.appendChild(option);
     });
@@ -2302,7 +2344,7 @@
     var video = document.getElementById('hero-video');
     if (applicationInBackground || !isPlaybackPage() || !video.getAttribute('src')) return false;
     if (command === 'toggle') toggleVideo();
-    else if (command === 'play') playMedia(video).catch(function () { showNotice('请按确认键开始播放'); });
+    else if (command === 'play') playMedia(video).catch(function () { showNotice(uiText('ui.confirmToPlay', '请按确认键开始播放')); });
     else if (command === 'pause') video.pause();
     else if (command === 'forward') seekBy(10);
     else if (command === 'rewind') seekBy(-10);
@@ -2332,7 +2374,7 @@
     if (activePlayback && activePlayback.continuationPending) setPlayerStatus('');
     saveProgress(true);
     video.pause();
-    if (preparing) setPlayerStatus('视频准备已暂停，请重试', true);
+    if (preparing) setPlayerStatus(uiText('ui.playbackPausedRetry', '视频准备已暂停，请重试'), true);
     clearTimeout(controlsTimer);
   }
   function resumeFromBackground() {
@@ -2378,9 +2420,9 @@
       seen[episode] = true;
       return true;
     }).sort(function (a, b) { return a - b; });
-    if (!episodes.length) return '已点赞';
-    var shown = episodes.length > 4 ? episodes.slice(0, 3).join('、') + '等' + episodes.length + '集' : episodes.join('、') + '集';
-    return '赞了第' + shown;
+    if (!episodes.length) return uiText('ui.liked', '已点赞');
+    var shown = episodes.length > 4 ? episodes.slice(0, 3).join('、') + '等' + episodes.length + uiText('ui.episodesSuffix', '集') : episodes.join('、') + uiText('ui.episodesSuffix', '集');
+    return uiText('ui.likeSummary', '赞了第{value}', { value: shown });
   }
   function basicDrama(item) {
     var result = {};
@@ -2412,9 +2454,9 @@
     button.setAttribute('aria-disabled', 'false');
     button.setAttribute('aria-hidden', String(ended));
     button.setAttribute('aria-pressed', String(active));
-    button.setAttribute('aria-label', ended ? '已完结' : active ? '已追更' : '追更');
+    button.setAttribute('aria-label', ended ? uiText('ui.ended', '已完结') : active ? uiText('ui.followed', '已追更') : uiText('ui.follow', '追更'));
     var copy = button.querySelector('small');
-    if (copy) copy.textContent = active ? '已追更' : '追更';
+    if (copy) copy.textContent = active ? uiText('ui.followed', '已追更') : uiText('ui.follow', '追更');
     if (ended && wasFocused) {
       var fallback = button.nextElementSibling || button.previousElementSibling;
       button.blur();
@@ -2437,7 +2479,7 @@
   function updateActionLabel(kind) {
     var button = document.querySelector('.round-action[data-action="' + kind + '"]');
     var saved = button.getAttribute('aria-pressed') === 'true';
-    var label = kind === 'favorite' ? saved ? '已收藏' : '收藏' : kind === 'like' ? saved ? '已点赞' : '点赞' : '评论';
+    var label = kind === 'favorite' ? saved ? uiText('ui.favorited', '已收藏') : uiText('ui.favorite', '收藏') : kind === 'like' ? saved ? uiText('ui.liked', '已点赞') : uiText('ui.likes', '点赞') : uiText('ui.reviews', '评论');
     button.setAttribute('aria-label', label + ' · ' + button.querySelector('.action-count').textContent);
   }
   function currentVideoLiked(item) {
@@ -2452,14 +2494,14 @@
       .then(function (response) { if (!response.ok) throw new Error('HTTP ' + response.status); return response.json(); })
       .then(function (payload) {
         if (ownerEpoch !== accountEpoch) return false;
-        if (!payload.ok || !payload.data) throw new Error(payload.error || '记录响应无效');
+        if (!payload.ok || !payload.data) throw new Error(apiError(payload, 200, 'ui.recordInvalid', '记录响应无效'));
         libraryData = payload.data;
         libraryLoaded = true;
         updateSavedButtons();
         updateDetailProgress();
         if (isLibraryPage()) renderLibrary(true);
         return true;
-      }).catch(function (error) { libraryError = error.message; if (isLibraryPage()) renderLibrary(true); return false; });
+      }).catch(function (error) { libraryError = localizedError(error, 'ui.recordInvalid', '记录读取失败'); if (isLibraryPage()) renderLibrary(true); return false; });
   }
   function changeLibrary(change, quiet) {
     change.owner_id = libraryData.owner_id || '';
@@ -2469,7 +2511,7 @@
       if (ownerEpoch !== accountEpoch) return false;
       return fetch('/api/v1/library', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(change) })
         .then(function (response) {
-          return response.json().then(function (payload) { if (!response.ok || !payload.ok || !payload.data) throw new Error(payload.error || '记录保存失败'); return payload; });
+          return response.json().then(function (payload) { if (!response.ok || !payload.ok || !payload.data) throw new Error(apiError(payload, response.status, 'ui.recordSaveFailed', '记录保存失败')); return payload; });
         }).then(function (payload) {
           if (ownerEpoch !== accountEpoch || (payload.data.owner_id || '') !== (libraryData.owner_id || '')) return false;
           libraryData = payload.data;
@@ -2481,14 +2523,14 @@
         });
     });
     libraryQueue = operation;
-    return operation.catch(function (error) { if (ownerEpoch === accountEpoch) showNotice((change.action === 'like' ? '点赞未完成：' : '本机记录未保存：') + error.message); return false; });
+    return operation.catch(function (error) { if (ownerEpoch === accountEpoch) showNotice(uiText(change.action === 'like' ? 'ui.likeFailed' : 'ui.localRecordFailed', change.action === 'like' ? '点赞未完成：{error}' : '本机记录未保存：{error}', { error: localizedError(error, 'common.operationFailed', '操作未完成，请重试。') })); return false; });
   }
   function toggleSaved(item, kind, button) {
     if (!item || !item.series_id || !libraryLoaded || button.disabled) return;
     var session = playbackSnapshot();
     if (kind === 'like') {
-      if (!accountData || !accountData.logged_in) { showNotice('请先到“我的 / 登录”登录红果账号'); return; }
-      if (!session || session.series_id !== item.series_id) { showNotice('请先选择要点赞的播放集'); return; }
+      if (!accountData || !accountData.logged_in) { showNotice(uiText('content.loginRequired', '请先到“我的 / 登录”登录红果账号')); return; }
+      if (!session || session.series_id !== item.series_id) { showNotice(uiText('ui.chooseEpisodeToLike', '请先选择要点赞的播放集')); return; }
     }
     var entry = libraryEntry(item.series_id);
     var saved = kind === 'favorite' ? !!(entry && entry.favorite_at) : currentVideoLiked(item);
@@ -2506,21 +2548,21 @@
       if (same && wasFocused && document.activeElement === document.body && button.getClientRects().length) goFocus(button);
       if (ok && same) {
         if (session) engagement.adjust(kind, saved ? -1 : 1, session);
-        showNotice(saved ? kind === 'favorite' ? '已取消收藏' : '已取消第' + session.episode + '集点赞' : kind === 'favorite' ? '已收藏到本机' : '已点赞第' + session.episode + '集');
+        showNotice(saved ? kind === 'favorite' ? uiText('ui.favoriteRemoved', '已取消收藏') : uiText('ui.episodeLikeRemoved', '已取消第{episode}集点赞', { episode: session.episode }) : kind === 'favorite' ? uiText('ui.favoriteAdded', '已收藏到本机') : uiText('ui.episodeLiked', '已点赞第{episode}集', { episode: session.episode }));
       }
     });
   }
   function toggleFollow(item, button) {
     if (!item || !item.series_id || !button || button.disabled) return;
-    if (!accountData || !accountData.logged_in) { showNotice('请先到“我的”登录红果账号'); return; }
-    if (followState(item) === 'ended' && !followIsActive(item)) { showNotice('这部剧已经完结，不能新增追更'); return; }
+    if (!accountData || !accountData.logged_in) { showNotice(uiText('ui.loginSimple', '请先到“我的”登录红果账号')); return; }
+    if (followState(item) === 'ended' && !followIsActive(item)) { showNotice(uiText('ui.followEnded', '这部剧已经完结，不能新增追更')); return; }
     var enabled = button.getAttribute('aria-pressed') !== 'true';
     button.disabled = true; button.setAttribute('aria-busy', 'true');
     fetchData('/api/v1/follow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ series_id: item.series_id, enabled: enabled }) }).then(function () {
       if (featuredItem && featuredItem.series_id === item.series_id) { featuredItem.following_update = enabled; featuredItem.followed = enabled; updateSavedButtons(); }
       followPager.loaded = false; if (pageMode() === 'follows') followPager.reset({});
-      showNotice(enabled ? '已加入追更' : '已取消追更');
-    }).catch(function (error) { showNotice('追更操作未完成：' + error.message); }).then(function () { button.disabled = false; button.removeAttribute('aria-busy'); });
+      showNotice(enabled ? uiText('ui.followAdded', '已加入追更') : uiText('ui.followRemoved', '已取消追更'));
+    }).catch(function (error) { showNotice(uiText('ui.followFailed', '追更操作未完成：{error}', { error: localizedError(error, 'common.operationFailed', '操作未完成，请重试。') })); }).then(function () { button.disabled = false; button.removeAttribute('aria-busy'); });
   }
   function libraryFinished(entry) {
     var total = Number(entry.drama && entry.drama.episode_count) || 0;
@@ -2571,10 +2613,10 @@
   function renderLibrary(restoring) {
     var kind = pageMode();
     if (!isLibraryPage()) return;
-    var label = ({ history: '历史', favorites: '收藏', likes: '点赞' })[kind];
-    document.getElementById('library-title').textContent = kind === 'history' ? '观看历史' : label;
-    var storageLabel = libraryData.owner_id ? '当前账号 · 云同步' : '保存在本机';
-    document.getElementById('library-hint').textContent = storageLabel + (kind === 'history' ? ' · 自动记住集数和进度' : '');
+    var label = ({ history: uiText('ui.history', '历史'), favorites: uiText('ui.favorite', '收藏'), likes: uiText('ui.likes', '点赞') })[kind];
+    document.getElementById('library-title').textContent = kind === 'history' ? uiText('ui.watchHistory', '观看历史') : label;
+    var storageLabel = libraryData.owner_id ? uiText('ui.accountCloud', '当前账号 · 云同步') : uiText('ui.localOnly', '保存在本机');
+    document.getElementById('library-hint').textContent = storageLabel + (kind === 'history' ? uiText('ui.autoSaveProgress', ' · 自动记住集数和进度') : '');
     var filter = kind === 'history' ? historyFilter : 'all';
     document.getElementById('history-filters').classList.toggle('is-hidden', kind !== 'history');
     document.getElementById('library-type-filters').classList.toggle('is-hidden', kind === 'history');
@@ -2618,7 +2660,7 @@
         card.addEventListener('click', function () { if (libraryEditing) goFocus(tile.querySelector('.library-remove')); else startPlayer(tile.__entry.drama, card); });
         card.addEventListener('focus', function () { card.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });
         tile.appendChild(card);
-        var remove = document.createElement('button'); remove.className = 'library-remove'; remove.dataset.focus = 'library-remove-' + id; remove.textContent = '移除';
+        var remove = document.createElement('button'); remove.className = 'library-remove'; remove.dataset.focus = 'library-remove-' + id; remove.textContent = uiText('ui.remove', '移除');
         remove.addEventListener('click', function () {
           var kind = pageMode();
           var index = Array.prototype.indexOf.call(grid.children, tile);
@@ -2643,7 +2685,7 @@
       likeBadge.classList.toggle('is-hidden', kind !== 'likes');
       if (kind === 'likes') likeBadge.textContent = likedEpisodeSummary(entry, entry.drama);
       card.querySelector('.library-card-title').textContent = entry.drama.title;
-      card.querySelector('.library-card-meta').textContent = entry.last_played_at ? libraryFinished(entry) ? '已看完 · 全' + entry.drama.episode_count + '集' : '继续第' + resumeEpisode(entry, entry.drama) + '集' + (!entry.completed && entry.position ? ' · ' + clockText(entry.position) : '') : entry.drama.episode_count ? '全' + entry.drama.episode_count + '集' : '从第一集播放';
+      card.querySelector('.library-card-meta').textContent = entry.last_played_at ? libraryFinished(entry) ? uiText('ui.watchedAll', '已看完 · 全{count}集', { count: entry.drama.episode_count }) : uiText('ui.continueEpisode', '继续第{episode}集', { episode: resumeEpisode(entry, entry.drama) }) + (!entry.completed && entry.position ? ' · ' + clockText(entry.position) : '') : entry.drama.episode_count ? uiText('content.episodeCount', '全{count}集', { count: entry.drama.episode_count }) : uiText('ui.startFirstEpisode', '从第一集播放');
       card.querySelector('.library-card-time').textContent = new Date(libraryTime(entry, kind)).toLocaleDateString();
       card.querySelector('.library-progress').classList.toggle('is-hidden', !entry.last_played_at || !entry.duration);
       card.querySelector('.library-progress > span').style.width = Math.min(100, entry.duration ? entry.position / entry.duration * 100 : 0) + '%';
@@ -2651,13 +2693,13 @@
       if (grid.children[index] !== tile) grid.insertBefore(tile, grid.children[index] || null);
     });
     Array.prototype.slice.call(grid.children).forEach(function (tile) { if (!keep[tile.dataset.seriesId]) tile.remove(); });
-    document.getElementById('library-count').textContent = totalEntries ? totalEntries + ' 部 · 已显示 ' + entries.length + ' 部' : '';
-    document.getElementById('library-manage').textContent = libraryError ? '重试' : libraryEditing ? '完成' : '管理';
+    document.getElementById('library-count').textContent = totalEntries ? uiText('ui.libraryCount', '{total} 部 · 已显示 {shown} 部', { total: totalEntries, shown: entries.length }) : '';
+    document.getElementById('library-manage').textContent = libraryError ? uiText('common.retry', '重试') : libraryEditing ? uiText('ui.done', '完成') : uiText('ui.manage', '管理');
     document.getElementById('library-manage').disabled = !libraryError && !entries.length;
     document.getElementById('library-clear').disabled = !entries.length;
     document.getElementById('library-empty').classList.toggle('is-hidden', entries.length > 0);
-    document.getElementById('library-empty-title').textContent = libraryError ? '读取本机记录失败' : !libraryLoaded ? '正在读取本机记录…' : kind === 'history' ? filter === 'finished' ? '还没有已看完的短剧' : filter === 'unfinished' ? '没有未看完的短剧' : '还没有观看记录' : '还没有' + label + '的短剧';
-    document.getElementById('library-empty-copy').textContent = libraryError || (kind === 'history' ? filter === 'finished' ? '看到最后一集的短剧会显示在这里' : filter === 'unfinished' ? '可以切换到“全部”查看观看记录' : '开始播放后，会自动保存集数和进度' : '在播放页点' + label + '，以后可从这里继续观看');
+    document.getElementById('library-empty-title').textContent = libraryError ? uiText('ui.libraryReadFailed', '读取本机记录失败') : !libraryLoaded ? uiText('ui.readingLocalLibrary', '正在读取本机记录…') : kind === 'history' ? filter === 'finished' ? uiText('ui.noFinished', '还没有已看完的短剧') : filter === 'unfinished' ? uiText('ui.noUnfinished', '没有未看完的短剧') : uiText('ui.noHistory', '还没有观看记录') : uiText('ui.noLibraryItems', '还没有{label}的短剧', { label: label });
+    document.getElementById('library-empty-copy').textContent = libraryError || (kind === 'history' ? filter === 'finished' ? uiText('ui.libraryFinishedHint', '看到最后一集的短剧会显示在这里') : filter === 'unfinished' ? uiText('ui.libraryUnfinishedHint', '可以切换到“全部”查看观看记录') : uiText('ui.libraryStartHint', '开始播放后，会自动保存集数和进度') : uiText('ui.libraryActionHint', '在播放页点{label}，以后可从这里继续观看', { label: label }));
     if (currentTile && !document.contains(current)) {
       var cards = focusables('.library-card');
       goFocus(cards[Math.min(priorIndex, cards.length - 1)] || firstVisible('.history-filter.is-active') || firstVisible('[data-action="library-discover"]'));
@@ -2673,7 +2715,7 @@
     document.getElementById('confirm-modal').setAttribute('aria-hidden', 'true');
     document.getElementById('confirm-accept').classList.remove('confirm-reserve');
     document.getElementById('confirm-accept').classList.add('confirm-danger');
-    document.getElementById('confirm-cancel').textContent = '取消';
+    document.getElementById('confirm-cancel').textContent = uiText('common.cancel', '取消');
     var target = confirmReturnFocus;
     confirmReturnFocus = null;
     goFocus(target && focusables().indexOf(target) >= 0 ? target : firstContentFocus());
@@ -2682,20 +2724,20 @@
   function confirmClearLibrary() {
     ++confirmationGeneration;
     var kind = pageMode();
-    var label = ({ history: '历史', favorites: '收藏', likes: '点赞' })[kind];
+    var label = ({ history: uiText('ui.history', '历史'), favorites: uiText('ui.favorite', '收藏'), likes: uiText('ui.likes', '点赞') })[kind];
     confirmReturnFocus = document.activeElement;
     confirmOperation = function () { return changeLibrary({ action: 'clear', kind: kind }); };
     confirmOpen = true;
-    document.getElementById('confirm-title').textContent = '清空全部' + label + '？';
-    document.getElementById('confirm-accept').textContent = '清空';
-    document.getElementById('confirm-copy').textContent = kind === 'history' ? '观看进度也会移除，收藏和点赞会保留。' : '只清空本机' + label + '，观看历史和其它记录会保留。';
+    document.getElementById('confirm-title').textContent = uiText('ui.clearAll', '清空全部{label}？', { label: label });
+    document.getElementById('confirm-accept').textContent = uiText('ui.clear', '清空');
+    document.getElementById('confirm-copy').textContent = kind === 'history' ? uiText('content.clearLibraryHistoryCopy', '观看进度也会移除，收藏和点赞会保留。') : uiText('content.clearLibraryCopy', '只清空本机{label}，观看历史和其它记录会保留。', { label: label });
     document.getElementById('confirm-modal').classList.remove('is-hidden');
     document.getElementById('confirm-modal').setAttribute('aria-hidden', 'false');
     goFocus(document.getElementById('confirm-cancel'));
   }
 
   function setCatalogHeading(text) {
-    document.getElementById('catalog-heading').textContent = text || '热播短剧';
+    document.getElementById('catalog-heading').textContent = text || uiText('ui.hotDrama', '热播短剧');
   }
 
   function acceptAccountStatus(data) {
@@ -2719,7 +2761,7 @@
       episodePrefetch.cancel();
       var interruptedPlayback = playbackInfoRequest || playbackPrefetchHandoff || activePlayback && document.getElementById('hero').classList.contains('is-preparing-video');
       cancelPlaybackPreparation();
-      if (interruptedPlayback && pageMode() === 'player') { document.getElementById('hero-video').pause(); setPlayerStatus('账号已切换，请重试播放', true); }
+      if (interruptedPlayback && pageMode() === 'player') { document.getElementById('hero-video').pause(); setPlayerStatus(uiText('ui.accountChangedRetry', '账号已切换，请重试播放'), true); }
       resetSeasonCatalog();
       reservationOverrides = Object.create(null);
       reservationCounts = { online: null, upcoming: null }; updateReservationCounts({});
@@ -2767,19 +2809,19 @@
     document.querySelectorAll('#account-page .account-action').forEach(function (node) { node.disabled = accountBusy; });
     document.getElementById('account-cancel').disabled = false;
     document.getElementById('account-verify').disabled = accountBusy || mfaExpired || verification.state === 'waiting';
-    document.getElementById('account-verify').textContent = verification.state === 'waiting' ? '等待确认…' : verification.state === 'timeout' ? '再次查询' : '我已发送';
-    document.getElementById('account-cancel').textContent = mfaExpired ? '重新获取验证码' : '取消验证';
-    document.getElementById('account-mfa-session').textContent = mfaExpired ? '本机验证等待时间已结束，请重新获取验证码。' : mfa && data.mfa_expires_at ? '本机验证等待剩余 ' + clockText(Math.ceil((data.mfa_expires_at - Date.now()) / 1000)) + '，红果也可能提前要求重新验证。' : '';
-    document.getElementById('account-mfa-wait').textContent = verification.state === 'waiting' ? '正在等待短信确认 · 本轮剩余 ' + verification.remaining + ' 秒' : verification.state === 'timeout' ? '本轮等待已结束。会话仍有效时可以再次查询，无需重复发送短信。' : '';
+    document.getElementById('account-verify').textContent = verification.state === 'waiting' ? uiText('ui.waitingConfirm', '等待确认…') : verification.state === 'timeout' ? uiText('ui.queryAgain', '再次查询') : uiText('ui.sent', '我已发送');
+    document.getElementById('account-cancel').textContent = mfaExpired ? uiText('ui.getCodeAgain', '重新获取验证码') : uiText('ui.cancelVerification', '取消验证');
+    document.getElementById('account-mfa-session').textContent = mfaExpired ? uiText('ui.verificationExpired', '本机验证等待时间已结束，请重新获取验证码。') : mfa && data.mfa_expires_at ? uiText('ui.verificationRemaining', '本机验证等待剩余 {value}，红果也可能提前要求重新验证。', { value: clockText(Math.ceil((data.mfa_expires_at - Date.now()) / 1000)) }) : '';
+    document.getElementById('account-mfa-wait').textContent = verification.state === 'waiting' ? uiText('ui.smsWaiting', '正在等待短信确认 · 本轮剩余 {value} 秒', { value: verification.remaining }) : verification.state === 'timeout' ? uiText('ui.smsWaitEnded', '本轮等待已结束。会话仍有效时可以再次查询，无需重复发送短信。') : '';
     document.getElementById('account-change-phone').disabled = false;
     var remaining = Math.max(0, Math.ceil((accountCountdownUntil - Date.now()) / 1000));
     var send = document.getElementById('account-send-code');
     send.disabled = accountBusy || remaining > 0;
-    send.textContent = remaining > 0 ? remaining + (data.phase === 'code' && data.sms_state === 'sent' ? ' 秒后重发' : ' 秒后可重试') : data.phase === 'code' ? '重新发送' : '获取验证码';
+    send.textContent = remaining > 0 ? (data.phase === 'code' && data.sms_state === 'sent' ? uiText('ui.resendIn', '{value} 秒后重发', { value: remaining }) : uiText('ui.retryIn', '{value} 秒后可重试', { value: remaining })) : data.phase === 'code' ? uiText('ui.resend', '重新发送') : uiText('ui.getCode', '获取验证码');
     document.getElementById('account-sync').disabled = !logged || accountBusy || data.sync && data.sync.state === 'syncing';
     var guestHistory = data.guest_history || {};
     document.getElementById('account-import-history').disabled = !logged || accountBusy || !(guestHistory.available > 0);
-    document.getElementById('account-import-detail').textContent = !logged ? '登录后可将本机观看历史合并到当前账号。' : guestHistory.available > 0 ? '有 ' + guestHistory.available + ' 部登录前观看的短剧可合并。' : guestHistory.total > 0 ? '没有待合并的新记录；已合并、删除或较旧的进度不会重复加入。' : '本机暂无登录前的观看历史。';
+    document.getElementById('account-import-detail').textContent = !logged ? uiText('ui.mergeLocalHistory', '登录后可将本机观看历史合并到当前账号。') : guestHistory.available > 0 ? uiText('ui.mergeAvailable', '有 {value} 部登录前观看的短剧可合并。', { value: guestHistory.available }) : guestHistory.total > 0 ? uiText('ui.mergeNone', '没有待合并的新记录；已合并、删除或较旧的进度不会重复加入。') : uiText('ui.noGuestHistory', '本机暂无登录前的观看历史。');
     if (logged) {
       document.getElementById('account-name').textContent = data.profile.name;
       document.getElementById('account-phone-mask').textContent = data.profile.phone || '';
@@ -2796,12 +2838,12 @@
     document.getElementById('account-sms-qr').disabled = false;
     if (supportModalOpen && supportReturnFocus && supportReturnFocus.id === 'account-sms-qr' && !smsQR) closeSupportQR();
     var sync = data.sync || {};
-    var syncLabel = !logged ? '未登录 · 记录保存在本机' : ({ syncing: '正在同步…', pending: '等待同步', error: '同步暂未完成', idle: sync.last_sync ? '已同步' : '尚未同步' })[sync.state] || '等待同步';
+    var syncLabel = !logged ? uiText('ui.notLoggedInLocal', '未登录 · 记录保存在本机') : ({ syncing: uiText('ui.syncing', '正在同步…'), pending: uiText('ui.syncPending', '等待同步'), error: uiText('ui.syncIncomplete', '同步暂未完成'), idle: sync.last_sync ? uiText('ui.synced', '已同步') : uiText('ui.notSynced', '尚未同步') })[sync.state] || uiText('ui.syncPending', '等待同步');
     document.getElementById('account-sync-state').textContent = syncLabel;
-    document.getElementById('account-sync-detail').textContent = sync.error || (logged ? (sync.pending ? sync.pending + ' 项记录待同步。' : '收藏、点赞与观看进度会自动同步。') + (sync.last_sync ? ' 最近同步：' + new Date(sync.last_sync).toLocaleTimeString() : '') : '收藏、点赞、观看历史和播放进度会与红果账号同步。');
-    document.getElementById('account-message').textContent = accountBusy ? '正在连接红果，请稍候…' : accountNotice || data.error || '';
-    document.querySelector('.side-item[data-page="account"] span:last-child').textContent = '我的';
-    if (pageMode() === 'account') document.getElementById('page-context').textContent = '我的';
+    document.getElementById('account-sync-detail').textContent = sync.error ? localizedError(sync.error, 'ui.syncIncomplete', '同步暂未完成') : (logged ? (sync.pending ? uiText('ui.pendingRecords', '{value} 项记录待同步。', { value: sync.pending }) : uiText('ui.autoSync', '收藏、点赞与观看进度会自动同步。')) + (sync.last_sync ? uiText('ui.lastSync', ' 最近同步：{value}', { value: new Date(sync.last_sync).toLocaleTimeString() }) : '') : uiText('ui.loginSyncCopy', '收藏、点赞、观看历史和播放进度会与红果账号同步。'));
+    document.getElementById('account-message').textContent = accountBusy ? uiText('ui.connectingAccount', '正在连接红果，请稍候…') : accountNotice || (data.error ? localizedError(data.error, 'ui.accountRequestFailed', '账号请求失败') : '');
+    document.querySelector('.side-item[data-page="account"] span:last-child').textContent = uiText('nav.account', '我的');
+    if (pageMode() === 'account') document.getElementById('page-context').textContent = uiText('nav.account', '我的');
     var current = document.activeElement;
     if (!accountKeypadOpen() && !accountBusy && pageMode() === 'account' && current && current.closest('#account-keypad-modal')) goFocus(firstContentFocus());
     if (!accountBusy && !confirmOpen && pageMode() === 'account' && current && /accountInputs|accountActions/.test(zoneOf(current)) && focusables().indexOf(current) < 0) goFocus(firstContentFocus());
@@ -2814,10 +2856,10 @@
     var generation = accountRequestGeneration;
     return fetch('/api/v1/account').then(function (response) { return response.json(); }).then(function (payload) {
       if (epoch !== accountEpoch || generation !== accountRequestGeneration || accountBusy) return;
-      if (!payload.ok || !payload.data) throw new Error(payload.error || '账号状态读取失败');
+      if (!payload.ok || !payload.data) throw new Error(apiError(payload, 200, 'ui.accountStateFailed', '账号状态读取失败'));
       acceptAccountStatus(payload.data);
       notificationCheck(false);
-    }).catch(function (error) { if (pageMode() === 'account') setAccountMessage(error.message); })
+    }).catch(function (error) { if (pageMode() === 'account') setAccountMessage(localizedError(error, 'ui.accountStateFailed', '账号状态读取失败')); })
       .then(function () { accountPollBusy = false; });
   }
   function accountRequest(action, value, signal) {
@@ -2829,6 +2871,7 @@
     accountBusy = true;
     accountNotice = '';
     var generation = ++accountRequestGeneration;
+    var accountHTTPStatus = 0;
     function aborted() {
       if (generation !== accountRequestGeneration) return;
       ++accountRequestGeneration; accountBusy = false; renderAccount(); restoreRequestFocus();
@@ -2836,28 +2879,28 @@
     if (signal) signal.addEventListener('abort', aborted);
     renderAccount();
     return fetch('/api/v1/account/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value || {}), signal: signal })
-      .then(function (response) { return response.json(); }).then(function (payload) {
+      .then(function (response) { accountHTTPStatus = response.status; return response.json(); }).then(function (payload) {
         if (generation !== accountRequestGeneration) return false;
         accountBusy = false;
         if (payload.data) acceptAccountStatus(payload.data);
         restoreRequestFocus();
-        if (!payload.ok) throw new Error(payload.error || '账号请求失败');
+        if (!payload.ok) throw new Error(apiError(payload, accountHTTPStatus, 'ui.accountRequestFailed', '账号请求失败'));
         if (action === 'import-history' && payload.import_history && payload.data && payload.data.profile && payload.data.profile.uid === value.owner_id) {
           var imported = payload.import_history;
-          setAccountMessage(imported.imported > 0 ? '已合并 ' + imported.imported + ' 部短剧。' + (imported.remaining > 0 ? '还有 ' + imported.remaining + ' 部待合并，请完成同步后再试。' : '将自动同步到当前账号，网络恢复后会重试。') : '没有需要合并的新记录。');
+          setAccountMessage(imported.imported > 0 ? uiText('ui.merged', '已合并 {value} 部短剧。', { value: imported.imported }) + (imported.remaining > 0 ? uiText('ui.mergeRemaining', '还有 {value} 部待合并，请完成同步后再试。', { value: imported.remaining }) : uiText('ui.mergeWillRetry', '将自动同步到当前账号，网络恢复后会重试。')) : uiText('ui.noMergeNeeded', '没有需要合并的新记录。'));
         }
         return true;
       }).catch(function (error) {
         if (generation !== accountRequestGeneration) return false;
         accountBusy = false; renderAccount();
-        setAccountMessage(error.message);
+        setAccountMessage(localizedError(error, 'ui.accountRequestFailed', '账号请求失败'));
         restoreRequestFocus();
         return false;
       }).then(function (ok) { if (signal) signal.removeEventListener('abort', aborted); return ok; });
   }
   function accountSendCode() {
     var phone = document.getElementById('account-phone').value.trim();
-    if (!accountPhoneValid(phone)) { setAccountMessage('请输入正确的' + accountPhoneCountry().name + '手机号'); goFocus(document.getElementById('account-phone')); return; }
+    if (!accountPhoneValid(phone)) { setAccountMessage(uiText('content.phoneInvalid', '请输入正确的{country}手机号', { country: phoneCountryName(accountPhoneCountry()) })); goFocus(document.getElementById('account-phone')); return; }
     accountRequest('send-code', { phone: phone, country_code: accountPhoneCountryCode }).then(function (ok) {
       if (pageMode() === 'account') goFocus(ok ? document.getElementById('account-code') : firstVisible('.account-input'));
     });
@@ -2865,7 +2908,7 @@
   function accountLogin() {
     var phone = document.getElementById('account-phone').value.trim();
     var code = document.getElementById('account-code').value.trim();
-    if (!/^\d{4,8}$/.test(code)) { setAccountMessage('请输入短信验证码'); goFocus(document.getElementById('account-code')); return; }
+    if (!/^\d{4,8}$/.test(code)) { setAccountMessage(uiText('ui.smsCodeRequired', '请输入短信验证码')); goFocus(document.getElementById('account-code')); return; }
     accountRequest('login', { phone: phone, country_code: accountPhoneCountryCode, code: code }).then(function (ok) {
       if (!ok) { if (pageMode() === 'account') goFocus(document.getElementById('account-code')); return; }
       document.getElementById('account-code').value = '';
@@ -2896,9 +2939,9 @@
       });
     };
     confirmOpen = true;
-    document.getElementById('confirm-title').textContent = '退出当前账号？';
-    document.getElementById('confirm-accept').textContent = '退出';
-    document.getElementById('confirm-copy').textContent = '云端记录会保留。待同步记录留在当前账号的本机目录，再次登录这个账号后继续同步。退出后显示登录前的本机记录。';
+    document.getElementById('confirm-title').textContent = uiText('ui.logoutTitle', '退出当前账号？');
+    document.getElementById('confirm-accept').textContent = uiText('ui.logout', '退出');
+    document.getElementById('confirm-copy').textContent = uiText('ui.logoutCopy', '云端记录会保留。待同步记录留在当前账号的本机目录，再次登录这个账号后继续同步。退出后显示登录前的本机记录。');
     document.getElementById('confirm-modal').classList.remove('is-hidden');
     document.getElementById('confirm-modal').setAttribute('aria-hidden', 'false');
     goFocus(document.getElementById('confirm-cancel'));
@@ -2906,9 +2949,9 @@
 
   function catalogMeta(item) {
     var values = [];
-    if (item.episode_count) values.push(item.episode_count + ' 集');
-    if (item.score) values.push(item.score + ' 分');
-    return values.join(' · ') || '红果短剧';
+    if (item.episode_count) values.push(uiText('content.episodeCount', '全{count}集', { count: item.episode_count }));
+    if (item.score) values.push(item.score + ' ' + uiText('ui.scoreSuffix', '分'));
+    return values.join(' · ') || uiText('app.name', '红果短剧');
   }
 
   function setCover(image, item) {
@@ -2969,16 +3012,16 @@
     if (backdrop) {
       setBackdrop(backdrop, item, document.getElementById('hero-loading-poster'));
     }
-    if (title) title.textContent = item.title || '红果短剧';
-    if (episode) episode.textContent = waitingForProgress ? item.episode_count ? '全' + item.episode_count + '集' : '' : '第' + (item.start_episode || 1) + '集' + (item.episode_count ? ' · 全' + item.episode_count + '集' : '');
+    if (title) title.textContent = item.title || uiText('app.name', '红果短剧');
+    if (episode) episode.textContent = waitingForProgress ? item.episode_count ? uiText('content.episodeCount', '全{count}集', { count: item.episode_count }) : '' : uiText('content.episodeNumber', '第{episode}集', { episode: item.start_episode || 1 }) + (item.episode_count ? ' · ' + uiText('content.episodeCount', '全{count}集', { count: item.episode_count }) : '');
     if (summary) summary.textContent = item.intro || '';
-    if (topTitle) topTitle.textContent = item.title || '红果短剧';
-    if (topEpisode) topEpisode.textContent = waitingForProgress ? '' : '第' + (item.start_episode || 1) + '集';
-    if (placeholderTitle) placeholderTitle.textContent = item.title || '红果短剧';
+    if (topTitle) topTitle.textContent = item.title || uiText('app.name', '红果短剧');
+    if (topEpisode) topEpisode.textContent = waitingForProgress ? '' : uiText('content.episodeNumber', '第{episode}集', { episode: item.start_episode || 1 });
+    if (placeholderTitle) placeholderTitle.textContent = item.title || uiText('app.name', '红果短剧');
     if (placeholderSummary) placeholderSummary.textContent = item.intro || '';
     updateSavedButtons();
     if (engagement) engagement.select(activePlayback && activePlayback.item.series_id === item.series_id ? { series_id: item.series_id, vid: activePlayback.vid } : null);
-    setControlIcon('episodes', '选集 · ' + (item.episode_count || '--') + ' 集', 'icon-episodes');
+    setControlIcon('episodes', uiText('content.episodeCount', '全{count}集', { count: item.episode_count || '--' }), 'icon-episodes');
     updateSeasonControl(item);
   }
 
@@ -3127,9 +3170,9 @@
   function getDetail(item, signal) {
     if (detailCache[item.series_id]) return Promise.resolve(detailCache[item.series_id]);
     return fetch('/api/v1/series/detail?series_id=' + encodeURIComponent(item.series_id), signal ? { signal: signal } : undefined)
-      .then(function (response) { if (!response.ok) throw new Error('详情 HTTP ' + response.status); return response.json(); })
+      .then(function (response) { if (!response.ok) throw new Error(uiText('ui.detailHttp', '详情 HTTP {status}', { status: response.status })); return response.json(); })
       .then(function (payload) {
-        if (!payload.ok || !payload.data) throw new Error(payload.error || '详情响应无效');
+        if (!payload.ok || !payload.data) throw new Error(apiError(payload, 200, 'ui.detailInvalid', '详情响应无效'));
         var keys = Object.keys(detailCache);
         if (keys.length >= 24) delete detailCache[keys[0]];
         detailCache[item.series_id] = payload.data;
@@ -3168,7 +3211,7 @@
     badge.classList.toggle('is-hidden', seconds === null);
     badge.querySelector('.end-countdown-value').textContent = seconds === null ? '' : String(seconds);
     if (seconds === null) badge.removeAttribute('aria-label');
-    else badge.setAttribute('aria-label', seconds + '秒后自动播放');
+    else badge.setAttribute('aria-label', uiText('ui.autoplayIn', '{seconds}秒后自动播放', { seconds: seconds }));
   }
   function prepareEndRecommendationCountdown(panel, image, animation) {
     var body = panel.querySelector('.end-recommendations-panel');
@@ -3214,7 +3257,7 @@
       card.className = 'end-recommendation-card'; card.dataset.focus = 'end-related-' + item.series_id;
       var image = document.createElement('img'); setCover(image, item);
       var title = document.createElement('strong'); title.textContent = item.title;
-      var meta = document.createElement('small'); meta.textContent = item.episode_count ? '全' + item.episode_count + '集' : '红果短剧';
+      var meta = document.createElement('small'); meta.textContent = item.episode_count ? uiText('content.episodeCount', '全{count}集', { count: item.episode_count }) : uiText('app.name', '红果短剧');
       var poster = dramaPoster(image, item);
       if (index === 0) {
         var badge = document.createElement('span'); badge.id = 'end-recommendation-countdown'; badge.className = 'end-recommendation-countdown is-hidden';
@@ -3330,12 +3373,12 @@
       }
       // Missing/incomplete episode data must not be mistaken for season end.
       if (!detail.vid_list || !detail.vid_list.length || playback.episode < Math.max(detail.episode_count || 0, detail.vid_list.length)) {
-        throw new Error('本季集列表不完整');
+        throw new Error(uiText('content.seriesIncomplete', '本季集列表不完整'));
       }
       setPlayerStatus(episodeLoadingText());
       return fetch('/api/v1/series/next-season?series_id=' + encodeURIComponent(playback.item.series_id))
         .then(function (response) { return response.json().then(function (payload) {
-          if (!response.ok || !payload.ok || !payload.data || !Object.prototype.hasOwnProperty.call(payload.data, 'next')) throw new Error(payload.error || '季关系响应无效');
+          if (!response.ok || !payload.ok || !payload.data || !Object.prototype.hasOwnProperty.call(payload.data, 'next')) throw new Error(apiError(payload, response.status, 'content.seasonInvalid', '季关系响应无效'));
           return payload.data;
         }); })
         .then(function (result) {
@@ -3344,34 +3387,34 @@
           return fetchData('/api/v1/series/seasons?series_id=' + encodeURIComponent(playback.item.series_id)).then(function (series) {
             if (!canContinuePlayback(playback)) { deferContinuation(playback); return; }
             if (epoch !== accountEpoch) return;
-            if (!Array.isArray(series.items)) throw new Error('系列剧响应无效');
+            if (!Array.isArray(series.items)) throw new Error(uiText('content.seriesInvalid', '系列剧响应无效'));
             var current = series.items.filter(function (item) { return item.series_id === playback.item.series_id; })[0];
             var season = current && current.season_index || result.current_season;
-            if (current && result.current_season > 0 && current.season_index !== result.current_season) throw new Error('系列季号不一致');
+            if (current && result.current_season > 0 && current.season_index !== result.current_season) throw new Error(uiText('content.seasonMismatch', '系列季号不一致'));
             var successors = season > 0 ? series.items.filter(function (item) { return item.season_index === season + 1; }) : [];
-            if (successors.length > 1) throw new Error('下一季关系存在冲突');
+            if (successors.length > 1) throw new Error(uiText('content.seasonConflict', '下一季关系存在冲突'));
             var successor = successors[0];
             // The full series selector takes precedence, including upcoming
             // seasons. Never skip a reservable season to a later playable one.
             if (successor && successor.upcoming) {
               setPlayerStatus(''); revealControls();
               if (successor.reservation_id) offerNextSeasonReservation(playback, successor, epoch);
-              else showNotice('本季已播放完，下一季待上线，尚未开放预约');
+              else showNotice(uiText('content.nextSeasonOffline', '本季已播放完，下一季待上线，尚未开放预约'));
               offerEndRecommendations(playback, detail);
               return;
             }
-            if (successor && !successor.playable) { setPlayerStatus(''); revealControls(); showNotice('下一季暂不可播放'); offerEndRecommendations(playback, detail); return; }
+            if (successor && !successor.playable) { setPlayerStatus(''); revealControls(); showNotice(uiText('content.nextSeasonUnavailable', '下一季暂不可播放')); offerEndRecommendations(playback, detail); return; }
             var next = successor || (!current ? result.next : null);
             if (next) {
-              if (!next.series_id || next.series_id === playback.item.series_id || !next.vid || !(season > 0) || next.season_index !== season + 1 || !(next.episode_count > 0)) throw new Error('下一季数据无效');
+              if (!next.series_id || next.series_id === playback.item.series_id || !next.vid || !(season > 0) || next.season_index !== season + 1 || !(next.episode_count > 0)) throw new Error(uiText('content.nextSeasonInvalid', '下一季数据无效'));
               feedItems[feedIndex] = next;
               playFeedItem(feedIndex, 1, 0);
               refreshDetailAfterSeason(playback.item.series_id, next);
-              showNotice('继续播放第' + next.season_index + '季');
+              showNotice(uiText('content.continueSeason', '继续播放第{season}季', { season: next.season_index }));
             } else {
               setPlayerStatus(''); revealControls();
               if (pageMode() === 'recommend' && feedItems.length > 1) playFeedItem(feedIndex + 1);
-              else if (!offerEndRecommendations(playback, detail)) showNotice('本剧已播放完，暂无可播放的下一季');
+              else if (!offerEndRecommendations(playback, detail)) showNotice(uiText('content.seriesFinished', '本剧已播放完，暂无可播放的下一季'));
             }
           });
 
@@ -3379,7 +3422,7 @@
     }).catch(function (error) {
       if (!canContinuePlayback(playback)) { deferContinuation(playback); return; }
       setPlayerStatus(''); revealControls();
-      showNotice('连续播放已暂停：' + error.message);
+      showNotice(uiText('content.continuationPaused', '连续播放已暂停：{error}', { error: localizedError(error, 'common.operationFailed', '操作未完成，请重试。') }));
     }).then(finishContinuation, finishContinuation);
   }
 
@@ -3389,26 +3432,26 @@
     // object yet. Reapply the short-lived account-scoped state before deciding
     // whether a prompt is needed.
     applyReservationOverride(item);
-    var label = item.label || '第' + item.season_index + '季';
-    if (item.reserved) { showNotice('您已预约' + label + '，敬请期待'); return; }
-    if (!accountData || !accountData.logged_in) { showNotice('本季已播放完，' + label + '待上线。登录后可在“选集 → 系列剧”预约'); return; }
+    var label = item.label || uiText('content.episodeNumber', '第{episode}集', { episode: item.season_index }) .replace(/集$/, '季');
+    if (item.reserved) { showNotice(uiText('content.nextSeasonReserved', '您已预约{label}，敬请期待', { label: label })); return; }
+    if (!accountData || !accountData.logged_in) { showNotice(uiText('content.nextSeasonLogin', '本季已播放完，{label}待上线。登录后可在“选集 → 系列剧”预约', { label: label })); return; }
     ++confirmationGeneration; var generation = confirmationGeneration;
     confirmReturnFocus = document.activeElement; confirmOpen = true;
-    document.getElementById('confirm-title').textContent = '预约下一季？';
-    document.getElementById('confirm-copy').textContent = '本季已播放完，' + item.title + '尚未上线。确认后会在当前窗口提示预约结果。';
+    document.getElementById('confirm-title').textContent = uiText('content.reserveNextTitle', '预约下一季？');
+    document.getElementById('confirm-copy').textContent = uiText('content.reserveNextCopy', '本季已播放完，{title}尚未上线。确认后会在当前窗口提示预约结果。', { title: item.title });
     var accept = document.getElementById('confirm-accept');
-    accept.textContent = '预约' + label; accept.classList.add('confirm-reserve'); accept.classList.remove('confirm-danger');
-    document.getElementById('confirm-cancel').textContent = '稍后';
+    accept.textContent = uiText('content.reserve', '预约') + label; accept.classList.add('confirm-reserve'); accept.classList.remove('confirm-danger');
+    document.getElementById('confirm-cancel').textContent = uiText('content.later', '稍后');
     document.getElementById('confirm-modal').classList.remove('is-hidden');
     document.getElementById('confirm-modal').setAttribute('aria-hidden', 'false');
     confirmOperation = function () {
       if (epoch !== accountEpoch || activePlayback !== playback || !isPlaybackPage()) {
-        document.getElementById('confirm-copy').textContent = '预约未确认成功：播放状态已变化，请重新打开预约提示后重试。';
+        document.getElementById('confirm-copy').textContent = uiText('content.reserveStateChanged', '预约未确认成功：播放状态已变化，请重新打开预约提示后重试。');
         return Promise.resolve(false);
       }
       return writeReservation(item, true).then(function () {
         if (epoch !== accountEpoch) {
-          document.getElementById('confirm-copy').textContent = '预约未确认成功：账号状态已变化，请重新打开预约提示后重试。';
+          document.getElementById('confirm-copy').textContent = uiText('content.reserveAccountChanged', '预约未确认成功：账号状态已变化，请重新打开预约提示后重试。');
           return false;
         }
         item.reserved = true; rememberReservationOverride(item, true); reservationPager.loaded = false; calendarPager.loaded = false;
@@ -3419,10 +3462,10 @@
         updateReservationCounts({});
         updateSeasonReservation(item.reservation_id, true);
         updateSeriesRows();
-        showNotice('已预约' + label);
+        showNotice(uiText('content.reserved', '已预约') + label);
         return true;
       }).catch(function (error) {
-        if (epoch === accountEpoch && confirmOpen && generation === confirmationGeneration) document.getElementById('confirm-copy').textContent = '预约未确认成功：' + error.message + '。可以重试，或选择稍后。';
+        if (epoch === accountEpoch && confirmOpen && generation === confirmationGeneration) document.getElementById('confirm-copy').textContent = uiText('content.reserveFailed', '预约未确认成功：{error}。可以重试，或选择稍后。', { error: localizedError(error, 'common.operationFailed', '操作未完成，请重试。') });
         return false;
       });
     };
@@ -3444,7 +3487,7 @@
       currentDetail = Object.assign({}, next, detail);
       renderDetail(currentDetail);
       focusLoadedDetailEpisode();
-    }).catch(function () { if (detailModalOpen && generation === detailGeneration) showNotice('下一季选集暂时读取失败，可关闭后重试'); });
+    }).catch(function () { if (detailModalOpen && generation === detailGeneration) showNotice(uiText('content.nextSeasonReadFailed', '下一季选集暂时读取失败，可关闭后重试')); });
   }
 
   function cancelPlaybackPreparation() {
@@ -3495,7 +3538,7 @@
     var video = document.getElementById('hero-video');
     var position = Math.max(0, Number(video.currentTime) || Number(playback.position) || 0);
     playback.recoveryAttempts = playbackRecovery.attempts();
-    showNotice('正在刷新播放地址…');
+    showNotice(uiText('content.sourceRefreshing', '正在刷新播放地址…'));
     playFeedItem(feedIndex, playback.episode, position, null, null, { recoveryAttempts: playback.recoveryAttempts });
     return true;
   }
@@ -3738,7 +3781,7 @@
     var generation = playback.generation;
     var request = typeof AbortController === 'function' ? new AbortController() : null;
     playback.rangeFallbackAttempted = true;
-    playback.rangeFallback = '分段读取失败，正在准备标准播放';
+    playback.rangeFallback = uiText('ui.rangePreparing', '分段读取失败，正在准备标准播放');
     playback.position = position;
     playback.started = false;
     playback.stableSince = 0;
@@ -3758,7 +3801,7 @@
       video.removeAttribute('src');
       video.load();
       playback.mode = values[1].mode || 'full';
-      playback.rangeFallback = '分段读取失败，已回退标准播放';
+      playback.rangeFallback = uiText('ui.rangeFallback', '分段读取失败，已回退标准播放');
       playback.position = position;
       playback.started = false;
       playbackQuality = values[1].quality || '';
@@ -3770,12 +3813,12 @@
       video.classList.add('has-source');
       video.load();
       setPlayerStatus(episodeLoadingText(playback.episode));
-      if (!applicationHidden() && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus('标准播放也未能启动', true); });
+      if (!applicationHidden() && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus(uiText('ui.standardPlaybackFailed', '标准播放也未能启动'), true); });
     }).catch(function () {
       if (playback !== activePlayback || generation !== feedGeneration) return;
       playbackInfoRequest = null;
-      playback.rangeFallback = '分段读取和标准播放准备均失败';
-      setPlayerStatus('这集未能正常播放', true);
+      playback.rangeFallback = uiText('ui.allPlaybackFailed', '分段读取和标准播放准备均失败');
+      setPlayerStatus(uiText('ui.episodePlaybackFailed', '这集未能正常播放'), true);
     });
     return true;
   }
@@ -3783,14 +3826,14 @@
     closePlayerOptions(false);
     closeDiscussion(false); resetDanmaku();
     if (!feedItems.length) return;
-    if (index < 0) { showNotice('已经是第一条推荐'); return; }
+    if (index < 0) { showNotice(uiText('ui.firstRecommendation', '已经是第一条推荐')); return; }
     if (index >= feedItems.length && pageMode() === 'recommend') {
       var pendingIndex = feedIndex;
       var pendingGeneration = feedPager.generation;
-      if (feedPager.error) { showNotice('推荐加载失败，请再按向下重试'); }
+      if (feedPager.error) { showNotice(uiText('ui.recommendationRetry', '推荐加载失败，请再按向下重试')); }
       if (feedPager.hasMore() || feedPager.error) {
         feedPager.load(!!feedPager.error).then(function () { if (pageMode() === 'recommend' && feedPager.generation === pendingGeneration && feedIndex === pendingIndex && index < feedItems.length) playFeedItem(index); });
-      } else showNotice('已浏览全部推荐');
+      } else showNotice(uiText('ui.allRecommendations', '已浏览全部推荐'));
       return;
     }
     if (index >= feedItems.length) return;
@@ -3874,7 +3917,7 @@
       return source.then(function (detail) {
         if (generation !== feedGeneration || request.signal.aborted) return null;
         var vid = episode === 1 ? firstVid(detail) : detail.vid_list && detail.vid_list[episode - 1];
-        if (!vid) throw new Error('第' + episode + '集暂无视频数据');
+        if (!vid) throw new Error(uiText('content.episodeNoVideo', '第{episode}集暂无视频数据', { episode: episode }));
         var playing = Object.assign({}, item, detail, { start_episode: episode, vid: vid });
         activePlayback = { item: playing, episode: episode, vid: vid, position: position, generation: generation, owner: accountEpoch, started: false, stableSince: 0, lastWrite: 0, completed: false,
           endedPending: false,
@@ -3912,7 +3955,7 @@
         if (generation !== feedGeneration || request.signal.aborted || (pageMode() !== 'recommend' && pageMode() !== 'player')) return;
         if (!data) return;
         playbackInfoRequest = null;
-        if (!data.path) throw new Error('播放服务没有返回地址');
+        if (!data.path) throw new Error(uiText('content.noSource', '播放服务没有返回地址'));
         function attachPreparedSource() {
           if (generation !== feedGeneration || request.signal.aborted || !activePlayback) return;
           activePlayback.timing.ready_at = Date.now();
@@ -3922,13 +3965,13 @@
           video.src = data.path;
           playbackQuality = data.quality || '';
           playbackQualities = data.qualities || [];
-          if (playbackPreferences.quality && playbackQuality !== playbackPreferences.quality) showNotice('本集没有 ' + playbackPreferences.quality + '，使用 ' + (playbackQuality || '自动清晰度'));
+          if (playbackPreferences.quality && playbackQuality !== playbackPreferences.quality) showNotice(uiText('content.qualityMissing', '本集没有 {quality}，使用 {fallback}', { quality: playbackPreferences.quality, fallback: playbackQuality || uiText('ui.autoQuality', '自动清晰度') }));
           updatePlaybackControls();
           video.classList.add('has-source');
           placeholder.classList.add('is-hidden');
           video.load();
           setPlayerStatus(episodeLoadingText(activePlayback.episode));
-          if (!applicationHidden() && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus(''); revealControls(); showNotice('视频已准备好，请按确认键开始播放'); });
+          if (!applicationHidden() && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus(''); revealControls(); showNotice(uiText('content.videoReadyConfirm', '视频已准备好，请按确认键开始播放')); });
           else { setPlayerStatus(''); revealControls(); }
         }
         if (!keepRangeFrame) { attachPreparedSource(); return; }
@@ -3947,7 +3990,7 @@
           clearRangeTransitionHint();
           hero.classList.remove('is-range-transition');
           video.classList.remove('has-source');
-          setPlayerStatus('暂时无法播放这集', true);
+          setPlayerStatus(uiText('ui.cannotPlayEpisode', '暂时无法播放这集'), true);
         }
       });
   }
@@ -3959,7 +4002,7 @@
     if (!feedItems.length) {
       featuredItem = null;
       updateSeasonControl(null);
-      showRecommendationPlaceholder(feedPager.hasMore() ? '正在读取推荐' : '暂时没有推荐内容');
+      showRecommendationPlaceholder(feedPager.hasMore() ? uiText('ui.readingRecommendations', '正在读取推荐') : uiText('ui.noRecommendations', '暂时没有推荐内容'));
       return;
     }
     playFeedItem(0);
@@ -3981,7 +4024,7 @@
     hideWorkspacePages();
     searchPage.classList.add('is-hidden');
     pagePlaceholder.classList.add('is-hidden');
-    document.getElementById('page-context').textContent = '← 返回';
+    document.getElementById('page-context').textContent = uiText('ui.back', '← 返回');
     document.getElementById('hero').classList.add('is-feed');
     feedItems = [item];
     feedIndex = 0;
@@ -4005,7 +4048,7 @@
 
   function posterSeasonLabel(item) {
     var season = Number(item && item.season_index);
-    if (season > 0 && season <= 999 && Math.floor(season) === season) return '第' + season + '季';
+    if (season > 0 && season <= 999 && Math.floor(season) === season) return uiText('ui.seasonNumber', '第{season}季', { season: season });
     var match = String(item && item.title || '').match(/第\s*([0-9０-９零〇一二两三四五六七八九十百]+)\s*季/);
     if (!match) return '';
     var text = match[1].replace(/[０-９]/g, function (digit) { return String(digit.charCodeAt(0) - 65296); });
@@ -4022,7 +4065,7 @@
       });
       season += digit;
     }
-    return season > 0 && season <= 999 && Math.floor(season) === season ? '第' + season + '季' : '';
+    return season > 0 && season <= 999 && Math.floor(season) === season ? uiText('ui.seasonNumber', '第{season}季', { season: season }) : '';
   }
 
   // Normal posters share one decoration. Compact catalog/series/calendar
@@ -4054,7 +4097,7 @@
       setCover(image, item);
       var title = document.createElement('span');
       title.className = 'catalog-card-title';
-      title.textContent = item.title || '未命名短剧';
+      title.textContent = item.title || uiText('ui.unnamedDrama', '未命名短剧');
       var meta = document.createElement('span');
       meta.className = 'catalog-card-meta';
       meta.textContent = catalogMeta(item);
@@ -4081,11 +4124,11 @@
       return true;
     });
     searchItems = searchItems.concat(list);
-    document.getElementById('search-result-count').textContent = searchItems.length ? '已加载 ' + searchItems.length + ' 部' : '';
+    document.getElementById('search-result-count').textContent = searchItems.length ? uiText('ui.loadedCount', '已加载 {count} 部', { count: searchItems.length }) : '';
     if (!searchItems.length) {
       var empty = document.createElement('div');
       empty.className = 'search-result-empty';
-      empty.textContent = searchKind === 'browse' ? '没有符合这些条件的短剧，试试放宽筛选。' : '没有找到匹配的短剧，换个关键词试试。';
+      empty.textContent = searchKind === 'browse' ? uiText('ui.searchEmptyBrowse', '没有符合这些条件的短剧，试试放宽筛选。') : uiText('ui.searchEmptyQuery', '没有找到匹配的短剧，换个关键词试试。');
       searchResults.appendChild(empty);
       return;
     }
@@ -4100,7 +4143,7 @@
       setCover(image, item);
       var title = document.createElement('span');
       title.className = 'search-result-card-title';
-      title.textContent = item.title || '未命名短剧';
+      title.textContent = item.title || uiText('ui.unnamedDrama', '未命名短剧');
       var meta = document.createElement('span');
       meta.className = 'search-result-card-meta';
       meta.textContent = catalogMeta(item);
@@ -4128,9 +4171,44 @@
     var labels = [];
     filterRows.forEach(function (row) {
       var value = searchFilters[row.type];
-      row.options.forEach(function (option) { if (value === option.id) labels.push(option.label); });
+      row.options.forEach(function (option) { if (value === option.id) labels.push(searchFilterLabel(row, option)); });
     });
-    return labels.join(' · ') || '全部短剧';
+    return labels.join(' · ') || uiText('ui.allDrama', '全部短剧');
+  }
+
+  function searchFilterLabel(row, option) {
+    row = row || {};
+    option = option || {};
+    var rowKeys = {
+      genre: 'search.category',
+      sort: 'search.sort',
+      creation_status: 'search.status',
+      online_time: 'search.time',
+      category_dim_theme: 'search.theme',
+      category_dim_role: 'search.role',
+      category_dim_epoch: 'search.background',
+      gender: 'search.audience'
+    };
+    var optionKeys = {
+      short_play: 'channel.real',
+      comic_series: 'channel.comic',
+      ai_series: 'rank.ai',
+      hot_score: 'search.sortHot',
+      online_time: 'search.sortLatest',
+      hot_collect: 'search.sortFavorite',
+      creation_status_0: 'search.finished',
+      creation_status_1: 'search.ongoing',
+      gender_male: 'new.male',
+      gender_female: 'new.female'
+    };
+    var key = optionKeys[String(option.id || '')];
+    if (key) return uiText(key, option.label || option.id);
+    var rowKey = rowKeys[String(row.type || '')];
+    // The API uses the same helper for a row heading and its options. Keep
+    // headings on the locale resource instead of leaking the API's Chinese
+    // label into a translated UI.
+    if (option.id === row.type && rowKey) return uiText(rowKey, option.label || option.id);
+    return option.id === '' && rowKey ? uiText('common.all', '全部') : option.label || option.id || uiText('common.all', '全部');
   }
 
   function toggleSearchFilters(focusAfter) {
@@ -4140,7 +4218,7 @@
     searchFiltersExpanded = !panel.classList.contains('is-expanded');
     panel.classList.toggle('is-expanded', searchFiltersExpanded);
     panel.classList.toggle('is-collapsed', !searchFiltersExpanded);
-    toggle.textContent = searchFiltersExpanded ? '收起筛选' : '展开筛选';
+    toggle.textContent = searchFiltersExpanded ? uiText('search.collapseFilter', '收起筛选') : uiText('search.expandFilter', '展开筛选');
     toggle.setAttribute('aria-expanded', String(searchFiltersExpanded));
     if (focusAfter !== false) goFocus(searchFiltersExpanded ? firstVisible('.search-filter') || toggle : toggle);
   }
@@ -4176,17 +4254,17 @@
       line.className = 'filter-row';
       line.dataset.filterGroup = row.type;
       var label = document.createElement('strong');
-      label.textContent = row.label;
+      label.textContent = searchFilterLabel({ type: row.type }, { id: row.type, label: row.label });
       line.appendChild(label);
       var options = document.createElement('div');
       options.className = 'filter-options';
-      [{ id: '', label: '全部' }].concat(row.options).forEach(function (option) {
+      [{ id: '', label: uiText('common.all', '全部') }].concat(row.options).forEach(function (option) {
         var button = document.createElement('button');
         button.className = 'search-filter';
         button.dataset.filterType = row.type;
         button.dataset.filterValue = option.id;
         button.dataset.focus = 'filter-' + row.type + '-' + (option.id || 'all');
-        button.textContent = option.label;
+        button.textContent = searchFilterLabel(row, option);
         var active = (searchFilters[row.type] || '') === option.id;
         button.classList.toggle('is-active', active);
         button.setAttribute('aria-pressed', String(active));
@@ -4222,36 +4300,71 @@
 
   function dramaMeta(item) {
     var values = [];
-    if (item.score) values.push(item.score + '分');
-    if (item.episode_count) values.push('全' + item.episode_count + '集');
+    if (item.score) values.push(item.score + uiText('ui.scoreSuffix', '分'));
+    if (item.episode_count) values.push(uiText('content.episodeCount', '全{count}集', { count: item.episode_count }));
     if (item.tags && item.tags.length) values.push(item.tags.slice(0, 2).join(' · '));
-    return values.join(' · ') || '红果短剧';
+    return values.join(' · ') || uiText('app.name', '红果短剧');
   }
 
   function rankLabel() {
     var active = document.querySelector('.rank-subtab.is-active');
-    return active ? active.textContent : '热播榜';
+    return active ? active.textContent : uiText('ui.hotRank', '热播榜');
   }
 
   function rankFilterSummary() {
     var active = rankOptions.filter(function (option) { return option.id === rankSelection.rank; })[0];
     var sub = active && (active.children || []).filter(function (option) { return option.id === rankSelection.rank_sub; })[0];
     var labels = [];
-    if (active && active.label && active.label !== '全部') labels.push(active.label);
-    if (sub && sub.label) labels.push(sub.label);
+    if (active && active.id !== 'all') labels.push(rankOptionLabel(active));
+    if (sub && sub.label) labels.push(rankOptionLabel(sub));
     if (sub && rankSelection.rank_panel) {
       (sub.panels || []).some(function (group) {
         var option = (group.options || []).filter(function (item) { return item.id === rankSelection.rank_panel; })[0];
-        if (option) { labels.push(option.label); return true; }
+        if (option) { labels.push(rankOptionLabel(option)); return true; }
         return false;
       });
     }
-    return labels.join(' · ') || '全部榜单';
+    return labels.join(' · ') || uiText('ui.allRank', '全部榜单');
   }
 
   function rankFiltersCanCollapse(sub) {
-    var label = sub && String(sub.label || '').trim();
-    return label === '推荐榜' || label === '热播榜';
+    if (!sub) return false;
+    if (/hot_play/i.test(String(sub.id || ''))) return true;
+    return /recommend|hot_play/i.test(String(sub.id || ''));
+  }
+
+  function rankOptionLabel(option) {
+    if (!option) return '';
+    var id = String(option.id || '');
+    var keys = {
+      all: 'common.all',
+      human: 'channel.real',
+      comic_series_rank: 'channel.comic',
+      ai_playlet: 'rank.ai',
+      ranklist_hot_play_sc: 'rank.hot',
+      human_hot_play: 'rank.hot',
+      comic_series_hot_play: 'rank.hot',
+      ai_playlet_hot_play: 'rank.hot',
+      ranklist_subscribe: 'rank.reservation',
+      ranklist_celebrity: 'rank.actor',
+      ranklist_actor_fans: 'rank.starRank',
+      series_album: 'modal.series',
+      series_album_new_rank: 'rank.newSeason',
+      other: 'rank.overall',
+      gender_male: 'new.male',
+      gender_female: 'new.female',
+      genre: 'search.category',
+      sort: 'search.sort',
+      creation_status: 'search.status',
+      online_time: 'search.time',
+      category_dim_theme: 'search.theme',
+      category_dim_role: 'search.role',
+      category_dim_epoch: 'search.background',
+      gender: 'search.audience'
+    };
+    if (keys[id]) return uiText(keys[id], option.label || id);
+    if (!id && /^(总榜|综合)$/.test(String(option.label || ''))) return uiText('rank.overall', option.label);
+    return option.label || id;
   }
 
   function updateRankFilterPanel(sub) {
@@ -4272,7 +4385,7 @@
     var expanded = !panel.classList.contains('is-expanded');
     panel.classList.toggle('is-expanded', expanded);
     panel.classList.toggle('is-collapsed', !expanded);
-    toggle.textContent = expanded ? '收起筛选' : '展开筛选';
+    toggle.textContent = expanded ? uiText('search.collapseFilter', '收起筛选') : uiText('search.expandFilter', '展开筛选');
     toggle.setAttribute('aria-expanded', String(expanded));
     if (focusAfter !== false) goFocus(expanded ? firstVisible('.rank-panel.is-active') || firstVisible('.rank-panel') || toggle : toggle);
   }
@@ -4302,7 +4415,7 @@
     var collapsibleFilters = updateRankFilterPanel(sub);
     function button(option, cls, selected, target, handler) {
       var node = document.createElement('button'); node.className = cls + (selected ? ' is-active' : '');
-      node.dataset.focus = cls + '-' + (option.id || 'all'); node.textContent = option.label;
+      node.dataset.focus = cls + '-' + (option.id || 'all'); node.textContent = rankOptionLabel(option);
       node.setAttribute('aria-pressed', String(selected));
       node.addEventListener('click', handler);
       node.addEventListener('focus', function () { node.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });
@@ -4311,7 +4424,7 @@
     data.forEach(function (option) {
       button(option, 'rank-tab', option === active, root, function () {
         rankSelection = { rank: option.id, rank_sub: '', rank_panel: '' };
-        var child = (option.children || []).filter(function (x) { return x.label === '热播榜'; })[0] || (option.children || [])[0];
+        var child = (option.children || []).filter(function (x) { return /hot_play/i.test(String(x.id || '')); })[0] || (option.children || [])[0];
         if (child) rankSelection.rank_sub = child.id;
         renderRankSelectors(rankOptions); loadRank();
       });
@@ -4319,7 +4432,7 @@
     children.forEach(function (option) { button(option, 'rank-subtab', option === sub, subnav, function () { rankSelection.rank_sub = option.id; rankSelection.rank_panel = ''; renderRankSelectors(rankOptions); loadRank(); }); });
     (sub && sub.panels || []).forEach(function (group) {
       var line = document.createElement('div'); line.className = 'rank-panel-row';
-      var label = document.createElement('span'); label.textContent = group.label; line.appendChild(label);
+      var label = document.createElement('span'); label.textContent = rankOptionLabel({ id: group.type, label: group.label }); line.appendChild(label);
       var options = document.createElement('div'); options.className = 'rank-panel-options'; line.appendChild(options);
       group.options.forEach(function (option) { button(option, 'rank-panel', option.id === rankSelection.rank_panel, options, function () { rankSelection.rank_panel = option.id; renderRankSelectors(rankOptions); loadRank(); }); });
       panels.appendChild(line);
@@ -4335,18 +4448,18 @@
   }
 
   function openRankFilter() {
-    if (!rankOptions.length) { showNotice('筛选条件还在读取，请稍候'); return; }
+    if (!rankOptions.length) { showNotice(uiText('ui.rankFilterWaiting', '筛选条件还在读取，请稍候')); return; }
     rankDraftSelection = Object.assign({}, rankSelection);
     rankFilterOpen = true;
     var root = document.getElementById('rank-filter-options'); root.innerHTML = '';
     rankOptions.forEach(function (group) {
-      var heading = document.createElement('strong'); heading.className = 'rank-filter-group-title'; heading.textContent = group.label; root.appendChild(heading);
+      var heading = document.createElement('strong'); heading.className = 'rank-filter-group-title'; heading.textContent = rankOptionLabel(group); root.appendChild(heading);
       (group.children || []).forEach(function (option) {
-        var button = document.createElement('button'); button.className = 'rank-filter-option'; button.dataset.focus = 'rank-filter-' + option.id; button.textContent = option.label;
+        var button = document.createElement('button'); button.className = 'rank-filter-option'; button.dataset.focus = 'rank-filter-' + option.id; button.textContent = rankOptionLabel(option);
         button.classList.toggle('is-selected', option.id === rankDraftSelection.rank_sub);
         button.addEventListener('click', function () { rankDraftSelection.rank = group.id; rankDraftSelection.rank_sub = option.id; rankDraftSelection.rank_panel = ''; root.querySelectorAll('.rank-filter-option').forEach(function (node) { node.classList.remove('is-selected'); }); button.classList.add('is-selected'); });
         root.appendChild(button);
-        (option.panels || []).forEach(function (panel) { (panel.options || []).forEach(function (panelOption) { var child = document.createElement('button'); child.className = 'rank-filter-option rank-filter-detail'; child.dataset.focus = 'rank-filter-' + panelOption.id; child.textContent = panel.label + '：' + panelOption.label; child.classList.toggle('is-selected', panelOption.id === rankDraftSelection.rank_panel); child.addEventListener('click', function () { rankDraftSelection.rank = group.id; rankDraftSelection.rank_sub = option.id; rankDraftSelection.rank_panel = panelOption.id; root.querySelectorAll('.rank-filter-option').forEach(function (node) { node.classList.remove('is-selected'); }); child.classList.add('is-selected'); }); root.appendChild(child); }); });
+        (option.panels || []).forEach(function (panel) { (panel.options || []).forEach(function (panelOption) { var child = document.createElement('button'); child.className = 'rank-filter-option rank-filter-detail'; child.dataset.focus = 'rank-filter-' + panelOption.id; child.textContent = rankOptionLabel({ id: panel.type, label: panel.label }) + '：' + rankOptionLabel(panelOption); child.classList.toggle('is-selected', panelOption.id === rankDraftSelection.rank_panel); child.addEventListener('click', function () { rankDraftSelection.rank = group.id; rankDraftSelection.rank_sub = option.id; rankDraftSelection.rank_panel = panelOption.id; root.querySelectorAll('.rank-filter-option').forEach(function (node) { node.classList.remove('is-selected'); }); child.classList.add('is-selected'); }); root.appendChild(child); }); });
       });
     });
     document.getElementById('rank-filter-modal').classList.remove('is-hidden'); document.getElementById('rank-filter-modal').setAttribute('aria-hidden', 'false');
@@ -4363,20 +4476,20 @@
     var list = document.getElementById('actor-works-list');
     var progress = document.getElementById('actor-works-progress');
     var retry = document.getElementById('actor-works-retry');
-    document.getElementById('actor-works-name').textContent = result.actor && result.actor.name ? result.actor.name : '演员作品';
+    document.getElementById('actor-works-name').textContent = result.actor && result.actor.name ? result.actor.name : uiText('ui.actorWorks', '演员作品');
     var avatar = document.getElementById('actor-works-avatar');
     if (result.actor && result.actor.avatar) { avatar.src = result.actor.avatar; avatar.classList.remove('is-hidden'); } else { avatar.removeAttribute('src'); avatar.classList.add('is-hidden'); }
     document.getElementById('actor-works-description').textContent = result.actor && result.actor.description ? result.actor.description : '';
     list.innerHTML = '';
     retry.classList.add('is-hidden');
     var items = result.items || [];
-    if (!items.length) { progress.textContent = '暂时没有找到该演员的作品'; return; }
-    progress.textContent = '共 ' + items.length + ' 部作品';
+    if (!items.length) { progress.textContent = uiText('ui.actorWorksEmpty', '暂时没有找到该演员的作品'); return; }
+    progress.textContent = uiText('ui.actorWorksCount', '共 {count} 部作品', { count: items.length });
     items.forEach(function (item, index) {
       var card = document.createElement('button');
       card.className = 'actor-work-card'; card.dataset.focus = 'actor-work-' + item.series_id;
       var image = document.createElement('img'); image.className = 'actor-work-image'; setCover(image, item);
-      var title = document.createElement('strong'); title.className = 'actor-work-title'; title.textContent = item.title || '未命名短剧';
+      var title = document.createElement('strong'); title.className = 'actor-work-title'; title.textContent = item.title || uiText('ui.unnamedDrama', '未命名短剧');
       var meta = document.createElement('span'); meta.className = 'actor-work-meta'; meta.textContent = dramaMeta(item);
       card.appendChild(image); card.appendChild(title); card.appendChild(meta);
       card.addEventListener('click', function () { var returnFocus = actorWorksReturnFocus; closeActorWorks(false); startPlayer(item, returnFocus); });
@@ -4394,10 +4507,10 @@
     var generation = ++actorWorksGeneration;
     var modal = document.getElementById('actor-works-modal');
     modal.classList.remove('is-hidden'); modal.setAttribute('aria-hidden', 'false');
-    document.getElementById('actor-works-name').textContent = item.title || '演员作品';
+    document.getElementById('actor-works-name').textContent = item.title || uiText('ui.actorWorks', '演员作品');
     document.getElementById('actor-works-avatar').classList.add('is-hidden');
     document.getElementById('actor-works-description').textContent = item.intro || '';
-    document.getElementById('actor-works-progress').textContent = '正在读取作品…';
+    document.getElementById('actor-works-progress').textContent = uiText('ui.actorWorksLoading', '正在读取作品…');
     document.getElementById('actor-works-list').innerHTML = '';
     document.getElementById('actor-works-retry').classList.add('is-hidden');
     goFocus(document.getElementById('actor-works-close'));
@@ -4407,7 +4520,7 @@
       renderActorWorks(data);
     }).catch(function (error) {
       if (!actorWorksOpen || generation !== actorWorksGeneration || error.name === 'AbortError') return;
-      document.getElementById('actor-works-progress').textContent = '作品读取失败：' + error.message;
+      document.getElementById('actor-works-progress').textContent = uiText('ui.actorWorksFailed', '作品读取失败：{error}', { error: localizedError(error, 'common.networkFailed', '连接失败') });
       document.getElementById('actor-works-retry').classList.remove('is-hidden');
       goFocus(document.getElementById('actor-works-retry'));
     }).then(function () { if (generation === actorWorksGeneration) actorWorksRequest = null; });
@@ -4436,26 +4549,26 @@
   var radarOfficialKind = 'hot';
   var radarGrowthMetric = 'd_hot';
   var radarGrowthType = 'all';
-  var radarOfficialLabels = { hot: '综合', real: '真人', ai: 'AI', comic: '漫剧' };
-  var radarGrowthMetricLabels = { d_hot: '热度日增', d_fav: '收藏日增', r_hot: '热度增长率' };
-  var radarGrowthTypeLabels = { all: '全部', real: '真人', ai: 'AI', comic: '漫剧', unknown: '未知' };
+  var radarOfficialLabels = { hot: uiText('ui.radarOfficial', '综合'), real: uiText('ui.radarReal', '真人'), ai: uiText('ui.radarAI', 'AI'), comic: uiText('ui.radarComic', '漫剧') };
+  var radarGrowthMetricLabels = { d_hot: uiText('ui.radarHotDaily', '热度日增'), d_fav: uiText('ui.radarFavoriteDaily', '收藏日增'), r_hot: uiText('ui.radarHotRate', '热度增长率') };
+  var radarGrowthTypeLabels = { all: uiText('ui.radarAll', '全部'), real: uiText('ui.radarReal', '真人'), ai: uiText('ui.radarAI', 'AI'), comic: uiText('ui.radarComic', '漫剧'), unknown: uiText('ui.radarUnknown', '未知') };
   function radarNumber(value) {
     if (value === null || value === undefined || value === '' || !isFinite(Number(value))) return '—';
     var number = Number(value) || 0;
-    if (number >= 100000000) return (number / 100000000).toFixed(number >= 1000000000 ? 1 : 2).replace(/\.0+$/, '') + '亿';
-    if (number >= 10000) return (number / 10000).toFixed(number >= 1000000 ? 0 : 1).replace(/\.0+$/, '') + '万';
+    if (number >= 100000000) return (number / 100000000).toFixed(number >= 1000000000 ? 1 : 2).replace(/\.0+$/, '') + uiText('ui.unitBillion', '亿');
+    if (number >= 10000) return (number / 10000).toFixed(number >= 1000000 ? 0 : 1).replace(/\.0+$/, '') + uiText('ui.unitTenThousand', '万');
     return String(number);
   }
   function radarDelta(delta) {
-    if (delta === null || delta === undefined) return '新上榜';
+    if (delta === null || delta === undefined) return uiText('ui.newRank', '新上榜');
     var number = Number(delta) || 0;
-    return number > 0 ? '↑ ' + number : number < 0 ? '↓ ' + Math.abs(number) : '— 持平';
+    return number > 0 ? '↑ ' + number : number < 0 ? '↓ ' + Math.abs(number) : '— ' + uiText('ui.flat', '持平');
   }
   function radarDate(data) {
-    return data && (data.date || data.rank_date) ? '数据日期 ' + (data.date || data.rank_date) : '';
+    return data && (data.date || data.rank_date) ? uiText('ui.dataDate', '数据日期 {date}', { date: data.date || data.rank_date }) : '';
   }
   function radarBucket(kind) { return radarData && radarData.ranks ? radarData.ranks[kind] : null; }
-  function radarTypeLabel(type) { return radarGrowthTypeLabels[type] || '未知'; }
+  function radarTypeLabel(type) { return radarGrowthTypeLabels[type] || uiText('ui.radarUnknown', '未知'); }
   function radarGrowthIndex() {
     var result = {};
     var items = radarData && radarData.growth && radarData.growth.items || [];
@@ -4466,7 +4579,7 @@
     var growth = growthIndex[String(source.id)] || {};
     return {
       series_id: source.id,
-      title: source.title || '未命名短剧',
+      title: source.title || uiText('ui.unnamedDrama', '未命名短剧'),
       rank: source.rank || index + 1,
       delta: source.delta,
       status_tags: source.status_tags || [],
@@ -4499,7 +4612,7 @@
     var item = radarOfficialModel(source, index, kind, growthIndex);
     var row = document.createElement('div');
     row.className = 'radar-row radar-official-row'; row.tabIndex = 0; row.setAttribute('role', 'button');
-    row.setAttribute('aria-label', '播放：' + item.title); row.dataset.focus = 'radar-official-' + item.series_id;
+    row.setAttribute('aria-label', uiText('ui.playLabel', '播放：') + item.title); row.dataset.focus = 'radar-official-' + item.series_id;
     row.__radarItem = item;
     row.appendChild(radarCell('radar-rank', item.rank));
     row.appendChild(radarCell('radar-delta ' + (Number(item.delta) > 0 ? 'is-up' : Number(item.delta) < 0 ? 'is-down' : ''), radarDelta(item.delta)));
@@ -4509,7 +4622,7 @@
     row.appendChild(radarCell('radar-number-cell', radarSignedNumber(item.d_hot)));
     row.appendChild(radarCell('radar-number-cell', radarSignedNumber(item.d_fav)));
     row.appendChild(radarCell('radar-score-cell', radarScore(item.score)));
-    row.appendChild(radarCell('radar-number-cell', item.streak == null ? '—' : item.streak + '天'));
+    row.appendChild(radarCell('radar-number-cell', item.streak == null ? '—' : uiText('ui.daysOnRank', '{days}天', { days: item.streak })));
     row.addEventListener('click', function () { startPlayer(row.__radarItem, row); });
     row.addEventListener('focus', function () { try { row.scrollIntoView({ block: 'nearest' }); } catch (ignore) {} });
     return row;
@@ -4518,10 +4631,10 @@
     var item = Object.assign({}, source, { series_id: source.id, type: source.type || 'unknown', radar_growth: source });
     var row = document.createElement('div');
     row.className = 'radar-row radar-growth-row'; row.tabIndex = 0; row.setAttribute('role', 'button');
-    row.setAttribute('aria-label', '播放：' + (item.title || '未命名短剧')); row.dataset.focus = 'radar-growth-' + item.series_id;
+    row.setAttribute('aria-label', uiText('ui.playLabel', '播放：') + (item.title || uiText('ui.unnamedDrama', '未命名短剧'))); row.dataset.focus = 'radar-growth-' + item.series_id;
     row.__radarItem = item;
     row.appendChild(radarCell('radar-rank', index + 1));
-    row.appendChild(radarCell('radar-title-cell', item.title || '未命名短剧'));
+    row.appendChild(radarCell('radar-title-cell', item.title || uiText('ui.unnamedDrama', '未命名短剧')));
     row.appendChild(radarCell('radar-type-cell', radarTypeLabel(item.type)));
     row.appendChild(radarCell('radar-number-cell radar-hot-cell', radarNumber(item.hot)));
     row.appendChild(radarCell('radar-number-cell radar-growth-primary', radarSignedNumber(item.d_hot)));
@@ -4543,17 +4656,17 @@
     growthSection.classList.toggle('is-hidden', radarView !== 'growth');
     var official = radarBucket(radarOfficialKind);
     var growth = radarGrowthItems();
-    if (!official || !official.items || !official.items.length) renderMessage(officialRows, 'rank-empty', radarData ? '官方榜暂无数据。' : '正在读取榜单雷达…');
+    if (!official || !official.items || !official.items.length) renderMessage(officialRows, 'rank-empty', radarData ? uiText('ui.radarOfficialEmpty', '官方榜暂无数据。') : uiText('ui.radarLoading', '正在读取榜单雷达…'));
     else {
       var index = radarGrowthIndex();
       official.items.forEach(function (source, i) { officialRows.appendChild(radarOfficialRow(source, i, radarOfficialKind, index)); });
     }
-    if (!growth.length) renderMessage(growthRows, 'rank-empty', radarData ? '当前筛选暂无飙升数据。' : '正在读取榜单雷达…');
+    if (!growth.length) renderMessage(growthRows, 'rank-empty', radarData ? uiText('ui.radarGrowthEmpty', '当前筛选暂无飙升数据。') : uiText('ui.radarLoading', '正在读取榜单雷达…'));
     else growth.forEach(function (source, i) { growthRows.appendChild(radarGrowthRow(source, i)); });
     var rankDate = radarData && radarData.ranks && radarData.ranks[radarOfficialKind];
     var growthDate = radarData && radarData.growth;
     var stale = radarData && (radarData.ranks_stale || radarData.growth_stale);
-    status.textContent = '官方榜 ' + (radarDate(rankDate) || '暂无日期') + ' · 飙升榜 ' + (radarDate(growthDate) || '暂无日期') + ' · 当前按 ' + radarGrowthMetricLabels[radarGrowthMetric] + ' · ' + radarGrowthTypeLabels[radarGrowthType] + (stale ? ' · 使用最近成功数据' : '') + ' · 官方 ' + (official && official.items ? official.items.length : 0) + ' 部 · 飙升 ' + growth.length + ' 部';
+    status.textContent = uiText('ui.radarStatus', '官方榜 {official} · 飙升榜 {growth} · 当前按 {metric} · {type}{stale} · 官方 {officialCount} 部 · 飙升 {growthCount} 部', { official: radarDate(rankDate) || uiText('ui.noDate', '暂无日期'), growth: radarDate(growthDate) || uiText('ui.noDate', '暂无日期'), metric: radarGrowthMetricLabels[radarGrowthMetric], type: radarGrowthTypeLabels[radarGrowthType], stale: stale ? ' · ' + uiText('ui.recentData', '使用最近成功数据') : '', officialCount: official && official.items ? official.items.length : 0, growthCount: growth.length });
     document.querySelectorAll('[data-radar-official]').forEach(function (node) { var active = node.dataset.radarOfficial === radarOfficialKind; node.classList.toggle('is-active', active); node.setAttribute('aria-pressed', String(active)); });
     document.querySelectorAll('[data-radar-metric]').forEach(function (node) { var active = node.dataset.radarMetric === radarGrowthMetric; node.classList.toggle('is-active', active); node.setAttribute('aria-pressed', String(active)); });
     document.querySelectorAll('[data-radar-type]').forEach(function (node) { var active = node.dataset.radarType === radarGrowthType; node.classList.toggle('is-active', active); node.setAttribute('aria-pressed', String(active)); });
@@ -4571,7 +4684,7 @@
     if (radarRequest) radarRequest.abort();
     var request = radarRequest = typeof AbortController === 'function' ? new AbortController() : null;
     var generation = ++radarGeneration;
-    document.getElementById('radar-status').textContent = '正在读取榜单雷达…';
+    document.getElementById('radar-status').textContent = uiText('ui.radarLoading', '正在读取榜单雷达…');
     var url = '/api/v1/radar' + (force ? '?refresh=' + Date.now() : '');
     return fetchData(url, request ? { signal: request.signal } : {})
       .then(function (data) {
@@ -4579,9 +4692,9 @@
         radarData = data; renderRadar();
       }).catch(function (error) {
         if (error.name === 'AbortError' || generation !== radarGeneration) return;
-        document.getElementById('radar-status').textContent = '榜单雷达暂时读取失败：' + error.message;
-        renderMessage(document.getElementById('radar-official-rows'), 'rank-empty', '暂时没有官方榜数据，请稍后刷新。');
-        renderMessage(document.getElementById('radar-growth-rows'), 'rank-empty', '暂时没有飙升榜数据，请稍后刷新。');
+        document.getElementById('radar-status').textContent = uiText('ui.radarFailed', '榜单雷达暂时读取失败：{error}', { error: localizedError(error, 'common.networkFailed', '连接失败') });
+        renderMessage(document.getElementById('radar-official-rows'), 'rank-empty', uiText('ui.radarOfficialUnavailable', '暂时没有官方榜数据，请稍后刷新。'));
+        renderMessage(document.getElementById('radar-growth-rows'), 'rank-empty', uiText('ui.radarGrowthUnavailable', '暂时没有飙升榜数据，请稍后刷新。'));
       }).then(function () { if (radarRequest === request) radarRequest = null; });
   }
   function setRankView(view, focusAfter) {
@@ -4601,9 +4714,9 @@
     var start = rankItems.length;
     rankItems = rankItems.concat(items || []);
     document.getElementById('rank-list-title').textContent = rankLabel();
-    document.getElementById('rank-list-update').textContent = rankItems.length ? '已加载 ' + rankItems.length + (rankSelection.rank === 'ranklist_celebrity' ? '位' : '部') : '暂时没有榜单内容';
+    document.getElementById('rank-list-update').textContent = rankItems.length ? uiText('ui.rankLoaded', '已加载 {count}{unit}', { count: rankItems.length, unit: rankSelection.rank === 'ranklist_celebrity' ? uiText('ui.personUnit', '位') : uiText('ui.dramaUnit', '部') }) : uiText('ui.rankEmpty', '暂时没有榜单内容');
     if (!rankItems.length) {
-      rankList.innerHTML = '<div class="rank-empty">暂时没有榜单内容，请稍后刷新。</div>';
+      rankList.innerHTML = '<div class="rank-empty">' + uiText('ui.rankEmptyRetry', '暂时没有榜单内容，请稍后刷新。') + '</div>';
       return;
     }
     (items || []).forEach(function (item, localIndex) {
@@ -4612,7 +4725,7 @@
       row.className = 'rank-row';
       row.tabIndex = 0;
       row.setAttribute('role', 'button');
-      row.setAttribute('aria-label', (item.actor_id ? '演员：' : '播放：') + item.title);
+      row.setAttribute('aria-label', (item.actor_id ? uiText('ui.actorLabel', '演员：') : uiText('ui.playLabel', '播放：')) + item.title);
       row.dataset.index = String(index);
       row.dataset.focus = 'rank-item-' + item.series_id;
       row.__rankItem = item;
@@ -4626,13 +4739,13 @@
       copy.className = 'rank-row-copy';
       var title = document.createElement('span');
       title.className = 'rank-row-title';
-      title.textContent = item.title || '未命名短剧';
+      title.textContent = item.title || uiText('ui.unnamedDrama', '未命名短剧');
       var meta = document.createElement('span');
       meta.className = 'rank-row-meta';
       meta.textContent = dramaMeta(item);
       var intro = document.createElement('span');
       intro.className = 'rank-row-intro';
-      intro.textContent = item.intro || '暂无简介';
+      intro.textContent = item.intro || uiText('ui.noIntro', '暂无简介');
       var heat = document.createElement('span');
       heat.className = 'rank-row-heat';
       heat.textContent = item.heat || item.favorite_text || item.like_text || '';
@@ -4641,15 +4754,15 @@
       side.className = 'rank-row-side';
       var play = document.createElement('button');
       play.className = 'rank-row-play';
-      play.textContent = '▶ 播放';
+      play.textContent = uiText('ui.playButton', '▶ 播放');
       var detail = document.createElement('button');
       detail.className = 'rank-row-detail';
-      detail.textContent = '详情';
+      detail.textContent = uiText('ui.detailButton', '详情');
       play.addEventListener('click', function (event) { event.stopPropagation(); startPlayer(item, play); });
       detail.addEventListener('click', function (event) { event.stopPropagation(); openDetail(item); });
       if (item.actor_id) {
         var actor = document.createElement('button');
-        actor.className = 'rank-row-actor'; actor.textContent = '查看作品'; actor.dataset.focus = 'rank-actor-' + item.actor_id;
+        actor.className = 'rank-row-actor'; actor.textContent = uiText('ui.viewWorks', '查看作品'); actor.dataset.focus = 'rank-actor-' + item.actor_id;
         actor.addEventListener('click', function (event) { event.stopPropagation(); openActorWorks(item); });
         side.appendChild(actor);
       } else { side.appendChild(play); side.appendChild(detail); }
@@ -4666,7 +4779,7 @@
     if (!append) { newItems = []; newGrid.innerHTML = ''; }
     newItems = newItems.concat(items || []);
     if (!newItems.length) {
-      newGrid.innerHTML = '<div class="search-result-empty">暂时没有新剧内容。</div>';
+      newGrid.innerHTML = '<div class="search-result-empty">' + uiText('ui.newDramaEmpty', '暂时没有新剧内容。') + '</div>';
       return;
     }
     (items || []).forEach(function (item) {
@@ -4677,7 +4790,7 @@
   function renderFollow(items, append) {
     if (!append) followGrid.innerHTML = '';
     if (!followPager.items.length && !followPager.busy) {
-      renderMessage(followGrid, 'list-empty', accountData && accountData.logged_in ? '还没有追更中的短剧。' : '登录红果账号后查看追更。');
+      renderMessage(followGrid, 'list-empty', accountData && accountData.logged_in ? uiText('ui.followEmpty', '还没有追更中的短剧。') : uiText('ui.followLogin', '登录红果账号后查看追更。'));
       return;
     }
     (items || []).forEach(function (item) {
@@ -4685,11 +4798,11 @@
       card.className = 'follow-card'; card.dataset.focus = 'follow-' + item.series_id;
       var image = document.createElement('img'); image.className = 'follow-card-image'; setCover(image, item);
       var copy = document.createElement('span'); copy.className = 'follow-card-copy';
-      var title = document.createElement('strong'); title.textContent = item.title || '未命名短剧';
+      var title = document.createElement('strong'); title.textContent = item.title || uiText('ui.unnamedDrama', '未命名短剧');
       var watched = item.latest_watched_episode || (libraryEntry(item.series_id) || {}).episode || 0;
-      var meta = document.createElement('span'); meta.textContent = watched ? '已看第' + watched + '集' : item.episode_count ? '全' + item.episode_count + '集' : '正在更新';
+      var meta = document.createElement('span'); meta.textContent = watched ? uiText('ui.watchedEpisode', '已看第{episode}集', { episode: watched }) : item.episode_count ? uiText('content.episodeCount', '全{count}集', { count: item.episode_count }) : uiText('common.updating', '更新中');
       var status = document.createElement('span'); status.className = 'follow-card-status';
-      status.textContent = followState(item) === 'ended' ? '已完结' : item.has_watched_latest_episode ? '已追平' : item.show_update_frequency || '更新中';
+    status.textContent = followState(item) === 'ended' ? uiText('common.finished', '已完结') : item.has_watched_latest_episode ? uiText('ui.followCaughtUp', '已追平') : item.show_update_frequency || uiText('common.updating', '更新中');
       copy.appendChild(title); copy.appendChild(meta); copy.appendChild(status); card.appendChild(dramaPoster(image, item)); card.appendChild(copy);
       card.addEventListener('click', function () { startPlayer(item, card); });
       card.addEventListener('focus', function () { card.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });
@@ -4704,11 +4817,11 @@
       var poster = document.createElement('span'); poster.className = 'new-card-poster drama-poster';
       var image = document.createElement('img');
       image.className = 'new-card-image'; setCover(image, item);
-      var episodeCount = document.createElement('span'); episodeCount.className = 'new-card-episodes'; episodeCount.textContent = item.episode_count ? '共' + item.episode_count + '集' : '';
+      var episodeCount = document.createElement('span'); episodeCount.className = 'new-card-episodes'; episodeCount.textContent = item.episode_count ? uiText('ui.totalEpisodes', '共{count}集', { count: item.episode_count }) : '';
       poster.appendChild(image); if (episodeCount.textContent) poster.appendChild(episodeCount); updatePosterSeason(poster, item);
-      var title = document.createElement('span'); title.className = 'new-card-title'; title.textContent = item.title || '未命名短剧';
-      var meta = document.createElement('span'); meta.className = 'new-card-meta'; meta.textContent = (item.tags || []).slice(0, 3).join(' · ') || (prefix === 'reservation-' ? '已上线' : '新剧');
-      var score = document.createElement('span'); score.className = 'new-card-score'; score.textContent = item.score ? item.score + ' 分' : (item.episode_count ? '共' + item.episode_count + '集' : '');
+      var title = document.createElement('span'); title.className = 'new-card-title'; title.textContent = item.title || uiText('ui.unnamedDrama', '未命名短剧');
+      var meta = document.createElement('span'); meta.className = 'new-card-meta'; meta.textContent = (item.tags || []).slice(0, 3).join(' · ') || (prefix === 'reservation-' ? uiText('common.online', '已上线') : uiText('ui.newDrama', '新剧'));
+      var score = document.createElement('span'); score.className = 'new-card-score'; score.textContent = item.score ? item.score + ' ' + uiText('ui.scoreSuffix', '分') : (item.episode_count ? uiText('ui.totalEpisodes', '共{count}集', { count: item.episode_count }) : '');
       card.appendChild(poster); card.appendChild(title); card.appendChild(meta); card.appendChild(score);
       card.addEventListener('click', function () { startPlayer(item, card); });
       card.addEventListener('focus', function () { try { card.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (ignore) {} });
@@ -4730,7 +4843,7 @@
     var options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: item.reservation_id, reserved: reserved }) };
     if (signal) options.signal = signal;
     return fetchData('/api/v1/reservation', options).then(function (result) {
-      if (!result.confirmed) throw new Error(result.message || '红果预约列表暂未确认这条记录，请稍后刷新核对');
+      if (!result.confirmed) throw new Error(apiError(result, 200, 'ui.reservationListUnconfirmed', '红果预约列表暂未确认这条记录，请稍后刷新核对'));
       return result;
     });
   }
@@ -4777,7 +4890,7 @@
     }
     document.querySelectorAll('.reservation-tab').forEach(function (tab) {
       var mode = tab.dataset.reservationMode; var count = reservationCounts[mode];
-      tab.textContent = (mode === 'online' ? '已上线' : '待上线') + (count === null ? '' : ' ' + count);
+      tab.textContent = (mode === 'online' ? uiText('common.online', '已上线') : uiText('common.upcoming', '待上线')) + (count === null ? '' : ' ' + count);
     });
   }
 
@@ -4793,7 +4906,7 @@
       var date = new Date(Number(value.slice(0, 4)), Number(value.slice(4, 6)) - 1, Number(value.slice(6, 8)));
       var day = document.createElement('button'); day.className = 'calendar-day' + (value === calendarDate ? ' is-active' : '');
       day.dataset.focus = 'calendar-day-' + value; day.dataset.date = value;
-      var week = document.createElement('span'); week.textContent = value === schema.current_date ? '今天' : '周' + ['日', '一', '二', '三', '四', '五', '六'][date.getDay()];
+      var week = document.createElement('span'); week.textContent = value === schema.current_date ? uiText('ui.today', '今天') : uiText('ui.weekPrefix', '周') + uiText('ui.weekday' + date.getDay(), ['日', '一', '二', '三', '四', '五', '六'][date.getDay()]);
       var label = document.createElement('strong'); label.textContent = (date.getMonth() + 1) + '/' + date.getDate();
       day.appendChild(week); day.appendChild(label);
       day.addEventListener('click', function () { calendarDate = value; document.querySelectorAll('.calendar-day').forEach(function (node) { node.classList.toggle('is-active', node === day); }); loadCalendar(); });
@@ -4807,18 +4920,18 @@
   function changeReservation(item, button) {
     if (!item.reservation_id || button.disabled) return;
     if (!accountData || !accountData.logged_in) {
-      showNotice('请先登录红果账号'); activatePage(document.querySelector('.side-item[data-page="account"]')); return;
+      showNotice(uiText('ui.loginAccountFirst', '请先登录红果账号')); activatePage(document.querySelector('.side-item[data-page="account"]')); return;
     }
     var epoch = accountEpoch; var reserve = !item.reserved;
     var originPage = pageMode(); var hadFocus = document.activeElement === button;
-    button.disabled = true; button.textContent = reserve ? '正在预约…' : '正在取消…';
+    button.disabled = true; button.textContent = reserve ? uiText('ui.reservationInProgress', '正在预约…') : uiText('ui.reservationCanceling', '正在取消…');
     writeReservation(item, reserve)
       .then(function () {
         if (epoch !== accountEpoch) return;
         item.reserved = reserve;
         rememberReservationOverride(item, reserve);
         if (reservationCounts.upcoming !== null && item.upcoming) { reservationCounts.upcoming = Math.max(0, reservationCounts.upcoming + (reserve ? 1 : -1)); updateReservationCounts({}); }
-        document.querySelectorAll('.publication-row').forEach(function (row) { if (row.__item && row.__item.reservation_id === item.reservation_id) { row.__item.reserved = reserve; var b = row.querySelector('.publication-action'); if (b) b.textContent = reserve ? '取消预约' : '预约'; } });
+        document.querySelectorAll('.publication-row').forEach(function (row) { if (row.__item && row.__item.reservation_id === item.reservation_id) { row.__item.reserved = reserve; var b = row.querySelector('.publication-action'); if (b) b.textContent = reserve ? uiText('ui.cancelReservation', '取消预约') : uiText('ui.reserve', '预约'); } });
         if (!reserve && originPage === 'reservations' && pageMode() === 'reservations' && reservationMode === 'upcoming' && document.contains(button)) {
           var row = button.closest('.publication-row'); var next = row.nextElementSibling || row.previousElementSibling;
           var focused = hadFocus && (document.activeElement === button || document.activeElement === document.body);
@@ -4827,11 +4940,11 @@
           row.remove(); if (focused) goFocus(next || firstVisible('.reservation-tab.is-active'));
           if (!reservationPager.items.length) renderPublications([], false, true);
         }
-        showNotice(reserve ? '已预约' : '已取消预约');
-      }).catch(function (error) { if (epoch === accountEpoch) showNotice(error.message); })
+        showNotice(reserve ? uiText('ui.reserved', '已预约') : uiText('ui.reservationCanceled', '已取消预约'));
+      }).catch(function (error) { if (epoch === accountEpoch) showNotice(localizedError(error, 'common.operationFailed', '操作未完成，请重试。')); })
       .then(function () {
         if (epoch !== accountEpoch) return;
-        button.disabled = false; button.textContent = item.reserved ? '取消预约' : '预约';
+        button.disabled = false; button.textContent = item.reserved ? uiText('ui.cancelReservation', '取消预约') : uiText('ui.reserve', '预约');
         if (hadFocus && pageMode() === originPage && document.contains(button) && document.activeElement === document.body) goFocus(button);
       });
   }
@@ -4861,7 +4974,7 @@
     var container = reservations ? document.getElementById('reservation-list') : calendarList;
     if (!append) container.innerHTML = '';
     if (reservations && reservationMode === 'upcoming') items = prepareReservationItems(items, append, container);
-    if (!items.length && !container.children.length) renderMessage(container, 'calendar-empty', reservations ? '暂无' + (reservationMode === 'online' ? '已上线' : '待上线') + '的预约' : '这一天暂无上新安排');
+    if (!items.length && !container.children.length) renderMessage(container, 'calendar-empty', reservations ? uiText('ui.noReservation', '暂无{status}的预约', { status: reservationMode === 'online' ? uiText('common.online', '已上线') : uiText('common.upcoming', '待上线') }) : uiText('ui.noSchedule', '这一天暂无上新安排'));
     items.forEach(function (item) {
       if (reservations && reservationMode === 'online') {
         var card = publicationCard(item, 'reservation-'); card.classList.add('reservation-row'); card.dataset.reservationId = item.reservation_id || ''; card.__item = item;
@@ -4877,15 +4990,15 @@
       var schedule = document.createElement('span'); schedule.className = 'publication-date';
       var scheduled = item.publish_time ? new Date(item.publish_time * 1000) : null;
       var scheduleTime = scheduled && !isNaN(scheduled.getTime()) ? scheduled.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '';
-      schedule.textContent = item.upcoming ? '待上线 · ' + (scheduleTime ? '预计 ' + scheduleTime + ' 上线' : item.publish_text || '上线时间待定') : '已上线' + (scheduleTime ? ' · ' + scheduleTime : '');
+      schedule.textContent = item.upcoming ? uiText('ui.upcoming', '待上线') + ' · ' + (scheduleTime ? uiText('ui.publishExpected', '预计 {time} 上线', { time: scheduleTime }) : item.publish_text || uiText('ui.publishPending', '上线时间待定')) : uiText('common.online', '已上线') + (scheduleTime ? ' · ' + scheduleTime : '');
       copy.appendChild(title); copy.appendChild(meta); copy.appendChild(summary); copy.appendChild(schedule); row.appendChild(copy);
       if (!item.upcoming || item.reservation_id) {
         var action = document.createElement('button'); action.className = 'publication-action';
         action.dataset.focus = row.dataset.focus + (item.upcoming ? '-reserve' : '-play');
-        action.textContent = item.upcoming ? item.reserved ? '取消预约' : '预约' : '播放';
+        action.textContent = item.upcoming ? item.reserved ? uiText('ui.cancelReservation', '取消预约') : uiText('ui.reserve', '预约') : uiText('common.play', '播放');
         action.addEventListener('click', function (event) { event.stopPropagation(); if (item.upcoming) changeReservation(item, action); else startPlayer(item, row); }); row.appendChild(action);
       }
-      row.addEventListener('click', function (event) { if (event.target.closest('button')) return; if (item.upcoming) { var action = row.querySelector('button'); if (action) goFocus(action); else showNotice('这部短剧尚未上线'); } else startPlayer(item, row); });
+      row.addEventListener('click', function (event) { if (event.target.closest('button')) return; if (item.upcoming) { var action = row.querySelector('button'); if (action) goFocus(action); else showNotice(uiText('ui.notOnline', '这部短剧尚未上线')); } else startPlayer(item, row); });
       row.addEventListener('focus', function () { row.scrollIntoView({ block: 'nearest' }); });
       container.appendChild(row);
     });
@@ -4917,8 +5030,8 @@
       reservationPager.cancel(); reservationPager.items = []; reservationPager.loaded = false;
       var list = document.getElementById('reservation-list'); list.innerHTML = '';
       var empty = document.createElement('div'); empty.className = 'calendar-empty reservation-login';
-      var message = document.createElement('p'); message.textContent = '登录后查看你的预约'; empty.appendChild(message); list.appendChild(empty);
-      var login = document.createElement('button'); login.className = 'publication-action'; login.dataset.focus = 'reservation-login'; login.textContent = '登录红果账号'; login.addEventListener('click', function () { activatePage(document.querySelector('.side-item[data-page="account"]')); });
+      var message = document.createElement('p'); message.textContent = uiText('ui.reservationLoginHint', '登录后查看你的预约'); empty.appendChild(message); list.appendChild(empty);
+      var login = document.createElement('button'); login.className = 'publication-action'; login.dataset.focus = 'reservation-login'; login.textContent = uiText('ui.loginAccount', '登录红果账号'); login.addEventListener('click', function () { activatePage(document.querySelector('.side-item[data-page="account"]')); });
       empty.appendChild(login); return;
     }
     resetReservationOverrideVisibility();
@@ -4927,12 +5040,12 @@
 
   function submitSearch() {
     var query = window.HongguoSearchHistory.normalize(searchInput ? searchInput.value : '');
-    if (!query) { showNotice('请输入不超过100字的剧名或关键词'); goFocus(searchInput); return; }
+    if (!query) { showNotice(uiText('content.searchLength', '请输入不超过100字的剧名或关键词')); goFocus(searchInput); return; }
     searchInput.value = query;
     var returnTarget = document.activeElement;
     activeSearchQuery = query; searchKind = 'keyword';
     document.getElementById('filter-panel').classList.add('is-hidden'); document.getElementById('search-browse').classList.remove('is-hidden');
-    document.getElementById('search-result-title').textContent = '搜索：' + query;
+    document.getElementById('search-result-title').textContent = uiText('ui.loadedSearchPrefix', '搜索：{query}', { query: query });
     var result = searchPager.reset({ q: query });
     searchPager.historyEpoch = searchHistoryEpoch;
     var generation = searchPager.generation;
@@ -4970,9 +5083,9 @@
     confirmReturnFocus = document.activeElement;
     confirmOperation = function () { ++searchHistoryEpoch; return searchHistory.clear(); };
     confirmOpen = true;
-    document.getElementById('confirm-title').textContent = '清空最近搜索？';
-    document.getElementById('confirm-copy').textContent = '清空这台设备保存的搜索关键词。';
-    document.getElementById('confirm-accept').textContent = '清空';
+    document.getElementById('confirm-title').textContent = uiText('ui.clearSearchTitle', '清空最近搜索？');
+    document.getElementById('confirm-copy').textContent = uiText('ui.clearSearchCopy', '清空这台设备保存的搜索关键词。');
+    document.getElementById('confirm-accept').textContent = uiText('common.clear', '清空');
     document.getElementById('confirm-modal').classList.remove('is-hidden');
     document.getElementById('confirm-modal').setAttribute('aria-hidden', 'false');
     goFocus(document.getElementById('confirm-cancel'));
@@ -4983,10 +5096,10 @@
     if (searchNumberScan) searchNumberScan.stop();
     document.getElementById('search-scan-modal').classList.add('is-hidden');
     document.getElementById('search-scan-modal').setAttribute('aria-hidden', 'true');
-    document.getElementById('search-scan-title').textContent = '手机扫码搜索';
-    document.getElementById('search-scan-copy').textContent = '手机输入或粘贴剧名，发送后在电视上搜索';
-    document.getElementById('search-scan-hint').innerHTML = '手机和电视需在同一局域网<br>二维码5分钟有效，关闭后失效';
-    document.getElementById('search-scan-close').textContent = '返回搜索';
+    document.getElementById('search-scan-title').textContent = uiText('ui.scanSearchTitle', '手机扫码搜索');
+    document.getElementById('search-scan-copy').textContent = uiText('ui.scanSearchCopy', '手机输入或粘贴剧名，发送后在电视上搜索');
+    document.getElementById('search-scan-hint').innerHTML = uiText('ui.scanHint', '手机和电视需在同一局域网<br>二维码5分钟有效，关闭后失效');
+    document.getElementById('search-scan-close').textContent = uiText('ui.scanBackSearch', '返回搜索');
     var target = searchScanReturnFocus; searchScanReturnFocus = null;
     if (restore && pageMode() === 'search') goFocus(focusables().indexOf(target) >= 0 ? target : firstVisible('#search-scan'));
   }
@@ -4995,10 +5108,10 @@
     if (desktopShell || pageMode() !== 'search' || searchScanOpen || applicationInBackground) return;
     searchScanReturnFocus = document.activeElement;
     searchScanOpen = true;
-    document.getElementById('search-scan-title').textContent = '手机扫码搜索';
-    document.getElementById('search-scan-copy').textContent = '手机输入或粘贴剧名，发送后在电视上搜索';
-    document.getElementById('search-scan-hint').innerHTML = '手机和电视需在同一局域网<br>二维码5分钟有效，关闭后失效';
-    document.getElementById('search-scan-close').textContent = '返回搜索';
+    document.getElementById('search-scan-title').textContent = uiText('ui.scanSearchTitle', '手机扫码搜索');
+    document.getElementById('search-scan-copy').textContent = uiText('ui.scanSearchCopy', '手机输入或粘贴剧名，发送后在电视上搜索');
+    document.getElementById('search-scan-hint').innerHTML = uiText('ui.scanHint', '手机和电视需在同一局域网<br>二维码5分钟有效，关闭后失效');
+    document.getElementById('search-scan-close').textContent = uiText('ui.scanBackSearch', '返回搜索');
     document.getElementById('search-scan-modal').classList.remove('is-hidden');
     document.getElementById('search-scan-modal').setAttribute('aria-hidden', 'false');
     goFocus(document.getElementById('search-scan-close'));
@@ -5011,9 +5124,9 @@
     if (danmakuNumberScan) danmakuNumberScan.stop();
     document.getElementById('search-scan-modal').classList.add('is-hidden');
     document.getElementById('search-scan-modal').setAttribute('aria-hidden', 'true');
-    document.getElementById('search-scan-title').textContent = '手机扫码搜索';
-    document.getElementById('search-scan-copy').textContent = '手机输入或粘贴剧名，发送后在电视上搜索';
-    document.getElementById('search-scan-hint').innerHTML = '手机和电视需在同一局域网<br>二维码5分钟有效，关闭后失效';
+    document.getElementById('search-scan-title').textContent = uiText('ui.scanSearchTitle', '手机扫码搜索');
+    document.getElementById('search-scan-copy').textContent = uiText('ui.scanSearchCopy', '手机输入或粘贴剧名，发送后在电视上搜索');
+    document.getElementById('search-scan-hint').innerHTML = uiText('ui.scanHint', '手机和电视需在同一局域网<br>二维码5分钟有效，关闭后失效');
     var target = danmakuScanReturnFocus; danmakuScanReturnFocus = null;
     if (restore !== false && playerOptionsOpen) goFocus(target && focusables().indexOf(target) >= 0 ? target : document.getElementById('player-compose-input'));
   }
@@ -5022,10 +5135,10 @@
     if (desktopShell || !playerOptionsOpen || danmakuScanOpen || searchScanOpen || !composeSession || composeBusy || applicationInBackground) return;
     danmakuScanReturnFocus = document.activeElement;
     danmakuScanOpen = true;
-    document.getElementById('search-scan-title').textContent = '手机扫码发弹幕';
-    document.getElementById('search-scan-copy').textContent = '手机输入或粘贴弹幕，完成后回填到电视';
-    document.getElementById('search-scan-hint').innerHTML = '手机和电视需在同一局域网<br>二维码5分钟有效，关闭后失效';
-    document.getElementById('search-scan-close').textContent = '返回弹幕';
+    document.getElementById('search-scan-title').textContent = uiText('ui.scanDanmakuTitle', '手机扫码发弹幕');
+    document.getElementById('search-scan-copy').textContent = uiText('ui.scanDanmakuCopy', '手机输入或粘贴弹幕，完成后回填到电视');
+    document.getElementById('search-scan-hint').innerHTML = uiText('ui.scanHint', '手机和电视需在同一局域网<br>二维码5分钟有效，关闭后失效');
+    document.getElementById('search-scan-close').textContent = uiText('ui.scanBackDanmaku', '返回弹幕');
     document.getElementById('search-scan-modal').classList.remove('is-hidden');
     document.getElementById('search-scan-modal').setAttribute('aria-hidden', 'false');
     goFocus(document.getElementById('search-scan-close'));
@@ -5047,18 +5160,18 @@
     resetDanmaku(); closeDiscussion(false);
     featuredItem = null; feedItems = []; feedIndex = -1;
     updateSeasonControl(null);
-    showRecommendationPlaceholder('正在读取推荐');
+    showRecommendationPlaceholder(uiText('ui.readingRecommendations', '正在读取推荐'));
     var tab = recommendationChannel();
     if (tab === '45' && (!accountData || !accountData.logged_in)) {
       feedPager.cancel(); renderFeed([]);
-      showRecommendationPlaceholder('登录后查看关注内容', '在我的账号中登录红果账号。'); return Promise.resolve([]);
+      showRecommendationPlaceholder(uiText('ui.followLoginShort', '登录后查看关注内容'), uiText('ui.loginInAccount', '在我的账号中登录红果账号。')); return Promise.resolve([]);
     }
-    setCatalogHeading(title || '推荐');
+    setCatalogHeading(title || uiText('nav.recommend', '推荐'));
     return feedPager.reset({ channel: tab }).then(function firstContent() {
       if (pageMode() !== 'recommend' || feedPager.params.channel !== tab) return;
       if (!feedPager.items.length && feedPager.hasMore() && !feedPager.error) return feedPager.load().then(firstContent);
       if (pageMode() === 'recommend' && feedPager.error) {
-        showRecommendationPlaceholder('推荐加载失败', feedPager.error + '，重新选择频道可重试。');
+        showRecommendationPlaceholder(uiText('ui.recommendationFailed', '推荐加载失败'), feedPager.error + uiText('ui.reselectChannelRetry', '，重新选择频道可重试。'));
       }
     });
   }
@@ -5120,8 +5233,8 @@
     entry = { epoch: epoch, pending: true, expires: 0 };
     rememberSeasonCatalog(id, entry);
     entry.promise = fetchData('/api/v1/series/seasons?series_id=' + encodeURIComponent(id), { signal: request.signal }).then(function (result) {
-      if (epoch !== accountEpoch) throw new Error('账号已切换');
-      if (!Array.isArray(result.items)) throw new Error('系列剧响应无效');
+      if (epoch !== accountEpoch) throw new Error(uiText('ui.accountSwitched', '账号已切换'));
+      if (!Array.isArray(result.items)) throw new Error(uiText('content.seriesInvalid', '系列剧响应无效'));
       var seen = {};
       entry.items = result.items.filter(function (item) {
         if (!item || !/^[1-9][0-9]*$/.test(item.series_id || '') || seen[item.series_id]) return false;
@@ -5154,7 +5267,7 @@
     seasonControlID = id; seasonControlState = id ? 'loading' : '';
     button.classList.toggle('is-hidden', !hinted);
     if (!hinted && document.activeElement === button) goFocus(document.querySelector('[data-action="episodes"]'));
-    setControlIcon('seasons', '选季…', 'icon-seasons'); button.setAttribute('aria-busy', id ? 'true' : 'false');
+    setControlIcon('seasons', uiText('ui.selectSeasonLoading', '选季…'), 'icon-seasons'); button.setAttribute('aria-busy', id ? 'true' : 'false');
     if (!id) {
       return;
     }
@@ -5164,13 +5277,13 @@
       if (generation !== seasonControlGeneration || !featuredItem || featuredItem.series_id !== id) return;
       seasonControlState = 'loaded';
       var count = items.filter(function (season) { return season.playable && !season.upcoming; }).length;
-      setControlIcon('seasons', '选季 · ' + count + ' 季', 'icon-seasons'); button.setAttribute('aria-busy', 'false');
+      setControlIcon('seasons', uiText('ui.selectSeasonCount', '选季 · {count} 季', { count: count }), 'icon-seasons'); button.setAttribute('aria-busy', 'false');
       var hasSeasons = items.length > 1 || items.some(function (season) { return !!(season.season_index > 0 || season.label || posterSeasonLabel(season)); });
       button.classList.toggle('is-hidden', !hasSeasons);
       if (!hasSeasons && document.activeElement === button) goFocus(document.querySelector('[data-action="episodes"]'));
     }).catch(function () {
       if (generation !== seasonControlGeneration) return;
-      seasonControlState = 'error'; setControlIcon('seasons', '选季', 'icon-seasons'); button.setAttribute('aria-busy', 'false');
+      seasonControlState = 'error'; setControlIcon('seasons', uiText('ui.selectSeason', '选季'), 'icon-seasons'); button.setAttribute('aria-busy', 'false');
     });
   }
 
@@ -5194,11 +5307,11 @@
       row.classList.toggle('is-current', playing || !activePlayback && detailSeriesID === item.series_id);
       row.setAttribute('aria-current', playing || !activePlayback && detailSeriesID === item.series_id ? 'true' : 'false');
       var entry = libraryEntry(item.series_id);
-      var status = '暂不可播放';
-      if (item.upcoming) status = item.reservation_id ? item.reserved ? '取消预约' : '预约' : '待上线';
-      else if (item.playable) status = playing ? '播放中' : entry && entry.last_played_at ? '继续播放' : '播放';
-      if (seasonSwitchID === item.series_id) status = '正在切换…';
-      if (seriesReservationID === item.reservation_id && seriesReservationRequest) status = '正在提交…';
+      var status = uiText('ui.unavailable', '暂不可播放');
+      if (item.upcoming) status = item.reservation_id ? item.reserved ? uiText('ui.cancelReservation', '取消预约') : uiText('ui.reserve', '预约') : uiText('ui.upcoming', '待上线');
+      else if (item.playable) status = playing ? uiText('common.playing', '播放中') : entry && entry.last_played_at ? uiText('ui.continuePlaying', '继续播放') : uiText('common.play', '播放');
+      if (seasonSwitchID === item.series_id) status = uiText('ui.switching', '正在切换…');
+      if (seriesReservationID === item.reservation_id && seriesReservationRequest) status = uiText('ui.submittingReservation', '正在提交…');
       row.querySelector('.series-status').textContent = status;
       row.setAttribute('aria-busy', seasonSwitchID === item.series_id || seriesReservationID === item.reservation_id && !!seriesReservationRequest ? 'true' : 'false');
     });
@@ -5234,21 +5347,21 @@
     if (isReviews) {
       (currentDetail.reviews || []).forEach(function (review) {
         var card = document.createElement('article'); card.className = 'review-card'; card.tabIndex = 0; card.dataset.focus = 'review-' + (review.id || Math.random());
-        var author = document.createElement('strong'); author.textContent = review.user_name || '红果用户';
+        var author = document.createElement('strong'); author.textContent = review.user_name || uiText('content.user', '红果用户');
         var copy = document.createElement('p'); copy.textContent = review.content;
-        var meta = document.createElement('small'); meta.textContent = [review.rating ? review.rating + '分' : '', review.digg_count ? '赞 ' + review.digg_count : ''].filter(Boolean).join(' · ');
+        var meta = document.createElement('small'); meta.textContent = [review.rating ? review.rating + uiText('ui.scoreSuffix', '分') : '', review.digg_count ? uiText('ui.likeCount', '赞 {count}', { count: review.digg_count }) : ''].filter(Boolean).join(' · ');
         card.appendChild(author); card.appendChild(copy); card.appendChild(meta); list.appendChild(card);
       });
-      message.textContent = currentDetail.reviews && currentDetail.reviews.length ? '' : '暂无剧评。';
+      message.textContent = currentDetail.reviews && currentDetail.reviews.length ? '' : uiText('ui.noReviews', '暂无剧评。');
     } else {
       (currentDetail.related || []).forEach(function (item) {
         var card = document.createElement('button'); card.className = 'related-card'; card.dataset.focus = 'related-' + item.series_id;
         var image = document.createElement('img'); image.className = 'related-card-image'; setCover(image, item);
-        var title = document.createElement('strong'); title.textContent = item.title || '未命名短剧';
-        var meta = document.createElement('span'); meta.textContent = item.episode_count ? '全' + item.episode_count + '集' : '红果短剧';
+        var title = document.createElement('strong'); title.textContent = item.title || uiText('ui.unnamedDrama', '未命名短剧');
+        var meta = document.createElement('span'); meta.textContent = item.episode_count ? uiText('content.episodeCount', '全{count}集', { count: item.episode_count }) : uiText('app.name', '红果短剧');
         card.appendChild(dramaPoster(image, item)); card.appendChild(title); card.appendChild(meta); card.addEventListener('click', function () { openDetail(item); }); list.appendChild(card);
       });
-      message.textContent = currentDetail.related && currentDetail.related.length ? '' : '暂无相关推荐。';
+      message.textContent = currentDetail.related && currentDetail.related.length ? '' : uiText('ui.noRelated', '暂无相关推荐。');
     }
     if (tab === detailTab) goFocus(firstVisible(isReviews ? '.review-card' : '.related-card') || document.getElementById('detail-tab-' + tab));
   }
@@ -5258,7 +5371,7 @@
     if (document.activeElement.id === 'detail-series-retry') goFocus(document.getElementById('detail-tab-series'));
     var generation = ++seriesGeneration; var epoch = accountEpoch;
     var request = new AbortController(); seriesRequest = request;
-    seriesMessage('正在读取系列剧…');
+    seriesMessage(uiText('ui.readingSeries', '正在读取系列剧…'));
     getSeasonCatalog(seriesRootID).then(function (items) {
       if (!detailModalOpen || request.signal.aborted || generation !== seriesGeneration || epoch !== accountEpoch) return;
       seriesItems = items; seriesLoaded = true;
@@ -5268,7 +5381,7 @@
         var image = document.createElement('img'); image.className = 'series-cover'; image.alt = ''; setCover(image, item);
         var copy = document.createElement('span'); copy.className = 'series-copy';
         var title = document.createElement('span'); title.className = 'series-title'; title.textContent = item.title;
-        var meta = document.createElement('span'); meta.className = 'series-meta'; meta.textContent = [item.label, item.subtitle || (item.episode_count ? '全' + item.episode_count + '集' : '')].filter(Boolean).join(' · ');
+        var meta = document.createElement('span'); meta.className = 'series-meta'; meta.textContent = [item.label, item.subtitle || (item.episode_count ? uiText('content.episodeCount', '全{count}集', { count: item.episode_count }) : '')].filter(Boolean).join(' · ');
         copy.appendChild(title); copy.appendChild(meta);
         var status = document.createElement('span'); status.className = 'series-status';
         row.appendChild(image); row.appendChild(copy); row.appendChild(status);
@@ -5277,20 +5390,20 @@
         list.appendChild(row);
       });
       document.getElementById('detail-series-count').textContent = seriesItems.length ? String(seriesItems.length) : '';
-      updateSeriesRows(); seriesMessage(seriesItems.length ? '' : '这部短剧暂无同系列的其他季。');
+      updateSeriesRows(); seriesMessage(seriesItems.length ? '' : uiText('ui.noOtherSeasons', '这部短剧暂无同系列的其他季。'));
       if (featuredItem && seriesItems.some(function (item) { return item.series_id === featuredItem.series_id; })) {
         seasonControlState = ''; updateSeasonControl(featuredItem);
       }
       if (detailTab === 'series') focusCurrentSeason();
       if (document.activeElement.id === 'detail-series-retry') goFocus(document.getElementById('detail-tab-series'));
     }).catch(function (error) {
-      if (generation === seriesGeneration && epoch === accountEpoch && detailModalOpen && error.name !== 'AbortError') seriesMessage('系列剧加载失败：' + error.message, true);
+      if (generation === seriesGeneration && epoch === accountEpoch && detailModalOpen && error.name !== 'AbortError') seriesMessage(uiText('ui.seriesLoadFailed', '系列剧加载失败：{error}', { error: localizedError(error, 'common.networkFailed', '连接失败') }), true);
     }).then(function () { if (seriesRequest === request) seriesRequest = null; });
   }
 
   function reserveSeriesSeason(item) {
-    if (!item.reservation_id) { seriesMessage('这季尚未开放预约。'); return; }
-    if (!accountData || !accountData.logged_in) { seriesMessage('请先关闭面板，在左侧“我的”登录账号后再预约。'); return; }
+    if (!item.reservation_id) { seriesMessage(uiText('ui.seasonNotReservable', '这季尚未开放预约。')); return; }
+    if (!accountData || !accountData.logged_in) { seriesMessage(uiText('ui.loginBeforeReserve', '请先关闭面板，在左侧“我的”登录账号后再预约。')); return; }
     if (seriesReservationRequest) return;
     var generation = seriesGeneration; var epoch = accountEpoch; var reserved = !item.reserved;
     var request = new AbortController(); seriesReservationRequest = request; seriesReservationID = item.reservation_id;
@@ -5303,12 +5416,12 @@
       document.querySelectorAll('.publication-row').forEach(function (row) {
         if (row.__item && row.__item.reservation_id === item.reservation_id) {
           row.__item.reserved = reserved;
-          var button = row.querySelector('.publication-action'); if (button) button.textContent = reserved ? '取消预约' : '预约';
+          var button = row.querySelector('.publication-action'); if (button) button.textContent = reserved ? uiText('ui.cancelReservation', '取消预约') : uiText('ui.reserve', '预约');
         }
       });
-      seriesMessage(reserved ? '预约成功。' : '已取消预约。');
+      seriesMessage(reserved ? uiText('ui.reservationSuccess', '预约成功。') : uiText('ui.reservationCanceledPeriod', '已取消预约。'));
     }).catch(function (error) {
-      if (epoch === accountEpoch && generation === seriesGeneration && detailModalOpen && error.name !== 'AbortError') seriesMessage('预约未确认成功：' + error.message);
+      if (epoch === accountEpoch && generation === seriesGeneration && detailModalOpen && error.name !== 'AbortError') seriesMessage(uiText('ui.reservationFailed', '预约未确认成功：{error}', { error: localizedError(error, 'common.operationFailed', '操作未完成，请重试。') }));
     }).then(function () {
       if (seriesReservationRequest !== request) return;
       seriesReservationRequest = null; seriesReservationID = ''; updateSeriesRows();
@@ -5316,8 +5429,8 @@
   }
 
   function switchSeriesSeason(item) {
-    if (!item.playable || item.upcoming) { seriesMessage('这季暂时不可播放。'); return; }
-    if (activePlayback && activePlayback.item.series_id === item.series_id) { seriesMessage('当前正在播放这一季。'); return; }
+    if (!item.playable || item.upcoming) { seriesMessage(uiText('ui.seasonUnavailable', '这季暂时不可播放。')); return; }
+    if (activePlayback && activePlayback.item.series_id === item.series_id) { seriesMessage(uiText('ui.seasonPlaying', '当前正在播放这一季。')); return; }
     if (seasonSwitchRequest) return;
     ++continuationGeneration;
     var generation = ++seasonSwitchGeneration; var panel = detailGeneration; var feed = feedGeneration; var epoch = accountEpoch;
@@ -5325,7 +5438,7 @@
     updateSeriesRows(); seriesMessage('');
     getDetail(item, request.signal).then(function (detail) {
       if (!detailModalOpen || detailTab !== 'series' || generation !== seasonSwitchGeneration || panel !== detailGeneration || feed !== feedGeneration || epoch !== accountEpoch || applicationInBackground || applicationHidden()) return;
-      if (!detail.vid_list || !detail.vid_list.length) throw new Error('这季尚无可播放集数');
+      if (!detail.vid_list || !detail.vid_list.length) throw new Error(uiText('ui.seasonNoEpisodes', '这季尚无可播放集数'));
       var next = Object.assign({}, item, detail);
       ++detailGeneration; currentDetail = next; detailSeriesID = next.series_id; renderDetail(next);
       if (isPlaybackPage()) {
@@ -5336,9 +5449,9 @@
         // startPlayer focuses the video; restore the open selector's row.
         goFocus(currentSeriesRow());
       }
-      updateSeriesRows(); seriesMessage('已切换到' + (item.label || item.title) + '。');
+      updateSeriesRows(); seriesMessage(uiText('ui.switchedSeason', '已切换到 {season}。', { season: item.label || item.title }));
     }).catch(function (error) {
-      if (generation === seasonSwitchGeneration && detailModalOpen && error.name !== 'AbortError') seriesMessage('切换失败：' + error.message + '，保留原播放状态。');
+      if (generation === seasonSwitchGeneration && detailModalOpen && error.name !== 'AbortError') seriesMessage(uiText('ui.switchSeasonFailed', '切换失败：{error}，保留原播放状态。', { error: localizedError(error, 'common.operationFailed', '操作未完成，请重试。') }));
     }).then(function () {
       if (seasonSwitchRequest !== request) return;
       seasonSwitchRequest = null; seasonSwitchID = ''; updateSeriesRows();
@@ -5376,7 +5489,7 @@
     var focused = document.activeElement;
     var focusedIndex = focused && focused.classList.contains('detail-episode') ? focused.dataset.index : null;
     var retryFocused = focused === nodes.retry;
-    nodes.title.textContent = item.title || '选集';
+    nodes.title.textContent = item.title || uiText('modal.selectEpisode', '选集');
     nodes.retry.classList.add('is-hidden');
     nodes.episodes.innerHTML = '';
     nodes.episodes.scrollTop = 0;
@@ -5385,7 +5498,7 @@
       button.className = 'detail-episode';
       button.dataset.index = String(Math.max(0, episode.index - 1));
       button.textContent = String(episode.index);
-      button.setAttribute('aria-label', '播放第' + episode.index + '集');
+      button.setAttribute('aria-label', uiText('ui.playEpisodeLabel', '播放第{episode}集', { episode: episode.index }));
       button.addEventListener('click', function () { playEpisode(Number(button.dataset.index)); });
       button.addEventListener('focus', function () { button.scrollIntoView({ block: 'nearest' }); });
       nodes.episodes.appendChild(button);
@@ -5399,7 +5512,7 @@
     if (!detailModalOpen || !currentDetail) return;
     var count = currentDetail.episode_count || (currentDetail.episodes || []).length;
     var episode = detailEpisodeNumber(currentDetail);
-    detailElements().progress.textContent = (currentDetail.episodes || []).length ? '当前第' + episode + '集 · 共' + count + '集' : '暂无可播放集数';
+    detailElements().progress.textContent = (currentDetail.episodes || []).length ? uiText('content.currentEpisodeTotal', '当前第{episode}集 · 共{count}集', { episode: episode, count: count }) : uiText('content.noPlayableEpisodes', '暂无可播放集数');
     updateEpisodeHighlight((currentDetail.episodes || []).length ? episode - 1 : -1);
     updateSeriesRows();
   }
@@ -5409,7 +5522,7 @@
     detailRequestItem = item;
     var generation = ++detailGeneration;
     var nodes = detailElements();
-    nodes.progress.textContent = '正在读取集数…';
+    nodes.progress.textContent = uiText('content.readingEpisodes', '正在读取集数…');
     if (document.activeElement === nodes.retry) goFocus(document.getElementById('detail-tab-episodes'));
     nodes.retry.classList.add('is-hidden');
     nodes.episodes.innerHTML = '';
@@ -5422,7 +5535,7 @@
       focusLoadedDetailEpisode();
     }).catch(function (error) {
       if (!detailModalOpen || generation !== detailGeneration) return;
-      nodes.progress.textContent = '集数加载失败：' + error.message;
+      nodes.progress.textContent = uiText('content.episodesFailed', '集数加载失败：{error}', { error: localizedError(error, 'common.networkFailed', '连接失败') });
       nodes.retry.classList.remove('is-hidden');
       if (detailFocusPending && detailTab === 'episodes' && document.activeElement.id === 'detail-tab-episodes') goFocus(nodes.retry);
       detailFocusPending = false;
@@ -5441,7 +5554,7 @@
     currentDetail = null;
     detailModal.classList.remove('is-hidden');
     detailModal.setAttribute('aria-hidden', 'false');
-    detailElements().title.textContent = item.title || '选集';
+    detailElements().title.textContent = item.title || uiText('modal.selectEpisode', '选集');
     selectDetailTab(initialTab === 'series' ? 'series' : 'episodes');
     detailFocusPending = detailTab === 'episodes';
     loadDetailEpisodes(item);
@@ -5483,8 +5596,8 @@
 
   function toggleVideo() {
     var video = document.getElementById('hero-video');
-    if (!video.src) { showNotice('请先打开一部短剧并选择集数。'); return; }
-    if (video.paused) playMedia(video).catch(function () { showNotice('播放被设备阻止，请再次确认。'); });
+    if (!video.src) { showNotice(uiText('content.noOpenDrama', '请先打开一部短剧并选择集数。')); return; }
+    if (video.paused) playMedia(video).catch(function () { showNotice(uiText('content.playerBlocked', '播放被设备阻止，请再次确认。')); });
     else video.pause();
   }
 
@@ -5512,7 +5625,7 @@
     document.querySelectorAll('.side-item').forEach(function (node) { node.classList.toggle('is-active', node === item); });
     var label = item.querySelector('span:last-child');
     shell.dataset.mode = item.dataset.page || 'recommend';
-    document.getElementById('page-context').textContent = label ? label.textContent : '页面';
+    document.getElementById('page-context').textContent = label ? label.textContent : uiText('ui.page', '页面');
     shell.classList.remove('is-player');
     mainSurface.classList.remove('has-search', 'has-workspace', 'has-placeholder');
     searchPage.classList.add('is-hidden');
@@ -5524,7 +5637,7 @@
       pagePlaceholder.classList.add('is-hidden');
       document.getElementById('hero').classList.add('is-feed');
       var active = document.querySelector('.channel-tab.is-active');
-      if (!restoreRecommendation()) loadCatalog(active ? active.textContent : '推荐');
+    if (!restoreRecommendation()) loadCatalog(active ? active.textContent : uiText('nav.recommend', '推荐'));
     } else if (item.dataset.page === 'search') {
       mainSurface.classList.remove('has-placeholder');
       pagePlaceholder.classList.add('is-hidden');
@@ -5550,7 +5663,7 @@
       mainSurface.classList.add('has-workspace');
       followPage.classList.remove('is-hidden');
       if (!followNotificationViewOpen) { followListView.classList.remove('is-hidden'); followNotificationView.classList.add('is-hidden'); }
-      if (!accountData || !accountData.logged_in) renderMessage(followGrid, 'list-empty', '登录红果账号后查看追更。');
+    if (!accountData || !accountData.logged_in) renderMessage(followGrid, 'list-empty', uiText('ui.followLogin', '登录红果账号后查看追更。'));
       else if (!followPager.loaded) followPager.reset({}); else queueTailCheck();
       notificationCheck(false);
     } else if (['history', 'favorites', 'likes'].indexOf(item.dataset.page) >= 0) {
@@ -5573,9 +5686,9 @@
     } else {
       mainSurface.classList.add('has-placeholder');
       pagePlaceholder.classList.remove('is-hidden');
-      document.getElementById('page-placeholder-title').textContent = label ? label.textContent : '页面';
-      document.getElementById('page-placeholder-copy').textContent = (label ? label.textContent : '这个页面') + '的数据和交互正在接入。';
-      showNotice((label ? label.textContent : '页面') + '页面已进入，下一步接入对应数据。');
+    document.getElementById('page-placeholder-title').textContent = label ? label.textContent : uiText('ui.page', '页面');
+    document.getElementById('page-placeholder-copy').textContent = uiText('ui.pageNotReady', '这个页面的数据和交互正在接入。');
+    showNotice(uiText('ui.pageEntered', '{page}页面已进入，下一步接入对应数据。', { page: label ? label.textContent : uiText('ui.page', '页面') }));
     }
     if (!restoring) goFocus(firstContentFocus());
   }
@@ -5653,14 +5766,14 @@
       else if (item.dataset.action === 'danmaku') toggleDanmaku();
       else if (item.dataset.action === 'featured') {
         if (featuredItem) openDetail(featuredItem);
-        else showNotice('当前还没有可打开的短剧。');
+    else showNotice(uiText('ui.noPlayableDrama', '当前还没有可打开的短剧。'));
       } else if (item.dataset.action === 'play' || item.dataset.action === 'pause') toggleVideo();
       else if (item.dataset.action === 'seasons') {
         if (featuredItem) openDetail(featuredItem, 'series');
       }
       else if (item.dataset.action === 'episodes') {
         if (featuredItem) openDetail(featuredItem);
-        else showNotice('当前还没有可打开的短剧。');
+    else showNotice(uiText('ui.noPlayableDrama', '当前还没有可打开的短剧。'));
       }
       else if (item.dataset.action === 'danmaku-scan') openDanmakuScan();
       else if (['speed', 'volume', 'quality', 'send-danmaku'].indexOf(item.dataset.action) >= 0) openPlayerOptions(item.dataset.action, item);
@@ -5676,7 +5789,7 @@
           goFocus(firstContentFocus());
         }
       }
-      else showNotice('已收到操作：' + item.dataset.action + '。');
+    else showNotice(uiText('ui.receivedAction', '已收到操作：{action}。', { action: item.dataset.action }));
     });
   });
 
@@ -5783,7 +5896,7 @@
     fetchData('/api/v1/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ all: true }) }).then(function (data) {
       acceptNotificationData(data, false);
       if (followNotificationViewOpen) goFocus(target && target.id === 'follow-notifications-read-all' ? target : firstVisible('#follow-notifications-back'));
-    }).catch(function () { showNotice('更新提醒暂时无法标记'); });
+  }).catch(function () { showNotice(uiText('ui.followMarkFailed', '更新提醒暂时无法标记')); });
   });
   document.getElementById('notification-popup').addEventListener('click', notificationHidePopup);
   document.getElementById('library-manage').addEventListener('click', function () {
@@ -5826,13 +5939,13 @@
     request.open('GET', '/api/v1/status', true);
     request.timeout = 8000;
     var label = document.getElementById('core-status-label');
-    function failed() { label.textContent = '本机服务连接失败，请重新打开应用'; status.dataset.ok = 'false'; }
+  function failed() { label.textContent = uiText('ui.serviceUnavailable', '本机服务连接失败，请重新打开应用'); status.dataset.ok = 'false'; }
     request.onload = function () {
       try {
         var data = JSON.parse(request.responseText);
-        label.textContent = request.status === 200 && data.ok ? '已连接' : '连接异常';
+        label.textContent = request.status === 200 && data.ok ? uiText('ui.serviceConnected', '已连接') : uiText('ui.serviceError', '连接异常');
         status.dataset.ok = request.status === 200 && data.ok ? 'true' : 'false';
-        if (request.status === 200 && data.ok) status.title = '版本 ' + data.version;
+        if (request.status === 200 && data.ok) status.title = uiText('common.version', '版本 {version}', { version: data.version });
       } catch (error) { failed(); }
     };
     request.onerror = failed; request.ontimeout = failed;
@@ -5897,7 +6010,7 @@
     activePlayback.stableSince = 0;
     interruptPlaybackPresentation(activePlayback);
     if (activePlayback.presentation) activePlayback.presentation.waiting = true;
-    setPlayerStatus(document.getElementById('hero').classList.contains('is-preparing-video') || !activePlayback.started ? episodeLoadingText(activePlayback.episode) : '正在缓冲…');
+    setPlayerStatus(document.getElementById('hero').classList.contains('is-preparing-video') || !activePlayback.started ? episodeLoadingText(activePlayback.episode) : uiText('ui.buffering', '正在缓冲…'));
     if (activePlayback.mode === 'range' && !activePlayback.rangeFallbackAttempted) scheduleRangeStallFallback(activePlayback);
   });
   media.addEventListener('stalled', function () { if (activePlayback && activePlayback.mode === 'range') scheduleRangeStallFallback(activePlayback); });
@@ -5913,7 +6026,7 @@
     clearRangeStallTimer();
     if (fallbackRangePlayback(activePlayback)) return;
     if (recoverPlaybackAfterError(activePlayback)) return;
-    setPlayerStatus('这集未能正常播放', true);
+    setPlayerStatus(uiText('ui.playbackFailed', '这集未能正常播放'), true);
   });
   media.addEventListener('ended', function () {
     clearRangeStallTimer();
@@ -5953,17 +6066,17 @@
   document.querySelectorAll('.support-card').forEach(function (card) { card.addEventListener('click', function () { openQRCode(card, card.querySelector('img'), card.querySelector('h2').textContent); }); });
   document.getElementById('account-sms-qr').addEventListener('click', function () {
     var image = document.getElementById('account-sms-qr-image');
-    if (image.getAttribute('src')) openQRCode(this, image, '扫码填写短信 · 请手动发送');
+    if (image.getAttribute('src')) openQRCode(this, image, uiText('ui.scanSmsTitle', '扫码填写短信 · 请手动发送'));
   });
   document.getElementById('support-close').addEventListener('click', closeSupportQR);
   numericKeypad = window.HongguoNumericKeypad.create({
     render: function (state) {
       var modal = document.getElementById('account-keypad-modal');
       modal.classList.toggle('is-hidden', !state.open); modal.setAttribute('aria-hidden', state.open ? 'false' : 'true');
-      document.getElementById('account-keypad-title').textContent = state.kind === 'code' ? '输入验证码' : '输入手机号';
+      document.getElementById('account-keypad-title').textContent = state.kind === 'code' ? uiText('ui.keypadCode', '输入验证码') : uiText('ui.keypadPhone', '输入手机号');
       var value = document.getElementById('account-keypad-value');
-      value.textContent = state.value || '请输入数字'; value.classList.toggle('is-empty', !state.value);
-      document.getElementById('account-keypad-hint').textContent = state.open ? state.value.length + ' / ' + state.maxLength + ' 位 · ' + state.countryName + ' · 也可使用遥控器数字键' : '';
+      value.textContent = state.value || uiText('ui.keypadNumber', '请输入数字'); value.classList.toggle('is-empty', !state.value);
+      document.getElementById('account-keypad-hint').textContent = state.open ? uiText('ui.keypadPhoneHelp', '{length} / {max} 位 · {country} · 也可使用遥控器数字键', { length: state.value.length, max: state.maxLength, country: state.countryName }) : '';
       document.getElementById('account-keypad-error').textContent = state.error;
       if (state.open && document.activeElement !== accountKeypadFocus()) goFocus(accountKeypadFocus());
     },
@@ -6009,7 +6122,7 @@
       return fetchData('/api/v1/search-history', options);
     },
     render: renderSearchHistory,
-    error: function (method) { if (method !== 'GET' && pageMode() === 'search') showNotice('最近搜索保存失败，请重试'); }
+    error: function (method) { if (method !== 'GET' && pageMode() === 'search') showNotice(uiText('ui.searchHistorySaveFailed', '最近搜索保存失败，请重试')); }
   });
   searchNumberScan = window.HongguoNumberInput.create({
     request: requestScanInput,
@@ -6017,7 +6130,7 @@
       var image = document.getElementById('search-scan-qr');
       image.classList.toggle('is-hidden', state.state !== 'waiting');
       if (state.state === 'waiting') image.src = state.qr; else image.removeAttribute('src');
-      document.getElementById('search-scan-status').textContent = state.state === 'creating' ? '正在生成二维码…' : state.state === 'waiting' ? '扫码后输入剧名，点击发送并搜索' : state.state === 'closed' ? '' : state.message;
+      document.getElementById('search-scan-status').textContent = state.state === 'creating' ? uiText('ui.scanCreating', '正在生成二维码…') : state.state === 'waiting' ? uiText('ui.scanSearchWaiting', '扫码后输入剧名，点击发送并搜索') : state.state === 'closed' ? '' : state.message;
     },
     complete: function (kind, value) {
       if (kind !== 'search' || !searchScanOpen || pageMode() !== 'search' || applicationInBackground) return;
@@ -6031,7 +6144,7 @@
       var image = document.getElementById('search-scan-qr');
       image.classList.toggle('is-hidden', state.state !== 'waiting');
       if (state.state === 'waiting') image.src = state.qr; else image.removeAttribute('src');
-      document.getElementById('search-scan-status').textContent = state.state === 'creating' ? '正在生成二维码…' : state.state === 'waiting' ? '扫码后输入弹幕，回填电视后确认发送' : state.state === 'closed' ? '' : state.message;
+      document.getElementById('search-scan-status').textContent = state.state === 'creating' ? uiText('ui.scanCreating', '正在生成二维码…') : state.state === 'waiting' ? uiText('ui.scanDanmakuWaiting', '扫码后输入弹幕，回填电视后确认发送') : state.state === 'closed' ? '' : state.message;
     },
     complete: function (kind, value) {
       if (kind !== 'danmaku' || !danmakuScanOpen || !playerOptionsOpen || applicationInBackground) return;
@@ -6050,14 +6163,14 @@
       var image = document.getElementById('account-number-qr');
       image.classList.toggle('is-hidden', state.state !== 'waiting');
       if (state.state === 'waiting') image.src = state.qr; else image.removeAttribute('src');
-      document.getElementById('account-number-scan-status').textContent = state.state === 'creating' ? '正在生成二维码…' : state.state === 'waiting' ? '手机扫码，填写或粘贴数字后回填电视' : state.state === 'closed' ? '' : state.message;
+      document.getElementById('account-number-scan-status').textContent = state.state === 'creating' ? uiText('ui.scanCreating', '正在生成二维码…') : state.state === 'waiting' ? uiText('ui.scanNumberWaiting', '手机扫码，填写或粘贴数字后回填电视') : state.state === 'closed' ? '' : state.message;
     },
     complete: function (kind, value) { numericKeypad.completeRemote(kind, value); }
   });
   window.HongguoNumericKeypad.keys.forEach(function (key, index) {
     var button = document.createElement('button'); button.type = 'button'; button.className = 'account-keypad-key';
     button.setAttribute('data-key', key); button.setAttribute('data-focus', 'account-digit-' + key);
-    button.textContent = key === 'delete' ? '删除' : key === 'done' ? '完成' : key;
+    button.textContent = key === 'delete' ? uiText('ui.keypadDelete', '删除') : key === 'done' ? uiText('ui.keypadDone', '完成') : key;
     button.addEventListener('click', function () { numericKeypad.choose(index); numericKeypad.press(key); });
     document.getElementById('account-keypad-keys').appendChild(button);
   });
@@ -6087,7 +6200,7 @@
       }) };
     },
     onState: function (value) {
-      if (value.state === 'expired') accountNotice = '本机验证等待时间已结束，请重新获取验证码';
+      if (value.state === 'expired') accountNotice = uiText('ui.accountVerificationExpired', '本机验证等待时间已结束，请重新获取验证码');
       renderAccount();
       if (value.state === 'timeout' && pageMode() === 'account' && !supportModalOpen) goFocus(document.getElementById('account-verify'));
       if (value.state === 'expired' && !applicationHidden()) pollAccount();
@@ -6096,7 +6209,20 @@
 
   document.querySelectorAll('.sidebar-display-action').forEach(function (button) {
     button.addEventListener('click', function () {
-      if (!sidebarSettings.choose(button.getAttribute('data-mode'))) showNotice('设置未能保存，请重试。');
+      if (!sidebarSettings.choose(button.getAttribute('data-mode'))) showNotice(uiText('settings.saveFailed', '设置未能保存，请重试。'));
+    });
+  });
+  renderLocaleSettings();
+  document.querySelectorAll('.locale-action').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var i18n = window.HongguoI18n;
+      var locale = button.getAttribute('data-locale');
+      if (!i18n || typeof i18n.setLocale !== 'function' || !i18n.setLocale(locale)) {
+        showNotice(uiText('settings.languageSaveFailed', '语言设置未能保存，请重试。'));
+        return;
+      }
+      renderLocaleSettings();
+      window.setTimeout(function () { window.location.reload(); }, 0);
     });
   });
   var desktopUpdateNotifiedCode = 0;
@@ -6106,29 +6232,29 @@
     render: function (data) {
       var current = document.getElementById('app-current-version');
       if (data.current_version) current.textContent = data.current_version + (data.edition ? ' · ' + data.edition : '');
-      else if (data.state === 'browser') current.textContent = '网页预览';
-      document.getElementById('app-update-state').textContent = data.message || '启动后每天自动检查一次，播放时不打扰。';
+      else if (data.state === 'browser') current.textContent = uiText('ui.browserPreview', '网页预览');
+      document.getElementById('app-update-state').textContent = data.message || uiText('ui.updateDefault', '启动后每天自动检查一次，播放时不打扰。');
       var check = document.getElementById('app-check-update');
       // Keep the active TV focus node alive while native checking/download runs.
       check.disabled = !data.supported;
       check.setAttribute('aria-disabled', data.state === 'checking' || data.state === 'downloading' ? 'true' : 'false');
-      check.textContent = data.state === 'checking' ? '检查中…' : !data.desktop && (data.state === 'available' || data.state === 'ready') ? '查看更新 ' + data.latest_version : '检查更新';
+      check.textContent = data.state === 'checking' ? uiText('ui.checking', '检查中…') : !data.desktop && (data.state === 'available' || data.state === 'ready') ? uiText('ui.viewUpdate', '查看更新 {version}', { version: data.latest_version }) : uiText('ui.checkUpdate', '检查更新');
       if (data.desktop) {
         var downloading = data.state === 'downloading';
         var download = document.getElementById('desktop-download-update');
         download.classList.toggle('is-hidden', !(data.state === 'available' || downloading || data.state === 'error' && data.latest_code));
         download.setAttribute('aria-disabled', downloading || data.state === 'checking' ? 'true' : 'false');
-        download.textContent = downloading ? '下载中 ' + (data.total ? Math.floor(data.downloaded * 100 / data.total) : 0) + '%' : '下载更新 ZIP';
+        download.textContent = downloading ? uiText('ui.downloadingPercent', '下载中 {percent}%', { percent: data.total ? Math.floor(data.downloaded * 100 / data.total) : 0 }) : uiText('ui.downloadZip', '下载更新 ZIP');
         var folder = document.getElementById('desktop-open-update-folder');
         folder.classList.toggle('is-hidden', data.state !== 'ready');
         if (document.activeElement === download && data.state === 'ready') goFocus(folder);
         else if (document.activeElement === download && download.classList.contains('is-hidden')) goFocus(check);
         var notes = document.getElementById('desktop-update-notes');
         notes.classList.toggle('is-hidden', !data.release_notes);
-        notes.textContent = data.release_notes ? '版本 ' + data.latest_version + '\n' + data.release_notes : '';
+        notes.textContent = data.release_notes ? uiText('ui.releaseVersion', '版本 {version}', { version: data.latest_version }) + '\n' + data.release_notes : '';
         if (data.state === 'available' && data.latest_code > desktopUpdateNotifiedCode && data.prompt_allowed && canShowAppUpdate()) {
           desktopUpdateNotifiedCode = data.latest_code;
-          showNotice('发现新版本 ' + data.latest_version + '，可在设置中下载更新。');
+          showNotice(uiText('ui.newVersionNotice', '发现新版本 {version}，可在设置中下载更新。', { version: data.latest_version }));
         }
       }
     }
@@ -6165,5 +6291,5 @@
   libraryReady = loadLibrary();
   pollAccount();
   accountPollTimer = setInterval(function () { if (!applicationHidden()) pollAccount(); }, 8000);
-  loadCatalog('推荐');
+    loadCatalog(uiText('nav.recommend', '推荐'));
 }());

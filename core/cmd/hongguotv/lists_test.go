@@ -69,7 +69,7 @@ func TestReservationWriteUsesItemIDAndConfirmedResponse(t *testing.T) {
 func TestReservationCountersAndMissingCursor(t *testing.T) {
 	c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		if q.Get("is_online") != "true" || q.Get("limit") != "20" || q.Get("tab_type") != "2" || q.Get("subscribe_order_type") != "1" || q.Get("swipe_type") != "1" {
+		if q.Get("is_online") != "true" || q.Get("limit") != "20" || q.Get("tab_type") != "13" || q.Get("subscribe_order_type") != "0" || q.Get("swipe_type") != "0" || q.Get("subscribe_offset") != "0" || q.Get("session_id") != "" {
 			t.Error("wrong reservation mode")
 		}
 		ioJSON(w, `{"code":0,"data":{"online_total_count":48,"offline_total_count":0,"has_more":true,"subscribe_items":[{"item_id":"7692049770637954110","is_online":true,"subscribe_data":{"series_id":"7690163276214176792","title":"已上线剧","episode_cnt":80}}]}}`)
@@ -78,6 +78,45 @@ func TestReservationCountersAndMissingCursor(t *testing.T) {
 	out, err := c.SubscriptionList(context.Background(), url.Values{"mode": {"online"}, "offset": {"20"}}, false)
 	if err != nil || out.OnlineTotal == nil || *out.OnlineTotal != 48 || out.OfflineTotal == nil || *out.OfflineTotal != 0 || out.NextOffset != 40 || !out.HasMore || len(out.Items) != 1 || out.Items[0].Upcoming {
 		t.Fatalf("bad counts/cursor: %+v %v", out, err)
+	}
+}
+
+func TestReservationPaginationCarriesServerSession(t *testing.T) {
+	calls := 0
+	c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		q := r.URL.Query()
+		if q.Get("tab_type") != "13" || q.Get("subscribe_offset") != "0" {
+			t.Fatalf("wrong reservation contract: %v", q)
+		}
+		switch calls {
+		case 1:
+			if q.Get("offset") != "0" || q.Get("session_id") != "" {
+				t.Fatalf("first page should omit session_id: %v", q)
+			}
+			ioJSON(w, `{"code":0,"data":{"has_more":true,"next_offset":20,"session_id":"server-session","subscribe_items":[]}}`)
+		case 2:
+			if q.Get("offset") != "20" || q.Get("session_id") != "server-session" {
+				t.Fatalf("second page did not carry server session: %v", q)
+			}
+			ioJSON(w, `{"code":0,"data":{"has_more":false,"next_offset":40,"session_id":"server-session","subscribe_items":[]}}`)
+		default:
+			t.Fatalf("unexpected reservation request %d", calls)
+		}
+	})
+	defer close()
+
+	q := url.Values{"mode": {"online"}}
+	page, err := c.SubscriptionList(context.Background(), q, false)
+	if err != nil || !page.HasMore || page.NextOffset != 20 || page.SessionID != "server-session" {
+		t.Fatalf("bad first reservation page: %+v %v", page, err)
+	}
+
+	q.Set("offset", "20")
+	q.Set("session_id", page.SessionID)
+	page, err = c.SubscriptionList(context.Background(), q, false)
+	if err != nil || page.HasMore || page.NextOffset != 40 || page.SessionID != "server-session" {
+		t.Fatalf("bad second reservation page: %+v %v", page, err)
 	}
 }
 
@@ -103,7 +142,7 @@ func TestSetReservationAndConfirmUsesCloudList(t *testing.T) {
 				}
 				reads++
 				q := r.URL.Query()
-				if q.Get("tab_type") != "2" || q.Get("subscribe_order_type") != "1" || q.Get("swipe_type") != "1" || q.Get("is_online") != "false" || q.Get("offset") != "0" {
+				if q.Get("tab_type") != "13" || q.Get("subscribe_order_type") != "0" || q.Get("swipe_type") != "0" || q.Get("is_online") != "false" || q.Get("offset") != "0" || q.Get("subscribe_offset") != "0" || q.Get("session_id") != "" {
 					t.Errorf("wrong cloud readback query: %v", q)
 				}
 				confirmedState := tc.resultAt > 0 && reads >= tc.resultAt
