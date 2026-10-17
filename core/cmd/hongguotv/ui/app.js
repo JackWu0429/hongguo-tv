@@ -77,6 +77,7 @@
   var coreStatusLabel = document.getElementById('core-status-label');
   var coreStatusState = 'connecting';
   var coreStatusVersion = '';
+  var coreStatusDiagnostic = '';
   var notice = document.getElementById('action-notice');
   var shell = document.querySelector('.app-shell');
   function uiText(key, fallback, params) {
@@ -89,9 +90,11 @@
       error: ['ui.serviceError', '连接异常'],
       unavailable: ['ui.serviceUnavailable', '本机服务连接失败，请重新打开应用']
     }[coreStatusState] || ['core.connecting', '连接核心服务…'];
-    coreStatusLabel.textContent = uiText(message[0], message[1]);
+    var diagnostic = coreStatusState === 'unavailable' ? coreStatusDiagnostic : '';
+    coreStatusLabel.textContent = uiText(message[0], message[1]) + (diagnostic ? ' [' + diagnostic + ']' : '');
     status.dataset.ok = coreStatusState === 'connected' ? 'true' : 'false';
     if (coreStatusState === 'connected' && coreStatusVersion) status.title = uiText('common.version', '版本 {version}', { version: coreStatusVersion });
+    else if (diagnostic) status.title = diagnostic;
     else status.removeAttribute('title');
   }
   if (window.HongguoI18n && typeof window.HongguoI18n.onChange === 'function') window.HongguoI18n.onChange(renderCoreStatus);
@@ -6151,13 +6154,26 @@
     var request = new XMLHttpRequest();
     request.open('GET', '/api/v1/status', true);
     request.timeout = 8000;
-    function failed() { coreStatusState = 'unavailable'; coreStatusVersion = ''; renderCoreStatus(); }
+    function failed() {
+      coreStatusState = 'unavailable'; coreStatusVersion = ''; coreStatusDiagnostic = '';
+      if (window.HongguoWebOS && typeof window.HongguoWebOS.getDiagnostic === 'function') {
+        try {
+          var diagnostic = window.HongguoWebOS.getDiagnostic();
+          if (diagnostic && diagnostic.code && diagnostic.code !== 'NOT_CHECKED') {
+            coreStatusDiagnostic = String(diagnostic.code).slice(0, 32);
+            status.title = 'stage=' + String(diagnostic.stage || 'unknown') + '; code=' + coreStatusDiagnostic + '; ' + String(diagnostic.message || '').slice(0, 180);
+          }
+        } catch (ignoredDiagnostic) {}
+      }
+      renderCoreStatus();
+    }
     renderCoreStatus();
     request.onload = function () {
       try {
         var data = JSON.parse(request.responseText);
         coreStatusState = request.status === 200 && data.ok ? 'connected' : 'error';
         coreStatusVersion = coreStatusState === 'connected' ? data.version || '' : '';
+        coreStatusDiagnostic = '';
         renderCoreStatus();
       } catch (error) { failed(); }
     };

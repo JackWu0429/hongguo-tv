@@ -14,6 +14,7 @@
     var serverStart = null;
     var activity = null;
     var activityStart = null;
+    var lastStartupError = null;
     var luna = options.service;
     if (!luna) {
       var Service = options.Service || require('webos-service');
@@ -52,6 +53,7 @@
     function statusPayload() {
       return {
         ok: true,
+        ready: !!(server && server.listening),
         service: 'hongguo-webos-service',
         implementation: 'experimental-js-service',
         platform: 'webos',
@@ -62,6 +64,23 @@
         protocol_verified: true,
         verification_note: '红果请求签名、地址解析、CENC 解密和本地媒体 Range 已通过网络/文件验证；LG 真机播放尚未验证'
       };
+    }
+
+    function errorPayload(error, stage) {
+      var code = error && error.code ? String(error.code) : 'SERVICE_START_FAILED';
+      var message = String(error && error.message || error || '本机服务启动失败');
+      var details = {
+        ok: false,
+        ready: false,
+        error: code,
+        code: code,
+        stage: stage || error && error.stage || 'service_start',
+        message: message,
+        port: port,
+        service: 'hongguo-webos-service'
+      };
+      lastStartupError = details;
+      return details;
     }
 
     function query(req) { return url.parse(String(req.url || '/'), true).query || {}; }
@@ -113,7 +132,8 @@
       }
       var pathName = String(req.url || '/').split('?')[0];
       if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }, req);
-      if (pathName === '/api/v1/health') return json(res, 200, { ok: true }, req);
+      if (pathName === '/api/v1/health') return json(res, 200, { ok: true, ready: !!(server && server.listening), service: 'hongguo-webos-service', port: port }, req);
+      if (pathName === '/api/v1/diagnostics') return json(res, 200, { ok: true, ready: !!(server && server.listening), port: port, lastStartupError: lastStartupError }, req);
       if (pathName === '/api/v1/status') return json(res, 200, statusPayload(), req);
       if (pathName.indexOf('/api/') === 0 || pathName.indexOf('/minireel-proxy/media/') === 0 || pathName === '/minireel-proxy/resolve') return handleProvider(req, res, pathName);
       return json(res, 404, { ok: false, error: 'NOT_FOUND' }, req);
@@ -165,6 +185,7 @@
       server = http.createServer(handle);
       serverStart = new Promise(function (resolve, reject) {
         function onError(error) {
+          error.stage = 'http_bind';
           server.removeListener('listening', onListening);
           server = null;
           serverStart = null;
@@ -233,10 +254,12 @@
 
     function respondWhenReady(message, includeStatus) {
       ensureReady().then(function () {
-        message.respond(Object.assign({ returnValue: true }, includeStatus ? { status: statusPayload() } : statusPayload()));
+        var status = statusPayload();
+        message.respond(Object.assign({ returnValue: true }, includeStatus ? { status: status } : status));
       }, function (error) {
         console.error('[hongguo-webos] service startup failed:', error && error.stack || error);
-        message.respond({ returnValue: false, error: String(error && error.message || error || '本机服务启动失败') });
+        var details = errorPayload(error, error && error.stage);
+        message.respond(Object.assign({ returnValue: false }, details));
       });
     }
 

@@ -10,19 +10,27 @@ var lunaCalls = [];
 var listeners = {};
 var documentListeners = {};
 var fetchCalls = [];
+var healthPayload = { ok: true, ready: true, port: 7655 };
+var healthFails = false;
 var window = {
   Promise: Promise,
   setTimeout: setTimeout,
   clearTimeout: clearTimeout,
   Request: function (url, options) { this.url = url; this.options = options; },
-  fetch: function (input, options) { fetchCalls.push({ input: input, options: options }); return Promise.resolve({ ok: true }); },
+  fetch: function (input, options) {
+    fetchCalls.push({ input: input, options: options });
+    if (String(input).indexOf('/api/v1/health') >= 0) {
+      return healthFails ? Promise.resolve({ ok: false, status: 503 }) : Promise.resolve({ ok: true, status: 200, json: function () { return Promise.resolve(healthPayload); } });
+    }
+    return Promise.resolve({ ok: true });
+  },
   Element: { prototype: { setAttribute: function (name, value) { this[name] = value; } } },
   HTMLMediaElement: function () {},
   XMLHttpRequest: function () {},
   addEventListener: function (name, callback) { listeners[name] = callback; },
   webOS: { service: { request: function (uri, options) {
     lunaCalls.push(uri);
-    setTimeout(function () { options.onSuccess({ returnValue: true }); }, 0);
+    setTimeout(function () { options.onSuccess({ returnValue: true, ok: true, ready: true }); }, 0);
   } } }
 };
 window.HTMLMediaElement.prototype = {};
@@ -56,7 +64,29 @@ async function run() {
   assert(lunaCalls.indexOf('luna://com.aston314.hongguo.webos.service/ping') >= 0);
 
   await window.fetch('/api/v1/lists/recommend');
-  assert.strictEqual(fetchCalls[0].input, 'http://127.0.0.1:7655/api/v1/lists/recommend');
+  assert.strictEqual(fetchCalls[0].input, 'http://127.0.0.1:7655/api/v1/health', 'health is checked after Luna ping');
+  assert.strictEqual(fetchCalls[1].input, 'http://127.0.0.1:7655/api/v1/lists/recommend');
+  assert.strictEqual(window.HongguoWebOS.getDiagnostic().code, 'READY');
+
+  var lunaRequest = window.webOS.service.request;
+  window.webOS.service.request = function (uri, options) {
+    if (/\/ping$/.test(uri)) setTimeout(function () { options.onSuccess({ returnValue: false, code: 'EADDRINUSE', stage: 'http_bind', message: 'port is occupied' }); }, 0);
+    else lunaRequest(uri, options);
+  };
+  documentListeners.visibilitychange();
+  await new Promise(function (resolve) { setTimeout(resolve, 5); });
+  await assert.rejects(window.HongguoWebOS.wakeService(), function (error) {
+    return error.code === 'EADDRINUSE' && error.stage === 'http_bind';
+  });
+  assert.strictEqual(window.HongguoWebOS.getDiagnostic().code, 'EADDRINUSE');
+
+  window.webOS.service.request = lunaRequest;
+  healthFails = true;
+  await assert.rejects(window.HongguoWebOS.wakeService(), function (error) {
+    return error.code === 'HEALTH_HTTP_FAILED' && error.stage === 'http_health';
+  });
+  assert.strictEqual(window.HongguoWebOS.getDiagnostic().code, 'HEALTH_HTTP_FAILED');
+  healthFails = false;
 
   document.hidden = true;
   documentListeners.visibilitychange();
@@ -70,7 +100,7 @@ async function run() {
   listeners.pagehide();
   await new Promise(function (resolve) { setTimeout(resolve, 5); });
   assert(lunaCalls.indexOf('luna://com.aston314.hongguo.webos.service/shutdown') >= 0);
-  console.log('webOS adapter service routing: PASS');
+  console.log('webOS adapter routing, health checks, and error diagnostics: PASS');
 }
 
 run().catch(function (error) { console.error(error.stack || error); process.exitCode = 1; });

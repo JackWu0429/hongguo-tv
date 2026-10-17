@@ -56,42 +56,75 @@
   };
 
   var serviceWake = null;
+  var serviceDiagnostic = { stage: 'not_checked', code: 'NOT_CHECKED', message: '本机服务尚未检查', port: 7655 };
+  function diagnosticError(stage, code, message) {
+    var error = new Error(String(message || code || '本机服务连接失败'));
+    error.stage = stage;
+    error.code = code;
+    serviceDiagnostic = { stage: stage, code: code, message: error.message, port: 7655, timestamp: Date.now() };
+    return error;
+  }
+  function checkHealth() {
+    if (typeof rawFetch !== 'function') return Promise.reject(diagnosticError('http_health', 'FETCH_UNAVAILABLE', '当前 WebView 不支持 fetch，无法检查本机服务'));
+    return rawFetch.call(window, SERVICE_BASE + '/api/v1/health', { method: 'GET', cache: 'no-store' }).then(function (response) {
+      if (!response || !response.ok) throw diagnosticError('http_health', 'HEALTH_HTTP_FAILED', 'HTTP 健康检查失败，状态码 ' + (response && response.status || 0));
+      return response.json().then(function (payload) {
+        if (!payload || payload.ok !== true || payload.ready !== true) throw diagnosticError('http_health', 'HEALTH_NOT_READY', '本机服务 HTTP 健康检查未就绪');
+        serviceDiagnostic = { stage: 'ready', code: 'READY', message: 'Luna ping 与 HTTP 健康检查均成功', port: payload.port || 7655, timestamp: Date.now() };
+        return payload;
+      }, function () { throw diagnosticError('http_health', 'HEALTH_INVALID_JSON', '本机服务健康检查响应不是有效 JSON'); });
+    }, function (error) {
+      if (error && error.stage) throw error;
+      throw diagnosticError('http_health', 'HEALTH_UNREACHABLE', error && error.message || '无法连接 127.0.0.1:7655');
+    });
+  }
   function requestService(method, complete) {
     var finished = false;
     var timer;
-    function done(response) {
+    function done(response, failure) {
       if (finished) return;
       finished = true;
       if (timer) window.clearTimeout(timer);
-      complete(response);
+      complete(response, failure || null);
     }
     try {
       if (window.webOS && window.webOS.service && window.webOS.service.request) {
         window.webOS.service.request(SERVICE_URI + '/' + method, {
           parameters: {},
           onSuccess: done,
-          onFailure: function () { done(null); }
+          onFailure: function (error) { done(null, error || { errorCode: 'LUNA_REQUEST_FAILED' }); }
         });
-        timer = window.setTimeout(function () { done(null); }, 5000);
+        timer = window.setTimeout(function () { done(null, { errorCode: 'LUNA_TIMEOUT', errorText: 'Luna 命令响应超时' }); }, 5000);
         return;
       }
       if (window.PalmServiceBridge) {
         var bridge = new window.PalmServiceBridge();
         bridge.onservicecallback = function (response) {
-          try { done(JSON.parse(response)); } catch (ignoredJSON) { done(null); }
+          try {
+            var parsed = JSON.parse(response);
+            done(parsed, parsed && parsed.returnValue === false ? parsed : null);
+          } catch (ignoredJSON) { done(null, { errorCode: 'LUNA_INVALID_RESPONSE', errorText: 'Luna 返回了无效响应' }); }
         };
         bridge.call(SERVICE_URI + '/' + method, '{}');
-        timer = window.setTimeout(function () { done(null); }, 5000);
+        timer = window.setTimeout(function () { done(null, { errorCode: 'LUNA_TIMEOUT', errorText: 'Luna 命令响应超时' }); }, 5000);
         return;
       }
-    } catch (ignored) {}
-    done(null);
+    } catch (error) { done(null, { errorCode: 'LUNA_REQUEST_EXCEPTION', errorText: error && error.message || String(error) }); return; }
+    done(null, { errorCode: 'LUNA_API_UNAVAILABLE', errorText: '未找到 webOS Luna Service 调用接口' });
   }
 
   function wakeService() {
     if (serviceWake) return serviceWake;
-    serviceWake = new Promise(function (resolve) {
-      requestService('ping', function (response) { resolve(response); });
+    serviceWake = new Promise(function (resolve, reject) {
+      requestService('ping', function (response, failure) {
+        if (failure || !response || response.returnValue !== true || response.ready !== true) {
+          var code = failure && (failure.error || failure.errorCode || failure.code) || response && (response.error || response.code) || 'LUNA_NOT_READY';
+          var message = failure && (failure.message || failure.errorText) || response && (response.message || response.errorText) || 'Luna ping 未返回 ready=true';
+          reject(diagnosticError(response && response.stage || 'luna_ping', String(code), String(message)));
+          return;
+        }
+        checkHealth().then(resolve, reject);
+      });
     });
     serviceWake.then(function () {
       window.setTimeout(function () { serviceWake = null; }, 1000);
@@ -105,13 +138,15 @@
   }
 
   window.HongguoWebOS.wakeService = wakeService;
-  wakeService();
+  window.HongguoWebOS.getDiagnostics = function () { return JSON.stringify(serviceDiagnostic); };
+  window.HongguoWebOS.getDiagnostic = function () { return Object.assign({}, serviceDiagnostic); };
+  wakeService().catch(function () {});
 
   if (document.addEventListener) {
     document.addEventListener('visibilitychange', function () {
       if (!document.hidden) {
         serviceWake = null;
-        wakeService();
+        wakeService().catch(function () {});
       }
     });
   }
@@ -130,6 +165,10 @@
       var args = arguments;
       if (!xhr.__hongguoWebOSServiceURL) return rawXHRSend.apply(xhr, args);
       return wakeService().then(function () {
+        if (xhr.readyState === 1) rawXHRSend.apply(xhr, args);
+      }, function () {
+        // Send the original request so XHR callers receive their normal network
+        // error event; the Luna/health failure remains available in diagnostics.
         if (xhr.readyState === 1) rawXHRSend.apply(xhr, args);
       });
     };

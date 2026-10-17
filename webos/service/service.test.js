@@ -17,6 +17,7 @@ var provider = {
   recommend: function () { return Promise.resolve({ items: [{ series_id: '1' }] }); }
 };
 var service = createService({ service: luna, provider: provider, port: 0 });
+var registry = require('./services.json');
 
 function invoke(name) {
   return new Promise(function (resolve) {
@@ -37,14 +38,23 @@ function request(method, pathName, headers) {
 }
 
 async function run() {
+  var registeredCommands = registry.services[0].commands;
+  ['ping', 'getDiagnostics', 'shutdown'].forEach(function (name) {
+    var command = registeredCommands.filter(function (entry) { return entry.name === name; })[0];
+    assert(command, name + ' is declared in services.json');
+    assert.strictEqual(command.public, true, name + ' is public to the app');
+  });
+
   var ping = await invoke('ping');
   assert.strictEqual(ping.returnValue, true);
   assert.strictEqual(ping.ok, true);
+  assert.strictEqual(ping.ready, true);
   assert.deepStrictEqual(activityCalls, ['create:hongguo-webos-http']);
 
   var status = await request('GET', '/api/v1/status', { Origin: 'null' });
   assert.strictEqual(status.status, 200);
   assert.strictEqual(JSON.parse(status.body).ok, true);
+  assert.strictEqual(JSON.parse(status.body).ready, true);
   assert.strictEqual(status.headers['access-control-allow-origin'], 'null');
 
   var preflight = await request('OPTIONS', '/api/v1/library', {
@@ -63,9 +73,32 @@ async function run() {
   var recommendations = await request('GET', '/api/v1/lists/recommend?offset=0');
   assert.strictEqual(JSON.parse(recommendations.body).data.items[0].series_id, '1');
 
+  var diagnostics = await request('GET', '/api/v1/diagnostics');
+  assert.strictEqual(JSON.parse(diagnostics.body).ready, true);
+  assert.strictEqual(JSON.parse(diagnostics.body).lastStartupError, null);
+
   var stopped = await invoke('shutdown');
   assert.strictEqual(stopped.returnValue, true);
   assert(activityCalls.indexOf('complete:activity-1') >= 0);
+
+  var occupied = require('net').createServer();
+  await new Promise(function (resolve) { occupied.listen(0, '127.0.0.1', resolve); });
+  var blockedHandlers = {};
+  var blockedService = createService({
+    service: {
+      activityManager: { create: function (_, callback) { callback(null); }, complete: function (_, callback) { callback(); } },
+      register: function (name, handler) { blockedHandlers[name] = handler; }
+    },
+    provider: provider,
+    port: occupied.address().port
+  });
+  var blocked = await new Promise(function (resolve) { blockedHandlers.ping({ respond: resolve }); });
+  assert.strictEqual(blocked.returnValue, false);
+  assert.strictEqual(blocked.ready, false);
+  assert.strictEqual(blocked.stage, 'http_bind');
+  assert.strictEqual(blocked.code, 'EADDRINUSE');
+  await blockedService.shutdown();
+  await new Promise(function (resolve) { occupied.close(resolve); });
   console.log('webOS service lifecycle and CORS: PASS');
 }
 

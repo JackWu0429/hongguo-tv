@@ -53,9 +53,11 @@ def main():
     appinfo_raw, _, appinfo_path = read_tar_member(members["data.tar.gz"], "/appinfo.json")
     packageinfo_raw, _, packageinfo_path = read_tar_member(members["data.tar.gz"], "/packageinfo.json")
     service_package_raw, _, service_package_path = read_tar_member(members["data.tar.gz"], "/services/com.aston314.hongguo.webos.service/package.json")
+    services_raw, _, services_path = read_tar_member(members["data.tar.gz"], "/services/com.aston314.hongguo.webos.service/services.json")
     appinfo = json.loads(appinfo_raw)
     packageinfo = json.loads(packageinfo_raw)
     service_package = json.loads(service_package_raw)
+    services_manifest = json.loads(services_raw)
     if appinfo.get("id") != "com.aston314.hongguo.webos":
         fail("unexpected app id")
     if service_package.get("name") != "com.aston314.hongguo.webos.service":
@@ -64,6 +66,14 @@ def main():
         fail("service package main must be service.js")
     if service_package.get("version") != appinfo.get("version"):
         fail("service package version must match app version")
+    service_definitions = services_manifest.get("services", [])
+    service_definition = next((entry for entry in service_definitions if entry.get("name") == "com.aston314.hongguo.webos.service"), None)
+    if service_definition is None:
+        fail("services.json does not define the app service")
+    commands = {entry.get("name"): entry for entry in service_definition.get("commands", [])}
+    for command in ("ping", "getDiagnostics", "shutdown"):
+        if command not in commands or commands[command].get("public") is not True:
+            fail("services.json command must be declared public: " + command)
     service_path = service_package_path.rsplit("/", 1)[0] + "/service.js"
     app_root = appinfo_path.rsplit("/", 1)[0]
     names = set()
@@ -83,11 +93,17 @@ def main():
             fail("webOS adapter is missing from package")
         if index.find('src="./webos-adapter.js"') < 0 or index.find('src="./webos-adapter.js"') > index.find('src="./compat.js"'):
             fail("webOS adapter must load before shared UI scripts")
+        adapter_stream = package.extractfile(adapter)
+        if adapter_stream is None:
+            fail("could not read packaged webOS adapter")
+        adapter = adapter_stream.read().decode("utf-8")
+        if "getDiagnostic" not in adapter or "/api/v1/health" not in adapter or "HEALTH_NOT_READY" not in adapter:
+            fail("packaged adapter must verify HTTP readiness and expose diagnostics")
     services = packageinfo.get("services", [])
     if "com.aston314.hongguo.webos.service" not in services:
         fail("package does not register the HTTP service")
     print("webOS IPK verify: PASS")
-    print(json.dumps({"appId": appinfo["id"], "version": appinfo["version"], "serviceMain": service_package["main"], "members": len(names)}, ensure_ascii=False))
+    print(json.dumps({"appId": appinfo["id"], "version": appinfo["version"], "serviceMain": service_package["main"], "serviceCommands": sorted(commands), "members": len(names)}, ensure_ascii=False))
 
 
 if __name__ == "__main__":
