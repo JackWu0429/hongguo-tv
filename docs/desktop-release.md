@@ -1,5 +1,7 @@
-红果短剧桌面版 0.2.76（macOS / Windows）
+红果短剧桌面版 0.2.77（macOS / Windows）
 
+- 恢复选集弹窗中的剧集详情、海报和演员列表；演员可进入作品列表，返回键可回到播放界面。
+- 修复详情弹窗关闭按钮位置，以及收藏、追更成功后的即时状态刷新。
 - 修复侧边栏顶部“推荐”项目的焦点框被裁切，完整显示焦点高亮。
 - 修复切换繁体中文或日文后，顶部核心服务状态仍显示旧语言的问题。
 - macOS 通用 ZIP 支持 Intel / Apple Silicon，最低 macOS 11；Windows x64 需要 Microsoft Edge WebView2 Runtime。
