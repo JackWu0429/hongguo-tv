@@ -1,5 +1,11 @@
 # 正式构建与核心身份（0.2.2）
 
+## 统一发布线
+
+`main` 是所有平台共同的源码线。功能确认且检查通过后，即使用户没有要求发布，也要先整合进 `main`。这样已确认但尚未发布的功能不会只留在某个工作树里。
+
+只有用户明确要求 release 时才递增版本并创建 `vX.Y.Z` 标签，标签必须指向 `main` 历史中的提交。Android、macOS/Windows 和 webOS 都从这个标签构建。手动发布只能从 `main` 发起；功能分支可以运行 CI 或打包预览，但不能发布正式资产。工作树切换前检查已确认提交都已整合，未确认内容则留在原分支。详见 [development-and-release-flow.md](development-and-release-flow.md)。
+
 ## 正式签名
 
 正式版包名 `rocks.aston.hongguotv`，名称“红果短剧 TV”，versionName 0.2.2、versionCode 4。后续正式发布需递增 versionCode，并持续使用现有 GitHub Secrets 中的同一把密钥。
