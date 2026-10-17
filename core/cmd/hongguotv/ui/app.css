@@ -575,7 +575,7 @@ button:focus { outline: none; }
 .detail-header-action svg { width: 18px; height: 18px; fill: none; stroke: currentColor; }
 .detail-header-action.is-active { color: #fff; background: rgba(243,93,123,.24); border-color: #f35d7b; }
 .detail-header-action.is-focused, .detail-header-action:focus, .detail-cast-item.is-focused, .detail-cast-item:focus, .detail-cast-more.is-focused, .detail-cast-more:focus { outline: none; box-shadow: 0 0 0 3px #fff; }
-.detail-close { flex: 0 0 46px; min-width: 46px; min-height: 46px; margin-left: 0; padding: 0 12px; border-radius: 8px; color: #fff; background: rgba(255,255,255,.1); font-size: 26px; }
+.detail-close { align-self: flex-start; flex: 0 0 46px; min-width: 46px; min-height: 46px; margin: 8px 0 0; padding: 0 12px; border-radius: 8px; color: #fff; background: rgba(255,255,255,.1); font-size: 26px; }
 .detail-cast { display: flex; flex: 0 0 62px; align-items: center; gap: 13px; min-width: 0; padding: 8px 24px; border-bottom: 1px solid rgba(255,255,255,.08); }
 .detail-cast > strong { flex: 0 0 auto; color: #9fa0ac; font-size: 14px; font-weight: 500; }
 .detail-cast-strip { display: flex; flex: 1 1 auto; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
