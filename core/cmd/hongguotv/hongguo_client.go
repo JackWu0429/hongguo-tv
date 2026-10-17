@@ -105,6 +105,13 @@ type SeriesDetailResult struct {
 	Drama
 	Reviews []SeriesReview `json:"reviews,omitempty"`
 	Related []Drama        `json:"related,omitempty"`
+	Actors  []SeriesActor  `json:"actors,omitempty"`
+}
+
+type SeriesActor struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Avatar string `json:"avatar,omitempty"`
 }
 
 type SeriesReview struct {
@@ -479,7 +486,57 @@ func (c *hongguoClient) SeriesDetail(ctx context.Context, seriesID string) (Seri
 	if len(related) == 0 {
 		related = normalizeRelatedDramas(extractDeferredRecommendations(body), seriesID)
 	}
-	return SeriesDetailResult{Drama: drama, Reviews: normalizeSeriesReviews(detailPage), Related: related}, nil
+	actors := normalizeSeriesActors(detailMap)
+	if len(actors) == 0 {
+		actors = normalizeSeriesActors(detailPage)
+	}
+	return SeriesDetailResult{Drama: drama, Reviews: normalizeSeriesReviews(detailPage), Related: related, Actors: actors}, nil
+}
+
+func normalizeSeriesActors(value map[string]any) []SeriesActor {
+	if value == nil {
+		return nil
+	}
+	var raw []any
+	for _, key := range []string{"celebrities", "celebrity_list", "actors", "actor_list"} {
+		if items, ok := value[key].([]any); ok {
+			raw = items
+			break
+		}
+	}
+	seen := make(map[string]bool)
+	actors := make([]SeriesActor, 0, len(raw))
+	for _, item := range raw {
+		person, ok := asMap(item)
+		if !ok {
+			continue
+		}
+		if nested, ok := asMap(person["user_info"]); ok {
+			person = nested
+			if base, ok := asMap(person["base_info"]); ok {
+				person = base
+			}
+		}
+		id := firstNonEmpty(asString(person["celebrity_id"]), asString(person["actor_id"]), asString(person["actor_id_str"]), asString(person["person_id"]))
+		name := firstNonEmpty(asString(person["nickname"]), asString(person["user_name"]), asString(person["celebrity_name"]), asString(person["actor_name"]), asString(person["name"]))
+		if name == "" {
+			continue
+		}
+		key := id
+		if key == "" {
+			key = name
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		actors = append(actors, SeriesActor{
+			ID:     id,
+			Name:   name,
+			Avatar: firstNonEmpty(asString(person["user_avatar"]), asString(person["avatar"]), asString(person["avatar_url"]), asString(person["cover_url"])),
+		})
+	}
+	return actors
 }
 
 func extractDeferredRecommendations(body []byte) map[string]any {

@@ -176,6 +176,25 @@ func TestSeriesDetailCreatesLockedEpisodes(t *testing.T) {
 	}
 }
 
+func TestSeriesDetailParsesActorsFromDetailData(t *testing.T) {
+	html := `<!doctype html><script>window._ROUTER_DATA = {"loaderData":{"detail_page":{"seriesDetail":{"series_id":"1234567890123456789","series_name":"演员测试","episode_cnt":1,"vid_list":["9988776655443322110"],"celebrities":[{"celebrity_id":"7377326001203713305","nickname":"测试演员","avatar":"https://avatar"},{"celebrity_id":"7377326001203713305","nickname":"重复演员"},{"nickname":"无编号演员"}]}}}};</script>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(html))
+	}))
+	defer server.Close()
+	client := newHongguoClient()
+	client.webBase = server.URL
+	client.httpClient.Timeout = 2 * time.Second
+	result, err := client.SeriesDetail(context.Background(), "1234567890123456789")
+	if err != nil {
+		t.Fatalf("SeriesDetail failed: %v", err)
+	}
+	if len(result.Actors) != 2 || result.Actors[0].ID != "7377326001203713305" || result.Actors[0].Name != "测试演员" || result.Actors[0].Avatar != "https://avatar" || result.Actors[1].Name != "无编号演员" {
+		t.Fatalf("unexpected actors: %#v", result.Actors)
+	}
+}
+
 func TestActorWorksParsesNestedVideoList(t *testing.T) {
 	html := `<!doctype html><script>window._ROUTER_DATA = {"loaderData":{"character_layout":{"videoList":[]},"character_(id)/page":{"userInfo":{"actor_id":"7377326001203713305","user_name":"测试演员","user_avatar":"https://avatar","description":"演员简介"},"videoList":[{"series_id":"1234567890123456789","series_title":"第一部","series_cover":"https://cover-1","series_intro":"简介1","episode_cnt":12,"vid_list":["1111111111111111111"]},{"series_id":"2234567890123456789","series_title":"第二部","series_cover":"https://cover-2","series_intro":"简介2","episode_cnt":8,"vid_list":["2222222222222222222"]}]}}};</script>`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
