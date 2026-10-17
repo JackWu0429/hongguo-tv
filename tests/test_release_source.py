@@ -31,6 +31,7 @@ class ReleaseSourceTests(unittest.TestCase):
         git(self.root, "init", "--bare", str(self.remote))
         git(self.seed, "remote", "add", "origin", str(self.remote))
         git(self.seed, "push", "origin", "main")
+        git(self.remote, "symbolic-ref", "HEAD", "refs/heads/main")
         self.clone = self.root / "clone"
         git(self.root, "clone", str(self.remote), str(self.clone))
         git(self.clone, "config", "user.name", "Release test")
