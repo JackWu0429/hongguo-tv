@@ -1959,7 +1959,26 @@
     var title = document.getElementById('player-status-title');
     title.textContent = '';
     title.classList.add('is-hidden');
-    panel.classList.toggle('is-hidden', !message);
+    // On affected older TV WebViews, revealing this panel in the same render
+    // commit as the catalog-to-player layout change can crash the renderer.
+    // Let that layout paint first, then reveal the loading state.
+    if (message && !failed) {
+      if (panel.classList.contains('is-hidden')) {
+        if (typeof requestAnimationFrame === 'function') {
+          var revealTicket = (setPlayerStatus.revealTicket = (setPlayerStatus.revealTicket || 0) + 1);
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              if (revealTicket === setPlayerStatus.revealTicket) panel.classList.remove('is-hidden');
+            });
+          });
+        } else {
+          panel.classList.remove('is-hidden');
+        }
+      }
+    } else {
+      setPlayerStatus.revealTicket = (setPlayerStatus.revealTicket || 0) + 1;
+      panel.classList.toggle('is-hidden', !message);
+    }
     // The ellipsis keeps loading active while the target episode is unknown.
     // Its spinner already conveys loading; do not invent an episode number.
     var text = document.getElementById('player-status-text');
