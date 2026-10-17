@@ -2568,6 +2568,8 @@
           libraryData = payload.data;
           libraryLoaded = true;
           updateSavedButtons();
+          var changedSeriesID = change.drama && change.drama.series_id || change.series_id;
+          if (detailModalOpen && currentDetail && currentDetail.series_id === changedSeriesID) updateDetailActions();
           updateDetailProgress();
           if (isLibraryPage()) renderLibrary(!!quiet);
           return true;
@@ -2611,6 +2613,11 @@
     button.disabled = true; button.setAttribute('aria-busy', 'true');
     fetchData('/api/v1/follow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ series_id: item.series_id, enabled: enabled }) }).then(function () {
       if (featuredItem && featuredItem.series_id === item.series_id) { featuredItem.following_update = enabled; featuredItem.followed = enabled; updateSavedButtons(); }
+      if (currentDetail && currentDetail.series_id === item.series_id) {
+        currentDetail.following_update = enabled;
+        currentDetail.followed = enabled;
+        updateDetailActions();
+      }
       followPager.loaded = false; if (pageMode() === 'follows') followPager.reset({});
       showNotice(enabled ? uiText('ui.followAdded', '已加入追更') : uiText('ui.followRemoved', '已取消追更'));
     }).catch(function (error) { showNotice(uiText('ui.followFailed', '追更操作未完成：{error}', { error: localizedError(error, 'common.operationFailed', '操作未完成，请重试。') })); }).then(function () { button.disabled = false; button.removeAttribute('aria-busy'); });
