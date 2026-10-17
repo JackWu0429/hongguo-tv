@@ -31,14 +31,16 @@ macOS 为系统 WKWebView，Windows 为 WebView2。桌面端不包含 MPV/Media3
 
 ## GitHub 构建与测试包
 
-`.github/workflows/desktop.yml` 在 GitHub Actions 构建，源码仍是私人仓库的
-`codex/dual-player-editions` 分支，不合并 main。
+`.github/workflows/desktop.yml` 在 GitHub Actions 构建。正式发布统一从正式线的
+`vX.Y.Z` 标签触发；手动触发仍保留用于补发和测试。开发功能可以继续在独立分支完成，
+确认后再整合到正式线并打标签。
 
 - macOS universal：窗口与核心均为 x86_64/arm64，ZIP 内为 .app，最低 macOS 11。
 - Windows x64：ZIP 根目录为窗口 EXE、Go 核心 EXE、安装说明；核心不弹控制台。
   需要 Microsoft Edge WebView2 Runtime，缺失时引导访问微软下载页。
-- push/PR 只运行验证；workflow_dispatch 成功后将两包、SHA256 文件和桌面清单作为私人
-  Release 发布，再同步公共下载仓库。两平台都成功、包内容及校验和正确才发布，失败保留 draft。
+- 普通 push/PR 只运行验证；正式 `vX.Y.Z` 标签或 workflow_dispatch 会构建两包、校验
+  内容并发布私人 Release，再同步公共下载仓库。两平台都成功、包内容及校验和正确才
+  发布，失败保留 draft。
 - 不用 Actions artifact 分发，只在公共仓库增加 desktop-v 标签与 desktop-update-v2.json；不修改 Android 签名或更新渠道。
 - 无开发者证书时 macOS 只做 ad hoc 完整性签名，没有 Apple 公证；Windows
   未做代码签名。系统可能提示未知开发者。正式信任签名可后续接入 CI secrets。
