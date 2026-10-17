@@ -34,6 +34,8 @@ jobs:
         run: ./scripts/verify_webos.sh
       - name: Package experimental ipk
         run: ./scripts/build_webos.sh
+      - name: Verify packaged app and service entry points
+        run: python3 scripts/verify_webos_ipk.py "$(find dist/webos -maxdepth 1 -type f -name '*.ipk' -print -quit)"
       - name: Prepare test release assets
         id: release
         run: |

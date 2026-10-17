@@ -5,8 +5,11 @@
   // starts as file://, so keep the adapter small and expose one explicit
   // service boundary instead of changing product code for this platform.
   var SERVICE_BASE = 'http://127.0.0.1:7655';
-  var SERVICE_URI = 'luna://com.aston314.hongguo.webos.service/ping';
+  var SERVICE_URI = 'luna://com.aston314.hongguo.webos.service';
   var rawFetch = window.fetch;
+  var xhrPrototype = window.XMLHttpRequest && window.XMLHttpRequest.prototype;
+  var rawXHROpen = xhrPrototype && xhrPrototype.open;
+  var rawXHRSend = xhrPrototype && xhrPrototype.send;
   var rawSetAttribute = window.Element && window.Element.prototype.setAttribute;
   var rawMediaSrc = window.HTMLMediaElement && Object.getOwnPropertyDescriptor(window.HTMLMediaElement.prototype, 'src');
 
@@ -25,6 +28,10 @@
       try { return new window.Request(serviceURL(input.url), input); } catch (ignored) {}
     }
     return input;
+  }
+
+  function isServiceURL(value) {
+    return typeof value === 'string' && value.indexOf(SERVICE_BASE) === 0;
   }
 
   window.HongguoWebOS = {
@@ -49,40 +56,90 @@
   };
 
   var serviceWake = null;
+  function requestService(method, complete) {
+    var finished = false;
+    var timer;
+    function done(response) {
+      if (finished) return;
+      finished = true;
+      if (timer) window.clearTimeout(timer);
+      complete(response);
+    }
+    try {
+      if (window.webOS && window.webOS.service && window.webOS.service.request) {
+        window.webOS.service.request(SERVICE_URI + '/' + method, {
+          parameters: {},
+          onSuccess: done,
+          onFailure: function () { done(null); }
+        });
+        timer = window.setTimeout(function () { done(null); }, 5000);
+        return;
+      }
+      if (window.PalmServiceBridge) {
+        var bridge = new window.PalmServiceBridge();
+        bridge.onservicecallback = function (response) {
+          try { done(JSON.parse(response)); } catch (ignoredJSON) { done(null); }
+        };
+        bridge.call(SERVICE_URI + '/' + method, '{}');
+        timer = window.setTimeout(function () { done(null); }, 5000);
+        return;
+      }
+    } catch (ignored) {}
+    done(null);
+  }
+
   function wakeService() {
     if (serviceWake) return serviceWake;
     serviceWake = new Promise(function (resolve) {
-      var settled = false;
-      function done() { if (!settled) { settled = true; resolve(); } }
-      try {
-        if (window.webOS && window.webOS.service && window.webOS.service.request) {
-          window.webOS.service.request(SERVICE_URI, {
-            parameters: {},
-            onSuccess: done,
-            onFailure: done
-          });
-          window.setTimeout(done, 1500);
-          return;
-        }
-        if (window.PalmServiceBridge) {
-          var bridge = new window.PalmServiceBridge();
-          bridge.onservicecallback = done;
-          bridge.call(SERVICE_URI, '{}');
-          window.setTimeout(done, 1500);
-          return;
-        }
-      } catch (ignored) {}
-      done();
+      requestService('ping', function (response) { resolve(response); });
     });
+    serviceWake.then(function () {
+      window.setTimeout(function () { serviceWake = null; }, 1000);
+    }, function () { serviceWake = null; });
     return serviceWake;
   }
+
+  function releaseService() {
+    serviceWake = null;
+    requestService('shutdown', function () {});
+  }
+
   window.HongguoWebOS.wakeService = wakeService;
   wakeService();
+
+  if (document.addEventListener) {
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) {
+        serviceWake = null;
+        wakeService();
+      }
+    });
+  }
+  window.addEventListener('pagehide', releaseService);
+
+  if (rawXHROpen && rawXHRSend) {
+    xhrPrototype.open = function (method, target) {
+      var args = Array.prototype.slice.call(arguments);
+      var rewritten = serviceURL(target);
+      args[1] = rewritten;
+      this.__hongguoWebOSServiceURL = isServiceURL(rewritten);
+      return rawXHROpen.apply(this, args);
+    };
+    xhrPrototype.send = function () {
+      var xhr = this;
+      var args = arguments;
+      if (!xhr.__hongguoWebOSServiceURL) return rawXHRSend.apply(xhr, args);
+      return wakeService().then(function () {
+        if (xhr.readyState === 1) rawXHRSend.apply(xhr, args);
+      });
+    };
+  }
 
   if (typeof rawFetch === 'function') {
     window.fetch = function (input, options) {
       var rewritten = inputURL(input);
-      if (typeof rewritten === 'string' && rewritten.indexOf(SERVICE_BASE) === 0) {
+      var target = typeof rewritten === 'string' ? rewritten : rewritten && rewritten.url;
+      if (isServiceURL(target)) {
         return wakeService().then(function () { return rawFetch.call(window, rewritten, options); });
       }
       return rawFetch.call(window, rewritten, options);
