@@ -783,6 +783,7 @@
   "ui.connectingAccount": "正在連線紅果，請稍候…",
   "ui.accountStateFailed": "帳號狀態讀取失敗",
   "ui.accountRequestFailed": "帳號請求失敗",
+  "ui.appCodeFallback": "簡訊驗證碼發送未成功。可在手機紅果 App 取得此手機號碼的驗證碼，再回到這裡輸入並登入。",
   "ui.merged": "已合併 {value} 部短劇。",
   "ui.mergeRemaining": "還有 {value} 部待合併，請完成同步後再試。",
   "ui.mergeWillRetry": "將自動同步到當前帳號，網路恢復後會重試。",

@@ -291,6 +291,60 @@ func TestAccountRejectsMalformedSuccessAndRateLimitsCode(t *testing.T) {
 	}
 }
 
+func TestAccountAppCodeFallbackAllowsLoginAfterSMSFailure(t *testing.T) {
+	var smsLoginCalls atomic.Int32
+	m := fixtureAccount(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/service/2/device_register/":
+			accountFixtureResponse(w, r.URL.Path, false)
+		case "/passport/mobile/send_code/v1/":
+			ioJSON(w, `{"message":"error","data":{"error_code":1003}}`)
+		case "/passport/mobile/sms_login/":
+			smsLoginCalls.Add(1)
+			w.Header().Set("X-Tt-Token", "fixture-secret-token")
+			http.SetCookie(w, &http.Cookie{Name: "sessionid", Value: "fixture-secret-cookie"})
+			ioJSON(w, `{"message":"success","data":{"user_id_str":"123456789","screen_name":"App码用户"}}`)
+		default:
+			accountFixtureResponse(w, r.URL.Path, false)
+		}
+	})
+	if err := m.sendCode(context.Background(), "13800000000"); err == nil {
+		t.Fatal("SMS failure was accepted")
+	}
+	status := m.status()
+	if !status.AppCode || status.Phase != "phone" || status.LoggedIn {
+		t.Fatalf("app-code fallback not exposed: %+v", status)
+	}
+	if err := m.loginSMS(context.Background(), "13800000000", "654321"); err != nil {
+		t.Fatal(err)
+	}
+	status = m.status()
+	if !status.LoggedIn || status.AppCode || status.Phase != "logged_in" || smsLoginCalls.Load() != 1 {
+		t.Fatalf("app-code login did not finish cleanly: %+v", status)
+	}
+}
+
+func TestAccountAppCodeFallbackCancelClearsPendingAttempt(t *testing.T) {
+	m := fixtureAccount(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/passport/mobile/send_code/v1/" {
+			ioJSON(w, `{"message":"error","data":{"error_code":1003}}`)
+			return
+		}
+		accountFixtureResponse(w, r.URL.Path, false)
+	})
+	if err := m.sendCode(context.Background(), "13800000000"); err == nil {
+		t.Fatal("SMS failure was accepted")
+	}
+	if !m.status().AppCode {
+		t.Fatal("app-code fallback missing before cancel")
+	}
+	m.cancelLogin()
+	status := m.status()
+	if status.AppCode || status.Phase != "phone" || status.Phone != "" {
+		t.Fatalf("cancel retained app-code attempt: %+v", status)
+	}
+}
+
 func TestAccountCloudAckFailureAndReplacement(t *testing.T) {
 	var fail atomic.Bool
 	fail.Store(true)

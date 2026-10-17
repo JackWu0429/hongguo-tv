@@ -783,6 +783,7 @@
   "ui.connectingAccount": "Hongguoに接続中です。お待ちください…",
   "ui.accountStateFailed": "アカウント状態の読み込みに失敗しました",
   "ui.accountRequestFailed": "アカウントリクエストに失敗しました",
+  "ui.appCodeFallback": "SMSコードを送信できませんでした。スマホ版紅果アプリでこの電話番号の認証コードを取得し、ここに入力してログインしてください。",
   "ui.merged": "{value}作品を統合しました。",
   "ui.mergeRemaining": "あと{value}作品が統合待ちです。同期後に再試行してください。",
   "ui.mergeWillRetry": "現在のアカウントに自動同期します。ネットワーク復旧後に再試行します。",

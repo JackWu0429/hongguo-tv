@@ -2874,18 +2874,20 @@
     if (accountKeypadOpen() && (data.logged_in || data.phase !== accountKeypadPhase || accountBusy)) numericKeypad.close('context');
     var logged = !!data.logged_in;
     var mfa = !logged && data.phase === 'mfa';
+    var canSubmitAppCode = !!data.app_code_available;
+    var codePhase = data.phase === 'code' || canSubmitAppCode;
     var verification = smsVerification ? smsVerification.snapshot() : { state: 'idle', remaining: 0 };
     var mfaExpired = mfa && (verification.state === 'expired' || data.mfa_expires_at && Date.now() >= data.mfa_expires_at);
     document.getElementById('account-login-form').classList.toggle('is-hidden', logged || mfa);
     document.getElementById('account-profile').classList.toggle('is-hidden', !logged);
     document.getElementById('account-mfa').classList.toggle('is-hidden', !mfa);
-    document.getElementById('account-code-field').classList.toggle('is-hidden', data.phase !== 'code');
-    document.getElementById('account-login').classList.toggle('is-hidden', data.phase !== 'code');
-    document.getElementById('account-change-phone').classList.toggle('is-hidden', data.phase !== 'code');
+    document.getElementById('account-code-field').classList.toggle('is-hidden', !codePhase);
+    document.getElementById('account-login').classList.toggle('is-hidden', !codePhase);
+    document.getElementById('account-change-phone').classList.toggle('is-hidden', !codePhase);
     var phoneInput = document.getElementById('account-phone');
     document.querySelectorAll('.account-input').forEach(function (node) { node.disabled = accountBusy; renderAccountNumber(node); });
-    document.getElementById('account-country').disabled = accountBusy || data.phase === 'code';
-    phoneInput.disabled = accountBusy || data.phase === 'code' && accountPhoneValid(phoneInput.value) && !(accountKeypadOpen() && numericKeypad.snapshot().kind === 'phone');
+    document.getElementById('account-country').disabled = accountBusy || codePhase;
+    phoneInput.disabled = accountBusy || codePhase && accountPhoneValid(phoneInput.value) && !(accountKeypadOpen() && numericKeypad.snapshot().kind === 'phone');
     document.querySelectorAll('#account-page .account-action').forEach(function (node) { node.disabled = accountBusy; });
     document.getElementById('account-cancel').disabled = false;
     document.getElementById('account-verify').disabled = accountBusy || mfaExpired || verification.state === 'waiting';
@@ -2897,7 +2899,7 @@
     var remaining = Math.max(0, Math.ceil((accountCountdownUntil - Date.now()) / 1000));
     var send = document.getElementById('account-send-code');
     send.disabled = accountBusy || remaining > 0;
-    send.textContent = remaining > 0 ? (data.phase === 'code' && data.sms_state === 'sent' ? uiText('ui.resendIn', '{value} 秒后重发', { value: remaining }) : uiText('ui.retryIn', '{value} 秒后可重试', { value: remaining })) : data.phase === 'code' ? uiText('ui.resend', '重新发送') : uiText('ui.getCode', '获取验证码');
+    send.textContent = remaining > 0 ? (codePhase && data.sms_state === 'sent' ? uiText('ui.resendIn', '{value} 秒后重发', { value: remaining }) : uiText('ui.retryIn', '{value} 秒后可重试', { value: remaining })) : codePhase ? uiText('ui.resend', '重新发送') : uiText('ui.getCode', '获取验证码');
     document.getElementById('account-sync').disabled = !logged || accountBusy || data.sync && data.sync.state === 'syncing';
     var guestHistory = data.guest_history || {};
     document.getElementById('account-import-history').disabled = !logged || accountBusy || !(guestHistory.available > 0);
@@ -2921,7 +2923,7 @@
     var syncLabel = !logged ? uiText('ui.notLoggedInLocal', '未登录 · 记录保存在本机') : ({ syncing: uiText('ui.syncing', '正在同步…'), pending: uiText('ui.syncPending', '等待同步'), error: uiText('ui.syncIncomplete', '同步暂未完成'), idle: sync.last_sync ? uiText('ui.synced', '已同步') : uiText('ui.notSynced', '尚未同步') })[sync.state] || uiText('ui.syncPending', '等待同步');
     document.getElementById('account-sync-state').textContent = syncLabel;
     document.getElementById('account-sync-detail').textContent = sync.error ? localizedError(sync.error, 'ui.syncIncomplete', '同步暂未完成') : (logged ? (sync.pending ? uiText('ui.pendingRecords', '{value} 项记录待同步。', { value: sync.pending }) : uiText('ui.autoSync', '收藏、点赞与观看进度会自动同步。')) + (sync.last_sync ? uiText('ui.lastSync', ' 最近同步：{value}', { value: new Date(sync.last_sync).toLocaleTimeString() }) : '') : uiText('ui.loginSyncCopy', '收藏、点赞、观看历史和播放进度会与红果账号同步。'));
-    document.getElementById('account-message').textContent = accountBusy ? uiText('ui.connectingAccount', '正在连接红果，请稍候…') : accountNotice || (data.error ? localizedError(data.error, 'ui.accountRequestFailed', '账号请求失败') : '');
+    document.getElementById('account-message').textContent = accountBusy ? uiText('ui.connectingAccount', '正在连接红果，请稍候…') : accountNotice || (canSubmitAppCode ? uiText('ui.appCodeFallback', '短信验证码发送未成功。可在手机红果 App 获取此手机号的验证码，再回到这里输入并登录。') : data.error ? localizedError(data.error, 'ui.accountRequestFailed', '账号请求失败') : '');
     document.querySelector('.side-item[data-page="account"] span:last-child').textContent = uiText('nav.account', '我的');
     if (pageMode() === 'account') document.getElementById('page-context').textContent = uiText('nav.account', '我的');
     var current = document.activeElement;
@@ -2982,7 +2984,7 @@
     var phone = document.getElementById('account-phone').value.trim();
     if (!accountPhoneValid(phone)) { setAccountMessage(uiText('content.phoneInvalid', '请输入正确的{country}手机号', { country: phoneCountryName(accountPhoneCountry()) })); goFocus(document.getElementById('account-phone')); return; }
     accountRequest('send-code', { phone: phone, country_code: accountPhoneCountryCode }).then(function (ok) {
-      if (pageMode() === 'account') goFocus(ok ? document.getElementById('account-code') : firstVisible('.account-input'));
+      if (pageMode() === 'account') goFocus(ok || accountData && accountData.app_code_available ? document.getElementById('account-code') : firstVisible('.account-input'));
     });
   }
   function accountLogin() {

@@ -40,6 +40,7 @@ type accountStatus struct {
 	SMSQRCode    string             `json:"sms_qr,omitempty"`
 	MFAExpires   int64              `json:"mfa_expires_at,omitempty"` // Local login-session safety deadline, not a server TTL.
 	Error        string             `json:"error,omitempty"`
+	AppCode      bool               `json:"app_code_available,omitempty"`
 	Sync         syncStatus         `json:"sync"`
 	GuestHistory guestHistoryStatus `json:"guest_history"`
 }
@@ -65,6 +66,7 @@ type accountManager struct {
 	login            *loginAttempt
 	phase, lastError string
 	busy             bool
+	appCodeAllowed   bool
 	codeAfter        time.Time
 	smsState         string
 	generation       uint64
@@ -203,6 +205,7 @@ func (m *accountManager) statusLocked() accountStatus {
 			s.MFAExpires = m.login.mfaExpires.UnixMilli()
 		}
 	}
+	s.AppCode = m.appCodeAllowed && m.login != nil && m.phase != "mfa" && m.disk.Profile == nil
 	if left := time.Until(m.codeAfter); left > 0 {
 		s.RetryAfter = int(math.Ceil(left.Seconds()))
 	}
@@ -286,6 +289,7 @@ func (m *accountManager) beginLogin(ctx context.Context, phone string, send bool
 		}
 		m.generation++
 		m.login = &loginAttempt{client: m.newClient(m.disk.Session), phone: phone, expires: time.Now().Add(10 * time.Minute)}
+		m.appCodeAllowed = false
 		m.smsState = "preparing"
 	}
 	if m.login == nil || m.login.phone != phone || time.Now().After(m.login.expires) {
@@ -345,6 +349,7 @@ func (m *accountManager) sendCode(ctx context.Context, phone string) error {
 		// Retain a guard if the request times out after delivery is possible.
 		m.codeAfter = time.Now().Add(time.Minute)
 		m.smsState = "uncertain"
+		m.appCodeAllowed = true
 	} else {
 		m.smsState = "rejected"
 		m.codeAfter = time.Time{}
@@ -385,6 +390,9 @@ func (m *accountManager) sendCode(ctx context.Context, phone string) error {
 	}
 	m.mu.Lock()
 	if g == m.generation {
+		if sent {
+			m.appCodeAllowed = false
+		}
 		m.smsState = state
 		if retry > 0 {
 			m.codeAfter = time.Now().Add(time.Duration(retry) * time.Second)
@@ -545,6 +553,7 @@ func (m *accountManager) finishLogin(ctx context.Context, g uint64, a *loginAtte
 	m.disk = disk
 	m.store = store
 	m.login = nil
+	m.appCodeAllowed = false
 	m.phase = "logged_in"
 	m.syncError = ""
 	m.lastSync = storeCloudLastSync(store)
@@ -570,6 +579,7 @@ func (m *accountManager) logout() error {
 	m.disk = disk
 	m.store = m.guest
 	m.login = nil
+	m.appCodeAllowed = false
 	m.busy = false
 	m.phase = "phone"
 	m.lastError = ""
@@ -589,6 +599,7 @@ func (m *accountManager) cancelLogin() {
 		m.login.cancelRequest()
 	}
 	m.login = nil
+	m.appCodeAllowed = false
 	m.busy = false
 	m.phase = "phone"
 	m.lastError = ""
