@@ -68,7 +68,7 @@
 
     <section class="main-surface" id="main-surface" tabindex="-1">
       <div class="top-bar">
-        <div class="page-context" id="page-context" data-i18n="nav.recommend">推荐</div>
+        <button type="button" class="page-context" id="page-context" data-action="return-player" data-focus="player-return" aria-label="返回" data-i18n-aria-label="common.back" disabled>推荐</button>
         <div class="channel-tabs" id="channel-tabs" data-focus-zone="channels" aria-label="推荐频道" data-i18n-aria-label="hero.recommendChannels">
           <button class="channel-tab" data-focus="channel-follow" data-i18n="channel.follow">关注</button>
           <button class="channel-tab" data-focus="channel-comic" data-i18n="channel.comic">漫剧</button>
@@ -377,10 +377,21 @@
       <section class="detail-modal is-hidden" id="detail-modal" aria-hidden="true" aria-label="选集与系列剧" data-i18n-aria-label="modal.detail">
         <div class="detail-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-title">
           <div class="detail-header">
-            <span id="detail-title" data-i18n="modal.selectEpisode">选集</span>
-            <button class="detail-close modal-action" id="detail-close" data-focus="detail-close" aria-label="关闭" data-i18n-aria-label="common.close">×</button>
+            <img id="detail-cover" class="detail-cover is-empty" alt="">
+            <div class="detail-heading-copy">
+              <div class="detail-title-row">
+                <div class="detail-title-copy"><h2 id="detail-title" data-i18n="modal.selectEpisode">选集</h2><p id="detail-meta"></p></div>
+                <div class="detail-header-actions">
+                  <button type="button" class="detail-header-action" id="detail-follow" data-focus="detail-follow" aria-pressed="false"><svg aria-hidden="true"><use href="#icon-bell" xlink:href="#icon-bell"></use></svg><span data-i18n="ui.follow">追更</span></button>
+                  <button type="button" class="detail-header-action" id="detail-favorite" data-focus="detail-favorite" aria-pressed="false"><svg aria-hidden="true"><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><span data-i18n="ui.favorite">收藏</span></button>
+                </div>
+              </div>
+              <p id="detail-intro" class="detail-intro"></p>
+            </div>
+            <button type="button" class="detail-close modal-action" id="detail-close" data-focus="detail-close" aria-label="关闭" data-i18n-aria-label="common.close">×</button>
           </div>
-          <div class="detail-tabs" role="tablist" aria-label="选集与系列剧" data-i18n-aria-label="modal.detail"><button class="detail-tab is-active" id="detail-tab-episodes" data-focus="detail-tab-episodes" role="tab" aria-selected="true" aria-controls="detail-episode-panel" data-i18n="modal.selectEpisode">选集</button><button class="detail-tab" id="detail-tab-series" data-focus="detail-tab-series" role="tab" aria-selected="false" aria-controls="detail-series-panel" data-i18n="modal.series">系列剧<span id="detail-series-count"></span></button><button class="detail-tab" id="detail-tab-reviews" data-focus="detail-tab-reviews" role="tab" aria-selected="false" aria-controls="detail-reviews-panel" data-i18n="modal.reviews">剧评</button><button class="detail-tab" id="detail-tab-related" data-focus="detail-tab-related" role="tab" aria-selected="false" aria-controls="detail-related-panel" data-i18n="modal.related">相关推荐</button></div>
+          <div class="detail-cast is-hidden" id="detail-cast"><strong class="detail-cast-label" data-i18n="ui.cast">演员</strong><div class="detail-cast-strip" id="detail-cast-strip" data-focus-zone="detailCast"></div><button type="button" class="detail-cast-more is-hidden" id="detail-cast-more" data-focus="detail-cast-more" aria-haspopup="dialog" aria-controls="detail-cast-modal"></button></div>
+          <div class="detail-tabs" role="tablist" aria-label="选集与系列剧" data-i18n-aria-label="modal.detail"><button class="detail-tab is-active" id="detail-tab-episodes" data-focus="detail-tab-episodes" role="tab" aria-selected="true" aria-controls="detail-episode-panel" data-i18n="modal.selectEpisode">选集</button><button class="detail-tab" id="detail-tab-series" data-focus="detail-tab-series" role="tab" aria-selected="false" aria-controls="detail-series-panel"><span data-i18n="modal.series">系列剧</span><span id="detail-series-count"></span></button><button class="detail-tab" id="detail-tab-reviews" data-focus="detail-tab-reviews" role="tab" aria-selected="false" aria-controls="detail-reviews-panel" data-i18n="modal.reviews">剧评</button><button class="detail-tab" id="detail-tab-related" data-focus="detail-tab-related" role="tab" aria-selected="false" aria-controls="detail-related-panel" data-i18n="modal.related">相关推荐</button></div>
           <div id="detail-episode-panel" role="tabpanel" aria-labelledby="detail-tab-episodes">
           <div class="detail-progress" id="detail-progress" role="status" aria-live="polite" data-i18n="content.readingEpisodes">正在读取集数…</div>
           <button class="detail-retry modal-action is-hidden" id="detail-retry" data-focus="detail-retry" data-i18n="common.retry">重试</button>
@@ -389,6 +400,7 @@
           <div id="detail-series-panel" class="detail-series-panel is-hidden" role="tabpanel" aria-labelledby="detail-tab-series"><div id="detail-series-list" class="detail-series-list"></div><div class="detail-series-message" id="detail-series-message" role="status" aria-live="polite"></div><button class="series-retry is-hidden" id="detail-series-retry" data-focus="detail-series-retry" data-i18n="common.retry">重试</button></div>
           <div id="detail-reviews-panel" class="detail-reviews-panel is-hidden" role="tabpanel" aria-labelledby="detail-tab-reviews"><div id="detail-reviews-list" class="detail-reviews-list"></div><div id="detail-reviews-message" class="detail-series-message" role="status" aria-live="polite"></div></div>
           <div id="detail-related-panel" class="detail-related-panel is-hidden" role="tabpanel" aria-labelledby="detail-tab-related"><div id="detail-related-list" class="detail-related-list"></div><div id="detail-related-message" class="detail-series-message" role="status" aria-live="polite"></div></div>
+          <section class="detail-cast-modal is-hidden" id="detail-cast-modal" aria-hidden="true"><div class="detail-cast-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-cast-title"><div class="detail-cast-heading"><h2 id="detail-cast-title" data-i18n="ui.allActors">全部演员</h2><button type="button" id="detail-cast-close" class="detail-cast-close" data-focus="detail-cast-close" aria-label="关闭" data-i18n-aria-label="common.close">×</button></div><div id="detail-cast-all" class="detail-cast-all" data-focus-zone="detailCastModal"></div></div></section>
         </div>
       </section>
 

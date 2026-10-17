@@ -56,6 +56,9 @@
     support: '.support-card, .support-close',
     rankModal: '.rank-filter-option, .rank-filter-close, .rank-filter-apply',
     actorWorks: '.actor-works-close, .actor-works-retry, .actor-work-card',
+    detailHeaderActions: '.detail-header-action, #detail-close, .detail-cast-more',
+    detailCast: '.detail-cast-item, #detail-cast-more',
+    detailCastModal: '.detail-cast-close, .detail-cast-modal-item',
     confirmation: '.confirm-button',
     playerOptions: '.player-option, #player-compose-input, #player-diagnostics-scroll',
     endRecommendations: '.end-recommendation-card, #end-recommendations-close',
@@ -252,6 +255,8 @@
   var actorWorksItem = null;
   var actorWorksRequest = null;
   var actorWorksGeneration = 0;
+  var detailCastOpen = false;
+  var detailCastReturnFocus = null;
   var rankView = 'official';
   var radarView = 'official';
   var radarData = null;
@@ -787,6 +792,7 @@
       else if (supportModalOpen) { if (!element.closest('#support-modal')) return; }
       else if (rankFilterOpen) { if (!element.closest('#rank-filter-modal')) return; }
       else if (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) { if (!element.closest('#actor-works-modal')) return; }
+      else if (detailCastOpen) { if (!element.closest('#detail-cast-modal')) return; }
       else if (confirmOpen) { if (!element.closest('#confirm-modal')) return; }
       else if (playerOptionsOpen) { if (!element.closest('#player-options')) return; }
       else if (discussionOpen) { if (!element.closest('#discussion-panel')) return; }
@@ -873,6 +879,9 @@
     if (element.classList.contains('related-card')) return 'detailRelated';
     if (element.classList.contains('rank-filter-option') || element.classList.contains('rank-filter-close') || element.classList.contains('rank-filter-apply')) return 'rankModal';
     if (element.classList.contains('actor-works-close') || element.classList.contains('actor-works-retry') || element.classList.contains('actor-work-card')) return 'actorWorks';
+    if (element.classList.contains('detail-header-action') || element.id === 'detail-close') return 'detailHeaderActions';
+    if (element.classList.contains('detail-cast-item') || element.id === 'detail-cast-more') return 'detailCast';
+    if (element.classList.contains('detail-cast-close') || element.classList.contains('detail-cast-modal-item')) return 'detailCastModal';
     if (element.classList.contains('follow-action')) return 'followActions';
     if (element.classList.contains('follow-notification-row') || element.classList.contains('follow-notification-action')) return 'followNotifications';
     if (element.classList.contains('follow-card')) return 'followItems';
@@ -1080,10 +1089,35 @@
       if (direction === 'down') return moveGrid('.actor-work-card', current, direction);
       return null;
     }
+    if (zone === 'detailCastModal') {
+      if (current.classList.contains('detail-cast-close')) return direction === 'down' ? firstVisible('.detail-cast-modal-item') : null;
+      if (direction === 'left' || direction === 'right') return moveGrid('.detail-cast-modal-item', current, direction);
+      if (direction === 'up') return moveGrid('.detail-cast-modal-item', current, direction) || document.getElementById('detail-cast-close');
+      if (direction === 'down') return moveGrid('.detail-cast-modal-item', current, direction);
+      return null;
+    }
     if (zone === 'detailTabs') {
       if (direction === 'left' || direction === 'right') return moveWithinZone('detailTabs', current, direction);
-      if (direction === 'up') return document.getElementById('detail-close');
+      if (direction === 'up') return firstVisible('.detail-cast-item') || document.getElementById('detail-close');
       if (direction === 'down') return detailTab === 'series' ? currentSeriesRow() || firstVisible('.series-row') || firstVisible('.series-retry') : detailTab === 'reviews' ? firstVisible('.review-card') : detailTab === 'related' ? firstVisible('.related-card') : currentDetailEpisode() || firstVisible('#detail-retry');
+      return null;
+    }
+    if (zone === 'detailHeaderActions') {
+      if (current.id === 'detail-close') return direction === 'down' ? document.querySelector('.detail-tab.is-active') : direction === 'left' ? document.getElementById('detail-favorite') : null;
+      if (direction === 'left' || direction === 'right') return moveWithinZone('detailHeaderActions', current, direction);
+      if (direction === 'down') return firstVisible('.detail-cast-item') || document.querySelector('.detail-tab.is-active');
+      return null;
+    }
+    if (zone === 'detailCast') {
+      if (current.id === 'detail-cast-more') {
+        if (direction === 'left') return moveGrid('.detail-cast-strip .detail-cast-item', current, direction) || firstVisible('.detail-cast-item');
+        if (direction === 'down') return document.querySelector('.detail-tab.is-active');
+        if (direction === 'up') return document.getElementById('detail-close');
+        return null;
+      }
+      if (direction === 'left' || direction === 'right') return moveGrid('.detail-cast-strip .detail-cast-item', current, direction) || (direction === 'right' ? firstVisible('#detail-cast-more') : null);
+      if (direction === 'up') return document.getElementById('detail-close');
+      if (direction === 'down') return document.querySelector('.detail-tab.is-active');
       return null;
     }
     if (zone === 'seriesRows') {
@@ -2343,6 +2377,7 @@
     if (followNotificationViewOpen) { closeFollowNotifications(); return true; }
     if (rankFilterOpen) { closeRankFilter(true); return true; }
     if (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) { closeActorWorks(true); return true; }
+    if (detailCastOpen) { closeDetailCast(true); return true; }
     if (confirmOpen) closeConfirmation();
     else if (playerOptionsOpen) closePlayerOptions();
     else if (detailModalOpen) closeDetail();
@@ -2533,6 +2568,8 @@
           libraryData = payload.data;
           libraryLoaded = true;
           updateSavedButtons();
+          var changedSeriesID = change.drama && change.drama.series_id || change.series_id;
+          if (detailModalOpen && currentDetail && currentDetail.series_id === changedSeriesID) updateDetailActions();
           updateDetailProgress();
           if (isLibraryPage()) renderLibrary(!!quiet);
           return true;
@@ -2576,6 +2613,11 @@
     button.disabled = true; button.setAttribute('aria-busy', 'true');
     fetchData('/api/v1/follow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ series_id: item.series_id, enabled: enabled }) }).then(function () {
       if (featuredItem && featuredItem.series_id === item.series_id) { featuredItem.following_update = enabled; featuredItem.followed = enabled; updateSavedButtons(); }
+      if (currentDetail && currentDetail.series_id === item.series_id) {
+        currentDetail.following_update = enabled;
+        currentDetail.followed = enabled;
+        updateDetailActions();
+      }
       followPager.loaded = false; if (pageMode() === 'follows') followPager.reset({});
       showNotice(enabled ? uiText('ui.followAdded', '已加入追更') : uiText('ui.followRemoved', '已取消追更'));
     }).catch(function (error) { showNotice(uiText('ui.followFailed', '追更操作未完成：{error}', { error: localizedError(error, 'common.operationFailed', '操作未完成，请重试。') })); }).then(function () { button.disabled = false; button.removeAttribute('aria-busy'); });
@@ -4036,6 +4078,7 @@
     }
     shell.dataset.mode = 'player';
     shell.classList.add('is-player');
+    document.getElementById('page-context').disabled = false;
     mainSurface.classList.remove('has-search', 'has-placeholder', 'has-workspace');
     hideWorkspacePages();
     searchPage.classList.add('is-hidden');
@@ -4060,6 +4103,12 @@
     if (pageMode() === 'recommend') goFocus(firstContentFocus());
     else if (target && document.contains(target)) goFocus(target);
     else goFocus(firstContentFocus());
+  }
+
+  function handlePlayerContextClick() {
+    if (pageMode() !== 'player') return false;
+    leavePlayer();
+    return true;
   }
 
   function posterSeasonLabel(item) {
@@ -4487,6 +4536,105 @@
     if (restore) goFocus(document.getElementById('rank-filter-open'));
   }
 
+  function updateDetailActions() {
+    if (!currentDetail) return;
+    var favorite = document.getElementById('detail-favorite');
+    var follow = document.getElementById('detail-follow');
+    var entry = libraryEntry(currentDetail.series_id);
+    var saved = !!(entry && entry.favorite_at);
+    favorite.classList.toggle('is-active', saved);
+    favorite.setAttribute('aria-pressed', String(saved));
+    favorite.setAttribute('aria-label', uiText(saved ? 'ui.favorited' : 'ui.favorite', saved ? '已收藏' : '收藏'));
+    favorite.querySelector('span').textContent = uiText(saved ? 'ui.favorited' : 'ui.favorite', saved ? '已收藏' : '收藏');
+    var following = followIsActive(currentDetail);
+    var ended = followState(currentDetail) === 'ended';
+    follow.classList.toggle('is-active', following);
+    follow.classList.toggle('is-hidden', ended);
+    follow.setAttribute('aria-pressed', String(following));
+    follow.setAttribute('aria-label', uiText(following ? 'ui.followed' : 'ui.follow', following ? '已追更' : '追更'));
+    follow.querySelector('span').textContent = uiText(following ? 'ui.followed' : 'ui.follow', following ? '已追更' : '追更');
+  }
+
+  function actorButton(name, actor, className) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = className;
+    button.setAttribute('aria-label', actor.id ? uiText('ui.viewActorWorks', '查看{name}的作品', { name: name }) : name);
+    button.disabled = !actor.id;
+    if (actor.id) {
+      button.dataset.actorId = actor.id;
+      button.dataset.focus = 'detail-actor-' + actor.id;
+      var image = document.createElement('img');
+      image.alt = '';
+      if (actor.avatar) image.src = actor.avatar;
+      else image.className = 'is-hidden';
+      button.appendChild(image);
+      if (!actor.avatar) {
+        var initial = document.createElement('span');
+        initial.className = 'detail-cast-avatar';
+        initial.textContent = (name || '演').slice(0, 1);
+        button.appendChild(initial);
+      }
+      var label = document.createElement('span');
+      label.textContent = name;
+      button.appendChild(label);
+      button.addEventListener('click', function () {
+        openActorWorks({ actor_id: actor.id, title: name, intro: '', cover: actor.avatar });
+      });
+    } else {
+      var fallback = document.createElement('span');
+      fallback.className = 'detail-cast-avatar';
+      fallback.textContent = (name || '演').slice(0, 1);
+      var fallbackName = document.createElement('span');
+      fallbackName.textContent = name;
+      button.appendChild(fallback);
+      button.appendChild(fallbackName);
+    }
+    return button;
+  }
+
+  function renderDetailActors(actors) {
+    var root = document.getElementById('detail-cast');
+    var strip = document.getElementById('detail-cast-strip');
+    var more = document.getElementById('detail-cast-more');
+    strip.innerHTML = '';
+    more.classList.add('is-hidden');
+    actors = (actors || []).filter(function (actor) { return actor && actor.name; });
+    root.classList.toggle('is-hidden', !actors.length);
+    actors.slice(0, 5).forEach(function (actor) {
+      strip.appendChild(actorButton(actor.name, actor, 'detail-cast-item'));
+    });
+    if (actors.length > 5) {
+      more.textContent = uiText('ui.allActorsCount', '全部 {count} 位', { count: actors.length });
+      more.classList.remove('is-hidden');
+    }
+    var all = document.getElementById('detail-cast-all');
+    all.innerHTML = '';
+    actors.forEach(function (actor) {
+      all.appendChild(actorButton(actor.name, actor, 'detail-cast-modal-item'));
+    });
+  }
+
+  function openDetailCast() {
+    if (!currentDetail || !(currentDetail.actors || []).length) return;
+    detailCastReturnFocus = document.activeElement;
+    detailCastOpen = true;
+    var modal = document.getElementById('detail-cast-modal');
+    modal.classList.remove('is-hidden');
+    modal.setAttribute('aria-hidden', 'false');
+    goFocus(firstVisible('.detail-cast-modal-item') || document.getElementById('detail-cast-close'));
+  }
+
+  function closeDetailCast(restore) {
+    detailCastOpen = false;
+    var modal = document.getElementById('detail-cast-modal');
+    modal.classList.add('is-hidden');
+    modal.setAttribute('aria-hidden', 'true');
+    var target = detailCastReturnFocus;
+    detailCastReturnFocus = null;
+    if (restore !== false) goFocus(target && document.contains(target) ? target : firstVisible('.detail-cast-item') || document.getElementById('detail-tab-episodes'));
+  }
+
   function renderActorWorks(result) {
     var modal = document.getElementById('actor-works-modal');
     var list = document.getElementById('actor-works-list');
@@ -4508,7 +4656,13 @@
       var title = document.createElement('strong'); title.className = 'actor-work-title'; title.textContent = item.title || uiText('ui.unnamedDrama', '未命名短剧');
       var meta = document.createElement('span'); meta.className = 'actor-work-meta'; meta.textContent = dramaMeta(item);
       card.appendChild(image); card.appendChild(title); card.appendChild(meta);
-      card.addEventListener('click', function () { var returnFocus = actorWorksReturnFocus; closeActorWorks(false); startPlayer(item, returnFocus); });
+      card.addEventListener('click', function () {
+        var returnFocus = actorWorksReturnFocus;
+        closeActorWorks(false);
+        if (detailCastOpen) closeDetailCast(false);
+        if (detailModalOpen) closeDetail();
+        startPlayer(item, returnFocus);
+      });
       list.appendChild(card);
     });
     goFocus(firstVisible('.actor-work-card'));
@@ -5506,6 +5660,18 @@
     var focusedIndex = focused && focused.classList.contains('detail-episode') ? focused.dataset.index : null;
     var retryFocused = focused === nodes.retry;
     nodes.title.textContent = item.title || uiText('modal.selectEpisode', '选集');
+    var cover = document.getElementById('detail-cover');
+    if (item.cover || item.cover_fallback) { cover.classList.remove('is-empty'); setCover(cover, item); }
+    else { cover.removeAttribute('src'); cover.classList.add('is-empty'); }
+    var meta = [];
+    if (item.episode_count) meta.push(uiText('ui.totalEpisodes', '共{count}集', { count: item.episode_count }));
+    if (item.score) meta.push(item.score + uiText('ui.scoreSuffix', '分'));
+    if (item.tags && item.tags.length) meta.push(item.tags.slice(0, 3).join(' · '));
+    document.getElementById('detail-meta').textContent = meta.join(' · ') || uiText('app.name', '红果短剧');
+    document.getElementById('detail-intro').textContent = item.intro || '';
+    document.getElementById('detail-intro').classList.toggle('is-hidden', !item.intro);
+    renderDetailActors(item.actors || []);
+    updateDetailActions();
     nodes.retry.classList.add('is-hidden');
     nodes.episodes.innerHTML = '';
     nodes.episodes.scrollTop = 0;
@@ -5560,6 +5726,8 @@
 
   function openDetail(item, initialTab) {
     if (!item || !item.series_id) return;
+    if (actorWorksOpen) closeActorWorks(false);
+    if (detailCastOpen) closeDetailCast(false);
     closePlayerOptions(false); clearTimeout(controlsTimer); revealControls();
     detailReturnFocus = document.activeElement;
     detailModalOpen = true;
@@ -5577,6 +5745,8 @@
   }
 
   function closeDetail() {
+    if (actorWorksOpen) closeActorWorks(false);
+    if (detailCastOpen) closeDetailCast(false);
     resetSeriesPanel();
     ++detailGeneration;
     seriesRootID = '';
@@ -5642,6 +5812,7 @@
     var label = item.querySelector('span:last-child');
     shell.dataset.mode = item.dataset.page || 'recommend';
     document.getElementById('page-context').textContent = label ? label.textContent : uiText('ui.page', '页面');
+    document.getElementById('page-context').disabled = true;
     shell.classList.remove('is-player');
     mainSurface.classList.remove('has-search', 'has-workspace', 'has-placeholder');
     searchPage.classList.add('is-hidden');
@@ -5798,6 +5969,7 @@
       else if (item.dataset.action === 'retry') {
         if (playbackRequest) { goFocus(document.getElementById('hero-feed-focus')); playFeedItem(playbackRequest.index, playbackRequest.episode, playbackRequest.position); }
       }
+      else if (item.dataset.action === 'return-player') handlePlayerContextClick();
       else if (item.dataset.action === 'return-recommend') {
         var recommend = document.querySelector('.side-item[data-page="recommend"]');
         if (recommend) {
@@ -5841,6 +6013,12 @@
     });
   }
   document.getElementById('detail-close').addEventListener('click', closeDetail);
+  document.getElementById('detail-follow').addEventListener('click', function (event) { event.stopPropagation(); toggleFollow(currentDetail, document.getElementById('detail-follow')); });
+  document.getElementById('detail-favorite').addEventListener('click', function (event) { event.stopPropagation(); toggleSaved(currentDetail, 'favorite', document.getElementById('detail-favorite')); });
+  document.getElementById('detail-cast-more').addEventListener('click', openDetailCast);
+  document.getElementById('detail-cast-close').addEventListener('click', function () { closeDetailCast(true); });
+  document.getElementById('actor-works-close').addEventListener('click', function () { closeActorWorks(true); });
+  document.getElementById('actor-works-retry').addEventListener('click', retryActorWorks);
   document.getElementById('detail-tab-episodes').addEventListener('click', function () { selectDetailTab('episodes'); });
   document.getElementById('detail-tab-series').addEventListener('click', function () { selectDetailTab('series'); });
   document.getElementById('detail-tab-reviews').addEventListener('click', function () { selectDetailTab('reviews'); });

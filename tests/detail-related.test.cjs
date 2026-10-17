@@ -70,3 +70,65 @@ test('empty recommendation response explains the empty state instead of leaving 
   assert.equal(f.message.textContent, '暂无相关推荐。');
   assert.equal(f.c.focused, f.tab);
 });
+
+test('detail actor strip limits the first row and exposes the remaining cast in a separate list', () => {
+  const actorStart = source.indexOf('  function actorButton(');
+  const actorEnd = source.indexOf('  function renderActorWorks(', actorStart);
+  const actorSource = source.slice(actorStart, actorEnd);
+  const nodes = {};
+  function element(tag) {
+    const classes = new Set();
+    return {
+      tagName: tag.toUpperCase(), children: [], dataset: {}, attributes: {}, disabled: false,
+      appendChild(child) { this.children.push(child); return child; },
+      addEventListener(type, handler) { this.handlers = this.handlers || {}; this.handlers[type] = handler; },
+      setAttribute(name, value) { this.attributes[name] = value; },
+      classList: {
+        add(name) { classes.add(name); }, remove(name) { classes.delete(name); },
+        toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); },
+        contains(name) { return classes.has(name); }
+      }
+    };
+  }
+  ['detail-cast', 'detail-cast-strip', 'detail-cast-more', 'detail-cast-all'].forEach(id => { nodes[id] = element('div'); });
+  nodes['detail-cast-more'].classList.add('is-hidden');
+  Object.defineProperty(nodes['detail-cast-strip'], 'innerHTML', { set() { this.children = []; } });
+  Object.defineProperty(nodes['detail-cast-all'], 'innerHTML', { set() { this.children = []; } });
+  const context = vm.createContext({
+    document: { createElement: element, getElementById(id) { return nodes[id]; } },
+    openActorWorks(item) { context.openedActor = item; }
+  });
+  vm.runInContext(actorSource, context);
+
+  const actors = Array.from({ length: 7 }, (_, index) => ({ id: String(100 + index), name: '演员' + index }));
+  context.renderDetailActors(actors);
+
+  assert.equal(nodes['detail-cast-strip'].children.length, 5);
+  assert.equal(nodes['detail-cast-all'].children.length, 7);
+  assert.equal(nodes['detail-cast-more'].textContent, '全部 7 位');
+  assert.equal(nodes['detail-cast-more'].classList.contains('is-hidden'), false);
+  nodes['detail-cast-strip'].children[0].handlers.click();
+  assert.equal(context.openedActor.actor_id, '100');
+  assert.equal(context.openedActor.title, '演员0');
+
+  context.renderDetailActors([]);
+  assert.equal(nodes['detail-cast'].classList.contains('is-hidden'), true);
+  assert.equal(nodes['detail-cast-strip'].children.length, 0);
+});
+
+test('actor works dialog is a top-level overlay above the detail dialog', () => {
+  const indexSource = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/index.html'), 'utf8');
+  const sectionTags = /<section\b[^>]*>|<\/section>/g;
+  const ancestors = [];
+  let match;
+  while ((match = sectionTags.exec(indexSource))) {
+    const tag = match[0];
+    if (tag.startsWith('</')) ancestors.pop();
+    else if (tag.includes('class="actor-works-modal')) {
+      assert.equal(ancestors.some(parent => parent.includes('class="detail-modal')), false);
+      break;
+    } else ancestors.push(tag);
+  }
+  assert.match(fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8'), /\.actor-works-modal\s*\{[^}]*z-index:\s*31/);
+  assert.match(source, /function closeActorWorks\(restore\)[\s\S]*?actorWorksReturnFocus && document\.contains\(actorWorksReturnFocus\)[\s\S]*?if \(restore !== false\) goFocus\(target\)/);
+});
