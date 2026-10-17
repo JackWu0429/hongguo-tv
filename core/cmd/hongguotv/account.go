@@ -468,7 +468,7 @@ func (m *accountManager) verifyLogin(ctx context.Context) error {
 	m.busy = true
 	m.mu.Unlock()
 	defer a.cancelRequest()
-	p, err := a.client.verifyMFA(ctx, a.mfa)
+	p, err := a.client.verifyMFA(ctx, a.mfa, a.phone)
 	if err == nil && passportErrorCode(p) == "1045" {
 		m.endLogin(g, "mfa", nil)
 		return nil

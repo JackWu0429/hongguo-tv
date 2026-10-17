@@ -39,9 +39,9 @@ func TestCanonicalAccountPhoneAndMask(t *testing.T) {
 	}
 }
 
-func TestPassportFormUsesCanonicalInternationalNumber(t *testing.T) {
-	if got := passportForm("+85261234567").Get("mobile"); got != passportXOR("+85261234567") {
-		t.Fatalf("passport form did not preserve selected country code")
+func TestPassportFormUsesReferenceInternationalNumber(t *testing.T) {
+	if got := passportForm("+85261234567").Get("mobile"); got != passportXOR("+8526123 4567") {
+		t.Fatalf("passport form did not serialize the selected country number")
 	}
 }
 

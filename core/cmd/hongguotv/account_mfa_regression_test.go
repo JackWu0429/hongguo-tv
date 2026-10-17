@@ -48,7 +48,7 @@ func TestUpSMSVerificationMatchesReferenceWireContract(t *testing.T) {
 		ioJSON(w, `{"message":"error","data":{"error_code":1045}}`)
 	})
 	client := m.newClient(m.disk.Session)
-	if _, err := client.verifyMFA(context.Background(), &accountMFA{EncryptUID: "fixture-uid", CodeKey: "fixture-key", LogID: "fixture-log"}); err != nil {
+	if _, err := client.verifyMFA(context.Background(), &accountMFA{EncryptUID: "fixture-uid", CodeKey: "fixture-key", LogID: "fixture-log"}, "13800000000"); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -1,0 +1,147 @@
+{
+  "source": "hongguo-player v1.2.4 macOS arm64 instructions; independent Python RC4 oracle, not a live login capture",
+  "packageSha256": "d8e8eaf5cc6f5fa61101be90bb2e520fa83248dab46239f66d02cc5c10bcc13b",
+  "regions": [
+    {
+      "code": "+86",
+      "name": "中国大陆",
+      "min": 11,
+      "max": 11,
+      "local": "13800000000",
+      "wire": "+8613800000000"
+    },
+    {
+      "code": "+852",
+      "name": "中国香港",
+      "min": 8,
+      "max": 8,
+      "local": "61234567",
+      "wire": "+8526123 4567"
+    },
+    {
+      "code": "+853",
+      "name": "中国澳门",
+      "min": 8,
+      "max": 8,
+      "local": "66123456",
+      "wire": "+8536612 3456"
+    },
+    {
+      "code": "+886",
+      "name": "中国台湾",
+      "min": 9,
+      "max": 10,
+      "local": "912345678",
+      "wire": "+886912 3456 78"
+    },
+    {
+      "code": "+60",
+      "name": "马来西亚",
+      "min": 9,
+      "max": 10,
+      "local": "123456789",
+      "wire": "+60123 4567 89"
+    },
+    {
+      "code": "+65",
+      "name": "新加坡",
+      "min": 8,
+      "max": 8,
+      "local": "81234567",
+      "wire": "+658123 4567"
+    },
+    {
+      "code": "+62",
+      "name": "印度尼西亚",
+      "min": 10,
+      "max": 13,
+      "local": "8123456789012",
+      "wire": "+62812 345 678 901 2"
+    },
+    {
+      "code": "+95",
+      "name": "缅甸",
+      "min": 9,
+      "max": 10,
+      "local": "912345678",
+      "wire": "+95912 3456 78"
+    },
+    {
+      "code": "+63",
+      "name": "菲律宾",
+      "min": 7,
+      "max": 10,
+      "local": "9123456789",
+      "wire": "+63912 3456 789"
+    },
+    {
+      "code": "+84",
+      "name": "越南",
+      "min": 9,
+      "max": 10,
+      "local": "912345678",
+      "wire": "+84912 3456 78"
+    },
+    {
+      "code": "+855",
+      "name": "柬埔寨",
+      "min": 8,
+      "max": 9,
+      "local": "12345678",
+      "wire": "+855123 456 78"
+    },
+    {
+      "code": "+81",
+      "name": "日本",
+      "min": 9,
+      "max": 11,
+      "local": "09012345678",
+      "wire": "+81090 1234 5678"
+    },
+    {
+      "code": "+82",
+      "name": "韩国",
+      "min": 8,
+      "max": 11,
+      "local": "01012345678",
+      "wire": "+82010 1234 5678"
+    },
+    {
+      "code": "+971",
+      "name": "阿拉伯联合酋长国",
+      "min": 9,
+      "max": 9,
+      "local": "501234567",
+      "wire": "+971501 234 567"
+    }
+  ],
+  "vectors": [
+    {
+      "query": "aid=8662&_rticket=1700000000123",
+      "body": "mobile=2e3d3037333437362531303332&mix_mode=1",
+      "ts": 1700000000,
+      "nonce": 17767,
+      "gorgon": "84046745400107befaaa090287763014e58993aa0d31128cabba",
+      "argus": "APFTZQ==",
+      "ladon": "ZVPxAA=="
+    },
+    {
+      "query": "aid=8662&device_id=7000000000000000001",
+      "body": "",
+      "ts": 1700000001,
+      "nonce": 4660,
+      "gorgon": "840434124001cc6c74159676b409faaf9a63085f75ace5d17743",
+      "argus": "AfFTZQ==",
+      "ladon": "ZVPxAQ=="
+    },
+    {
+      "query": "aid=8662&iid=7000000000000000002",
+      "body": "code=343736313033&mobile=2e3d333334373625313033323d",
+      "ts": 1791994999,
+      "nonce": 65535,
+      "gorgon": "8404ffff4001c2bd97403d84840808fb85d22a58a82f5df7c697",
+      "argus": "d6zPag==",
+      "ladon": "as+sdw=="
+    }
+  ]
+}

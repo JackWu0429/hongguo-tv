@@ -70,3 +70,20 @@ test('country selector is a TV-focusable modal with mainland default and restore
   assert.match(countries,/\{ code: '\+852', localeKey: 'country\.hongKong', minLength: 8, maxLength: 8 \}/);
   assert.match(source,/country_code: accountPhoneCountryCode/);
 });
+test('country entry limits match the actual reference package, including leading-zero eleven-digit numbers',()=>{
+  const countriesSource=fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/phone-countries.js'),'utf8');
+  const context=vm.createContext({});
+  vm.runInContext(countriesSource,context);
+  const countries=context.HongguoPhoneCountries;
+  const evidence=JSON.parse(fs.readFileSync(require.resolve('../core/cmd/hongguotv/testdata/passport-international-v124.json'),'utf8'));
+  assert.equal(countries.length,evidence.regions.length);
+  for(const expected of evidence.regions){
+    const policy=countries.find(c=>c.code===expected.code);
+    assert.equal(policy.minLength,expected.min,expected.code);
+    assert.equal(policy.maxLength,expected.max,expected.code);
+    const pad=create({});
+    pad.open('phone','',policy);
+    for(const digit of expected.local) pad.press(digit);
+    assert.equal(pad.snapshot().value,expected.local,expected.code+' was truncated');
+  }
+});
