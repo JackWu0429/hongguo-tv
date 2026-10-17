@@ -11,6 +11,12 @@ test('player context is a real return button wired to the player action', () => 
   assert.match(appSource, /item\.dataset\.action === 'return-player'[\s\S]*?handlePlayerContextClick\(\)/);
 });
 
+test('disabled page context keeps a transparent appearance on old WebViews', () => {
+  const cssSource = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8');
+  assert.match(cssSource, /\.page-context\s*\{[^}]*background:\s*transparent/);
+  assert.match(cssSource, /\.page-context\s*\{[^}]*-webkit-appearance:\s*none/);
+});
+
 test('clicking the player context leaves single-drama playback immediately', () => {
   const start = appSource.indexOf('  function handlePlayerContextClick()');
   const end = appSource.indexOf('  function posterSeasonLabel(item)', start);

@@ -66,7 +66,7 @@ button:focus { outline: none; }
 .page-placeholder h1 { margin: 20px 0 8px; font-size: 32px; font-size: clamp(26px, 3vw, 42px); }
 .page-placeholder p { max-width: 480px; margin: 0 0 22px; color: #a9a9b3; line-height: 1.6; }
 .top-bar { position: absolute; z-index: 5; top: 0; left: 0; right: 0; display: flex; align-items: center; min-height: 72px; padding: 16px 34px; background: linear-gradient(180deg, rgba(9,10,14,.85), rgba(9,10,14,0)); }
-.page-context { width: 110px; color: #e7e7ee; font-size: 16px; font-weight: 700; }
+.page-context { width: 110px; padding: 0; color: #e7e7ee; background: transparent; border: 0; font-size: 16px; font-weight: 700; text-align: left; appearance: none; -webkit-appearance: none; opacity: 1; }
 .channel-tabs { display: flex; gap: 4px; margin: auto; padding: 4px; background: rgba(18,18,23,.66); border-radius: 24px; }
 .channel-tab { flex-shrink: 0; min-width: 76px; padding: 9px 18px; color: #d1d1da; background: transparent; border-radius: 20px; white-space: nowrap; }
 .channel-tab.is-active { color: #fff; background: rgba(255,255,255,.18); font-weight: 700; }
