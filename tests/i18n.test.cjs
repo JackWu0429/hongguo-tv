@@ -104,6 +104,13 @@ test('data-i18n markers update text and accessibility attributes', () => {
   assert.equal(placeholderNode.placeholder, '输入剧名 / 关键词');
 });
 
+test('series tab keeps its count node when the locale replaces translated text', () => {
+  const match = appHtml.match(/<button class="detail-tab" id="detail-tab-series"[^>]*>(.*?)<\/button>/);
+  assert.ok(match, 'series tab exists');
+  assert.match(match[1], /^<span data-i18n="modal\.series">系列剧<\/span><span id="detail-series-count"><\/span>$/);
+  assert.doesNotMatch(match[0], /data-i18n="modal\.series"[^>]*>系列剧<span id="detail-series-count"/);
+});
+
 test('explicit line-break tokens render as elements instead of HTML', () => {
   const { context } = runtime();
   const node = {
