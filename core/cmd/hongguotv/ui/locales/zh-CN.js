@@ -787,6 +787,7 @@
     'ui.accountStateFailed': '账号状态读取失败',
     'ui.accountRequestFailed': '账号请求失败',
     'ui.appCodeFallback': '短信验证码发送未成功。可在手机红果 App 获取此手机号的验证码，再回到这里输入并登录。',
+    'ui.accountErrorDetail': '错误详情（原文）：{detail}',
     'ui.merged': '已合并 {value} 部短剧。',
     'ui.mergeRemaining': '还有 {value} 部待合并，请完成同步后再试。',
     'ui.mergeWillRetry': '将自动同步到当前账号，网络恢复后会重试。',

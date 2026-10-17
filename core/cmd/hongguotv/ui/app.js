@@ -277,6 +277,7 @@
   var accountData = null;
   var accountBusy = false;
   var accountNotice = '';
+  var accountNoticeIsError = false;
   var accountLeftFocus = null;
   var accountPollBusy = false;
   var accountEpoch = 0;
@@ -2923,14 +2924,34 @@
     var syncLabel = !logged ? uiText('ui.notLoggedInLocal', '未登录 · 记录保存在本机') : ({ syncing: uiText('ui.syncing', '正在同步…'), pending: uiText('ui.syncPending', '等待同步'), error: uiText('ui.syncIncomplete', '同步暂未完成'), idle: sync.last_sync ? uiText('ui.synced', '已同步') : uiText('ui.notSynced', '尚未同步') })[sync.state] || uiText('ui.syncPending', '等待同步');
     document.getElementById('account-sync-state').textContent = syncLabel;
     document.getElementById('account-sync-detail').textContent = sync.error ? localizedError(sync.error, 'ui.syncIncomplete', '同步暂未完成') : (logged ? (sync.pending ? uiText('ui.pendingRecords', '{value} 项记录待同步。', { value: sync.pending }) : uiText('ui.autoSync', '收藏、点赞与观看进度会自动同步。')) + (sync.last_sync ? uiText('ui.lastSync', ' 最近同步：{value}', { value: new Date(sync.last_sync).toLocaleTimeString() }) : '') : uiText('ui.loginSyncCopy', '收藏、点赞、观看历史和播放进度会与红果账号同步。'));
-    document.getElementById('account-message').textContent = accountBusy ? uiText('ui.connectingAccount', '正在连接红果，请稍候…') : accountNotice || (canSubmitAppCode ? uiText('ui.appCodeFallback', '短信验证码发送未成功。可在手机红果 App 获取此手机号的验证码，再回到这里输入并登录。') : data.error ? localizedError(data.error, 'ui.accountRequestFailed', '账号请求失败') : '');
+    renderAccountMessages(data, canSubmitAppCode);
     document.querySelector('.side-item[data-page="account"] span:last-child').textContent = uiText('nav.account', '我的');
     if (pageMode() === 'account') document.getElementById('page-context').textContent = uiText('nav.account', '我的');
     var current = document.activeElement;
     if (!accountKeypadOpen() && !accountBusy && pageMode() === 'account' && current && current.closest('#account-keypad-modal')) goFocus(firstContentFocus());
     if (!accountBusy && !confirmOpen && pageMode() === 'account' && current && /accountInputs|accountActions/.test(zoneOf(current)) && focusables().indexOf(current) < 0) goFocus(firstContentFocus());
   }
-  function setAccountMessage(message) { accountNotice = message; renderAccount(); }
+  function accountFailureText(error) {
+    var detail = error && typeof error === 'object' ? error.message : error;
+    return detail ? uiText('ui.accountErrorDetail', '错误详情（原文）：{detail}', { detail: String(detail) }) : uiText('ui.accountRequestFailed', '账号请求失败');
+  }
+  function renderAccountMessages(data, canSubmitAppCode) {
+    document.getElementById('account-message').textContent = accountBusy ? uiText('ui.connectingAccount', '正在连接红果，请稍候…') : accountNotice ? (accountNoticeIsError ? accountFailureText(accountNotice) : accountNotice) : data.error ? accountFailureText(data.error) : '';
+    var help = document.getElementById('account-app-code-help');
+    var showHelp = canSubmitAppCode && !data.logged_in && data.phase !== 'mfa';
+    help.classList.toggle('is-hidden', !showHelp);
+    help.textContent = showHelp ? uiText('ui.appCodeFallback', '短信验证码发送未成功。可在手机红果 App 获取此手机号的验证码，再回到这里输入并登录。') : '';
+    var feedback = document.getElementById('account-feedback');
+    var target = document.getElementById(data.logged_in ? 'account-profile' : data.phase === 'mfa' ? 'account-mfa' : 'account-login-form');
+    // Above the code field, the instructions stay visible when TV focus
+    // scrolls that field into view. MFA/profile feedback follows its own form.
+    if (feedback.parentNode !== target) target.insertBefore(feedback, !data.logged_in && data.phase !== 'mfa' ? document.getElementById('account-code-field') : null);
+    feedback.classList.toggle('is-hidden', !document.getElementById('account-message').textContent && !showHelp);
+  }
+  function setAccountMessage(message, isError) { accountNotice = message; accountNoticeIsError = !!isError; renderAccount(); }
+  if (window.HongguoI18n && typeof window.HongguoI18n.onChange === 'function') window.HongguoI18n.onChange(function () {
+    renderAccountMessages(accountData || {}, !!(accountData && accountData.app_code_available));
+  });
   function pollAccount() {
     if (accountPollBusy || accountBusy) return Promise.resolve();
     accountPollBusy = true;
@@ -2952,6 +2973,7 @@
     }
     accountBusy = true;
     accountNotice = '';
+    accountNoticeIsError = false;
     var generation = ++accountRequestGeneration;
     var accountHTTPStatus = 0;
     function aborted() {
@@ -2966,7 +2988,7 @@
         accountBusy = false;
         if (payload.data) acceptAccountStatus(payload.data);
         restoreRequestFocus();
-        if (!payload.ok) throw new Error(apiError(payload, accountHTTPStatus, 'ui.accountRequestFailed', '账号请求失败'));
+        if (!payload.ok) throw new Error(typeof payload.error === 'string' && payload.error ? payload.error : apiError(payload, accountHTTPStatus, 'ui.accountRequestFailed', '账号请求失败'));
         if (action === 'import-history' && payload.import_history && payload.data && payload.data.profile && payload.data.profile.uid === value.owner_id) {
           var imported = payload.import_history;
           setAccountMessage(imported.imported > 0 ? uiText('ui.merged', '已合并 {value} 部短剧。', { value: imported.imported }) + (imported.remaining > 0 ? uiText('ui.mergeRemaining', '还有 {value} 部待合并，请完成同步后再试。', { value: imported.remaining }) : uiText('ui.mergeWillRetry', '将自动同步到当前账号，网络恢复后会重试。')) : uiText('ui.noMergeNeeded', '没有需要合并的新记录。'));
@@ -2975,7 +2997,7 @@
       }).catch(function (error) {
         if (generation !== accountRequestGeneration) return false;
         accountBusy = false; renderAccount();
-        setAccountMessage(localizedError(error, 'ui.accountRequestFailed', '账号请求失败'));
+        setAccountMessage(error.message || uiText('ui.accountRequestFailed', '账号请求失败'), true);
         restoreRequestFocus();
         return false;
       }).then(function (ok) { if (signal) signal.removeEventListener('abort', aborted); return ok; });
@@ -6431,7 +6453,7 @@
       }) };
     },
     onState: function (value) {
-      if (value.state === 'expired') accountNotice = uiText('ui.accountVerificationExpired', '本机验证等待时间已结束，请重新获取验证码');
+      if (value.state === 'expired') { accountNotice = uiText('ui.accountVerificationExpired', '本机验证等待时间已结束，请重新获取验证码'); accountNoticeIsError = false; }
       renderAccount();
       if (value.state === 'timeout' && pageMode() === 'account' && !supportModalOpen) goFocus(document.getElementById('account-verify'));
       if (value.state === 'expired' && !applicationHidden()) pollAccount();

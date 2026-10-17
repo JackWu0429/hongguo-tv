@@ -301,7 +301,7 @@ func passportFailure(p map[string]any) error {
 		msg = ""
 	}
 	if msg == "" {
-		msg = "验证失败，请检查验证码或稍后重试"
+		msg = "红果未提供具体失败原因"
 	}
 	msg = accountPrivateDigitsRE.ReplaceAllString(msg, "***")
 	return fmt.Errorf("%s（%s）", msg, code)
