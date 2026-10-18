@@ -8,7 +8,8 @@ const app = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'), 
 test('TV home deep links validate identity and start the selected series', () => {
   const start = app.indexOf('  function openHomeProgram(');
   const end = app.indexOf('\n  window.HongguoTV =', start);
-  const context = vm.createContext({ startPlayer: item => { context.started = item; }, window: {} });
+  const context = vm.createContext({ accountStatusInitialized: true, pendingAccountHomeProgram: null,
+    startPlayer: item => { context.started = item; }, pollAccount() {}, window: {} });
   vm.runInContext(app.slice(start, end), context);
 
   assert.equal(context.openHomeProgram({ series_id: '7690163276214176792', title: '测试剧' }), true);
@@ -16,6 +17,29 @@ test('TV home deep links validate identity and start the selected series', () =>
   assert.equal(context.started.title, '测试剧');
   assert.equal(context.openHomeProgram({ series_id: '0' }), false);
   assert.equal(context.openHomeProgram({ series_id: '123/456' }), false);
+});
+
+test('Channel deep link waits for first account state before starting playback', () => {
+  const start = app.indexOf('  function openHomeProgram(');
+  const end = app.indexOf('\n  window.HongguoTV =', start);
+  const calls = [];
+  const context = vm.createContext({
+    accountStatusInitialized: false,
+    pendingAccountHomeProgram: null,
+    pollAccount() { calls.push('poll'); },
+    startPlayer(item) { calls.push(item); },
+    window: {}
+  });
+  vm.runInContext(app.slice(start, end), context);
+
+  assert.equal(context.openHomeProgram({ series_id: '123', title: 'Channel 剧集' }), true);
+  assert.deepEqual(calls, ['poll']);
+  assert.equal(context.pendingAccountHomeProgram.series_id, '123');
+
+  context.accountStatusInitialized = true;
+  context.startPendingAccountHomeProgram();
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), ['poll', { series_id: '123', title: 'Channel 剧集', intro: '', cover: '' }]);
+  assert.equal(context.pendingAccountHomeProgram, null);
 });
 
 test('only the main recommendation feed is synced, with a bounded safe projection', () => {
