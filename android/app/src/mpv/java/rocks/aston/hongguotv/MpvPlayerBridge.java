@@ -249,9 +249,13 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                         return;
                     }
                     post(target -> {
-                        // stop emits END_FILE too. A new session has not yet
-                        // loaded a file, so never turn that transition event
-                        // into a failure for the replacement source.
+                        target.output.endFileSeen = true;
+                        target.output.endFileReason = reason;
+                        target.output.endFileError = error;
+                        updateDiagnostic(target, null);
+                        // Preserve the existing readiness gate. Early errors
+                        // stay visible in diagnostics and follow the existing
+                        // timeout path instead of changing playback timing.
                         if (!target.output.loaded) return;
                         if (reason == 0 && target.outputReady) finish(target);
                         else if ((reason == 4 || error < 0) && target.outputReady) fail(target, "media", error);
@@ -282,6 +286,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                             target.output.loaded = true;
                             if (target.pendingSeek) { active.command(new String[]{"seek", Double.toString(target.position / 1000.0), "absolute+exact"}); target.pendingSeek = false; }
                             applyPlayState(target);
+                            updateDiagnostic(target, null);
                         } else if (value == MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART) {
                             target.output.restarted = true; rendered(target);
                         }
@@ -388,7 +393,14 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                 .put("surface_height", target.output.surfaceHeight)
                 .put("surface_attached", target.output.attached && surface.getHolder().getSurface().isValid())
                 .put("surface_visible", holder.getVisibility() == View.VISIBLE && surface.isShown())
-                .put("output_messages", target.output.messages());
+                .put("output_messages", target.output.messages())
+                .put("open_requested", target.output.openRequested)
+                .put("file_loaded", target.output.loaded)
+                .put("end_file_seen", target.output.endFileSeen);
+            if (target.output.endFileSeen) {
+                fields.put("end_file_reason", target.output.endFileReason)
+                    .put("end_file_error", target.output.endFileError);
+            }
             if (target.player != null) {
                 MPVLib player = target.player;
                 target.decoder = property(player, "video-codec");

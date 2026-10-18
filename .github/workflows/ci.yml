@@ -77,3 +77,11 @@ jobs:
         run: gradle --no-daemon --max-workers=1 -p android testMpvDebugUnitTest assembleMpvDebug lintMpvDebug
       - name: Verify debug edition isolation
         run: python3 scripts/verify_apks.py --standard android/app/build/outputs/apk/standard/debug/app-standard-debug.apk --mpv android/app/build/outputs/apk/mpv/debug/app-mpv-debug.apk --version "$APP_VERSION" --standard-code "$APP_VERSION_CODE" --mpv-code "$MPV_VERSION_CODE" --debug
+      - name: Upload MPV channel playback diagnostic APK
+        if: github.ref == 'refs/heads/codex/mpv-channel-first-play-diagnostics'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-channel-first-play-diagnostics
+          path: android/app/build/outputs/apk/mpv/debug/app-mpv-debug.apk
+          if-no-files-found: error
+          retention-days: 14

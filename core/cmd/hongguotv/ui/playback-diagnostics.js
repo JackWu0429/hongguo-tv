@@ -81,6 +81,10 @@
       var frameState = native.engine === 'mpv' ? (native.output_ready ? ' · ' + tr('diagnostic.outputReady') : ' · ' + tr('diagnostic.outputPending')) : (native.first_frame ? ' · ' + tr('diagnostic.firstFrame') : ' · ' + tr('diagnostic.noFirstFrame'));
       add(playerName, nativeState + (native.surface ? ' · ' + text(native.surface, 20) : '') + (nativeCodec ? ' · ' + nativeCodec : '') + nativeError + frameState);
       if (native.engine === 'mpv') {
+        var openState = typeof native.open_requested === 'boolean' ? tr(native.open_requested ? 'diagnostic.mpvOpenRequested' : 'diagnostic.mpvOpenNotRequested') : tr('diagnostic.notObtained');
+        var loadedState = typeof native.file_loaded === 'boolean' ? tr(native.file_loaded ? 'diagnostic.mpvFileLoaded' : 'diagnostic.mpvFileNotLoaded') : tr('diagnostic.notObtained');
+        var endFile = native.end_file_seen ? 'END_FILE reason=' + errorCode(native.end_file_reason) + ' error=' + errorCode(native.end_file_error) : tr('diagnostic.mpvNoEndFile');
+        add(tr('diagnostic.mpvLoadState'), openState + ' · ' + loadedState + ' · ' + endFile);
         add(tr('diagnostic.mpvOutput'), (text(native.video_output, 20) || tr('diagnostic.outputUnavailable')) + ' · ' + (native.vo_configured ? tr('diagnostic.configured') : tr('diagnostic.notConfigured')) + ' · ' + tr('diagnostic.window', { value: num(native.surface_width) + ' × ' + num(native.surface_height) }) + ' · ' + (native.restart_seen ? tr('diagnostic.restartReceived') : tr('diagnostic.restartWaiting')));
         var audio = (text(native.audio_output, 20) || tr('diagnostic.outputUnavailable')) + (native.audio_codec ? ' · ' + text(native.audio_codec, 32) : '') + (native.audio_format ? ' · ' + text(native.audio_format, 16) : '') + (native.audio_rate ? ' · ' + num(native.audio_rate) + ' Hz' : '') + (native.audio_channels ? ' · ' + tr('diagnostic.channels', { count: num(native.audio_channels) }) : '');
         add(tr('diagnostic.mpvAudio'), audio);
