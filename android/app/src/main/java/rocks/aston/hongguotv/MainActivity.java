@@ -39,12 +39,13 @@ import org.json.JSONObject;
 public class MainActivity extends Activity {
     private String coreUrl;
     private WebView webView;
-    private PlayerBridge playerBridge;
+    private NativePlayerAdapter playerBridge;
     private boolean backPending;
     private boolean activityForeground;
     private AlertDialog exitDialog;
     private boolean keyboardVisible;
     private boolean accountEditing;
+    private boolean searchEditing;
     private boolean inputBackPending;
     private LinearLayout startupPanel;
     private TextView startupMessage;
@@ -56,9 +57,11 @@ public class MainActivity extends Activity {
     private int routedVerticalKeys;
     private AnimatedVectorDrawable startupAnimation;
     private AppUpdater appUpdater;
+    private TvHomeChannelManager homeChannelManager;
+    private String pendingHomeProgram;
     private volatile String diagnosticDeviceJSON = "{}";
     private final Runnable restoreFullscreen = () -> {
-        if (activityForeground && hasWindowFocus() && !isFinishing() && !isDestroyed() && !accountEditing && !isKeyboardVisible()) {
+        if (activityForeground && hasWindowFocus() && !isFinishing() && !isDestroyed() && !accountEditing && !searchEditing && !isKeyboardVisible()) {
             applyFullscreen();
         }
     };
@@ -76,17 +79,22 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
 
+        JSONObject initialHomeProgram = TvHomeChannelManager.parseLaunchIntent(getIntent());
+        pendingHomeProgram = initialHomeProgram == null ? null : initialHomeProgram.toString();
+        homeChannelManager = new TvHomeChannelManager(this);
+        homeChannelManager.ensureDefaultChannel(false);
         startCoreService();
         webView = new WebView(this) {
             @Override
             public boolean onKeyPreIme(int keyCode, KeyEvent event) {
                 // Floating TV keyboards have no reliable resize/hide signal.
                 // Finish explicitly before Back can be consumed by the IME.
-                if (keyCode == KeyEvent.KEYCODE_BACK && (accountEditing || inputBackPending)) {
+                if (keyCode == KeyEvent.KEYCODE_BACK && (accountEditing || searchEditing || inputBackPending)) {
                     if (event.getAction() == KeyEvent.ACTION_DOWN) inputBackPending = true;
                     if (event.getAction() == KeyEvent.ACTION_UP) {
                         inputBackPending = false;
-                        completeAccountEditing();
+                        if (accountEditing) completeAccountEditing();
+                        else completeSearchEditing();
                     }
                     return true;
                 }
@@ -115,6 +123,7 @@ public class MainActivity extends Activity {
         }, "HongguoTVDiagnostics");
         webView.addJavascriptInterface(new PlaybackPreferences(this), "HongguoTVPreferences");
         webView.addJavascriptInterface(new InputBridge(), "HongguoTVInput");
+        webView.addJavascriptInterface(new HomeChannelBridge(), "HongguoTVHome");
         appUpdater = new AppUpdater(this, new AppUpdater.Host() {
             public boolean trusted() { return pageReady; }
             public boolean foreground() { return activityForeground; }
@@ -131,6 +140,7 @@ public class MainActivity extends Activity {
                 pageLoadFailed = false;
                 pageReady = false;
                 accountEditing = false;
+                searchEditing = false;
                 super.onPageStarted(view, url, favicon);
             }
 
@@ -149,6 +159,7 @@ public class MainActivity extends Activity {
                     pageReady = true;
                     webView.requestFocus();
                     appUpdater.start();
+                    homeChannelManager.ensureDefaultChannel(true);
                 }
                 view.evaluateJavascript("window.HongguoTV && window.HongguoTV." +
                         (activityForeground ? "resumeFromBackground()" : "pauseForBackground()"), null);
@@ -160,7 +171,7 @@ public class MainActivity extends Activity {
         FrameLayout nativeVideoLayer = new FrameLayout(this);
         content.addView(nativeVideoLayer, new FrameLayout.LayoutParams(-1, -1));
         content.addView(webView, new FrameLayout.LayoutParams(-1, -1));
-        playerBridge = new PlayerBridge(webView, nativeVideoLayer);
+        playerBridge = PlayerFactory.create(webView, nativeVideoLayer);
         webView.addJavascriptInterface(playerBridge, "HongguoNativePlayer");
         startupPanel = new LinearLayout(this);
         startupPanel.setOrientation(LinearLayout.VERTICAL);
@@ -310,7 +321,7 @@ public class MainActivity extends Activity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus && activityForeground && !accountEditing && !isKeyboardVisible()) applyFullscreen();
+        if (hasFocus && activityForeground && !accountEditing && !searchEditing && !isKeyboardVisible()) applyFullscreen();
     }
 
     private void startCoreService() {
@@ -318,6 +329,48 @@ public class MainActivity extends Activity {
         Intent intent = new Intent(this, CoreService.class);
         if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent);
         else startService(intent);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        JSONObject launch = TvHomeChannelManager.parseLaunchIntent(intent);
+        if (launch == null) return;
+        synchronized (this) { pendingHomeProgram = launch.toString(); }
+        if (pageReady) dispatchPendingHomeProgram();
+    }
+
+    private String takePendingHomeProgram() {
+        synchronized (this) {
+            String launch = pendingHomeProgram;
+            pendingHomeProgram = null;
+            return launch;
+        }
+    }
+
+    private void dispatchPendingHomeProgram() {
+        if (!pageReady || destroyed || webView == null) return;
+        String launch = takePendingHomeProgram();
+        if (launch != null) webView.evaluateJavascript("!!(window.HongguoTV && window.HongguoTV.openHomeProgram(" + launch + "))", result -> {
+            if (!"true".equals(result)) {
+                synchronized (MainActivity.this) {
+                    if (pendingHomeProgram == null && !destroyed) pendingHomeProgram = launch;
+                }
+            }
+        });
+    }
+
+    public final class HomeChannelBridge {
+        @JavascriptInterface
+        public String consumeHomeProgram() {
+            return destroyed ? "" : takePendingHomeProgram();
+        }
+
+        @JavascriptInterface
+        public void syncRecommendations(String json) {
+            if (!destroyed && homeChannelManager != null) homeChannelManager.syncRecommendations(json);
+        }
     }
 
     @Override
@@ -331,7 +384,8 @@ public class MainActivity extends Activity {
             // Old WebView can consume vertical keys as input caret movement.
             // The account page uses an app-owned HTML numeric keypad, so use
             // the same JS router as browser keys after native editing ends.
-            if (event.getAction() == KeyEvent.ACTION_DOWN && pageReady && webView.hasFocus() &&
+            boolean pageFocus = webView.hasFocus() || InputKeyPolicy.routeSearchKey(searchEditing);
+            if (event.getAction() == KeyEvent.ACTION_DOWN && pageReady && pageFocus &&
                     InputKeyPolicy.routeVerticalKey(accountEditing, isKeyboardVisible())) {
                 routedVerticalKeys |= verticalBit;
                 webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.remoteKey(" + event.getKeyCode() + "," + (event.getRepeatCount() > 0) + ")", null);
@@ -359,6 +413,7 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 if (destroyed || !pageReady || !activityForeground || webView == null) return;
                 accountEditing = true;
+                searchEditing = false;
                 inputBackPending = false;
                 routedVerticalKeys = 0;
                 // Observe the original editable WebView field. Its natural
@@ -368,13 +423,33 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void startSearchEditing() {
+            runOnUiThread(() -> {
+                if (destroyed || !pageReady || !activityForeground || webView == null) return;
+                searchEditing = true;
+                accountEditing = false;
+                inputBackPending = false;
+                routedVerticalKeys = 0;
+            });
+        }
+
+        @JavascriptInterface
         public void finishEditing() {
             runOnUiThread(() -> {
                 if (destroyed || webView == null) return;
                 accountEditing = false;
+                searchEditing = false;
                 InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
                 if (keyboard != null) keyboard.hideSoftInputFromWindow(webView.getWindowToken(), 0);
                 scheduleFullscreen();
+            });
+        }
+
+        @JavascriptInterface
+        public void finishSearchEditing() {
+            runOnUiThread(() -> {
+                if (destroyed || webView == null) return;
+                completeSearchEditing();
             });
         }
     }
@@ -385,6 +460,16 @@ public class MainActivity extends Activity {
         if (!destroyed && pageReady && webView != null) {
             webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.finishAccountEditing()", null);
         }
+    }
+
+    private void completeSearchEditing() {
+        if (!searchEditing) return;
+        searchEditing = false;
+        inputBackPending = false;
+        routedVerticalKeys = 0;
+        InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (keyboard != null && webView != null) keyboard.hideSoftInputFromWindow(webView.getWindowToken(), 0);
+        scheduleFullscreen();
     }
 
     private String mediaCommand(int keyCode) {
@@ -438,6 +523,7 @@ public class MainActivity extends Activity {
         inputBackPending = false;
         routedVerticalKeys = 0;
         completeAccountEditing();
+        completeSearchEditing();
         if (startupAnimation != null) startupAnimation.stop();
         if (playerBridge != null) playerBridge.onPause();
         if (webView != null) {
@@ -466,7 +552,12 @@ public class MainActivity extends Activity {
         destroyed = true;
         pageReady = false;
         accountEditing = false;
+        searchEditing = false;
         if (appUpdater != null) appUpdater.destroy();
+        if (homeChannelManager != null) {
+            homeChannelManager.destroy();
+            homeChannelManager = null;
+        }
         if (startupAnimation != null) startupAnimation.stop();
         if (startupThread != null) startupThread.interrupt();
         View decor = getWindow().getDecorView();

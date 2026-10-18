@@ -30,8 +30,11 @@
 .legacy-aspect .rank-row > .drama-poster { padding-top: 0; height: 150px; }
 
 .legacy-flex-gap .brand-mark { margin-right: 11px; }
+.legacy-flex-gap .side-nav { gap: 0; }
 .legacy-flex-gap .side-item + .side-item { margin-top: 5px; }
 .legacy-flex-gap .side-icon { margin-right: 15px; }
+.legacy-flex-gap .app-shell.sidebar-icons .brand-mark,
+.legacy-flex-gap .app-shell.sidebar-icons .side-icon { margin-right: 0; }
 .legacy-flex-gap .channel-tab + .channel-tab { margin-left: 4px; }
 .legacy-flex-gap .hero-top-copy > * + *, .legacy-flex-gap .hero-top-right > * + * { margin-top: 6px; }
 .legacy-flex-gap .catalog-card + .catalog-card { margin-left: 10px; }
@@ -39,7 +42,8 @@
 .legacy-flex-gap .round-action > * + * { margin-top: 3px; }
 .legacy-flex-gap .bottom-controls > * + * { margin-top: 12px; }
 .legacy-flex-gap .playback-timeline > * + *, .legacy-flex-gap .playback-buttons > * + * { margin-left: 13px; }
-.legacy-flex-gap .playback-buttons [data-action="fullscreen"] { margin-left: auto; }
+.legacy-flex-gap .playback-utility-group > * + * { margin-left: 13px; }
+.legacy-flex-gap .playback-utility-group [data-action="fullscreen"] { margin-left: 13px; }
 .legacy-flex-gap .is-discussion-open .playback-buttons > * { margin: 0 8px 8px 0; }
 .legacy-flex-gap .player-status > * + * { margin-top: 15px; }
 .legacy-flex-gap .search-heading-row > .search-box { margin-left: 28px; }

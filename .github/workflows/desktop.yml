@@ -1,0 +1,147 @@
+name: Desktop release
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_public:
+        description: Publish verified macOS / Windows ZIPs and desktop update channel
+        type: boolean
+        default: true
+        required: true
+  push:
+    branches: ["codex/dual-player-editions"]
+    tags: ["v*"]
+    paths: ["desktop/**", "core/**", "scripts/*desktop*", "tests/test_desktop_release.py", "docs/desktop*", ".github/workflows/desktop.yml"]
+  pull_request:
+    paths: ["desktop/**", "core/**", "scripts/*desktop*", "tests/test_desktop_release.py", "docs/desktop*", ".github/workflows/desktop.yml"]
+
+env:
+  PYTHONUTF8: "1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify release source line
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        run: python3 scripts/verify_release_source.py --event "$GITHUB_EVENT_NAME" --ref "$GITHUB_REF" --sha "$GITHUB_SHA"
+      - name: Prepare private draft desktop release
+        id: release
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/desktop_metadata.py --github-env "$GITHUB_ENV"
+          APP_VERSION=$(python3 -c 'import scripts.desktop_metadata as m; from pathlib import Path; print(m.metadata(Path("."))[0])')
+          if [[ "${GITHUB_REF_TYPE:-}" == tag ]]; then
+            test "$GITHUB_REF_NAME" = "v$APP_VERSION"
+          fi
+          tag="desktop-v$APP_VERSION"
+          if gh release view "$tag" --json isDraft >/dev/null 2>&1; then
+            [[ "$(gh release view "$tag" --json isDraft --jq .isDraft)" == true ]]
+            [[ "$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)" == "$GITHUB_SHA" ]]
+          else
+            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "红果短剧桌面版 $APP_VERSION" --notes-file docs/desktop-release.md
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: darwin/universal
+          - os: windows-2022
+            platform: windows/amd64
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache-dependency-path: |
+            go.sum
+            desktop/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Read shared version
+        shell: bash
+        run: python3 scripts/desktop_metadata.py --github-env "$GITHUB_ENV"
+      - name: Test core and shared desktop UI
+        shell: bash
+        run: |
+          go test ./core/...
+          node --check core/cmd/hongguotv/ui/desktop.js
+          node --test tests/*.test.cjs
+          python3 -m unittest discover -s tests -p "test_*.py"
+          node desktop/frontend/build.mjs
+          cd desktop
+          go test ./...
+          go vet ./...
+      - name: Install pinned Wails CLI
+        shell: bash
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
+      - name: Build shell and Go core
+        shell: bash
+        env:
+          DESKTOP_PLATFORM: ${{ matrix.platform }}
+        run: bash scripts/build_desktop.sh
+      - name: Verify bundled native core startup and account routing
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os }}" == windows-* ]]; then
+            python3 scripts/verify_desktop_core.py desktop/build/bin/hongguo-tv-core.exe "$HONGGUO_CORE_VERSION"
+          else
+            python3 scripts/verify_desktop_core.py desktop/build/bin/红果短剧.app/Contents/MacOS/hongguo-tv-core "$HONGGUO_CORE_VERSION"
+          fi
+      - name: Attach exact packages to private draft
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW_TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "$PREVIEW_TAG" desktop/dist/*.zip desktop/dist/*.sha256
+
+  publish:
+    needs: [prepare, build]
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify complete desktop package set and publish private release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/desktop-release"
+          gh release download "$PREVIEW_TAG" --dir "$RUNNER_TEMP/desktop-release"
+          python3 scripts/verify_desktop_packages.py "$RUNNER_TEMP/desktop-release"
+          python3 scripts/publish_desktop_release.py --directory "$RUNNER_TEMP/desktop-release" --notes docs/desktop-release.md --generate-only
+          gh release upload "$PREVIEW_TAG" "$RUNNER_TEMP/desktop-release/desktop-update-v2.json"
+          gh release edit "$PREVIEW_TAG" --draft=false --prerelease=false --latest=false
+      - name: Mirror desktop ZIPs and update public download instructions
+        if: inputs.publish_public || startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.HONGGUO_RELEASES_TOKEN }}
+        run: |
+          test -n "$GH_TOKEN" || { echo "Configure HONGGUO_RELEASES_TOKEN" >&2; exit 1; }
+          python3 scripts/publish_desktop_release.py --directory "$RUNNER_TEMP/desktop-release" --notes docs/desktop-release.md --readme docs/public-download-readme.md

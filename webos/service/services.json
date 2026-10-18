@@ -1,0 +1,15 @@
+{
+  "id": "com.aston314.hongguo.webos.service",
+  "description": "红果短剧 webOS 实验版本机服务",
+  "services": [
+    {
+      "name": "com.aston314.hongguo.webos.service",
+      "description": "红果短剧 webOS 实验版本机服务",
+      "commands": [
+        { "name": "ping", "description": "Start the local HTTP service and report readiness", "public": true },
+        { "name": "getDiagnostics", "description": "Start the service and return readiness diagnostics", "public": true },
+        { "name": "shutdown", "description": "Stop the local HTTP service", "public": true }
+      ]
+    }
+  ]
+}

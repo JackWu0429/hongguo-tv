@@ -32,6 +32,7 @@ type accountStatus struct {
 	Profile      *accountProfile    `json:"profile,omitempty"`
 	Phase        string             `json:"phase"`
 	Phone        string             `json:"phone,omitempty"`
+	CountryCode  string             `json:"country_code,omitempty"`
 	RetryAfter   int                `json:"retry_after"`
 	SMSState     string             `json:"sms_state,omitempty"`
 	SMSNumber    string             `json:"sms_number,omitempty"`
@@ -39,6 +40,7 @@ type accountStatus struct {
 	SMSQRCode    string             `json:"sms_qr,omitempty"`
 	MFAExpires   int64              `json:"mfa_expires_at,omitempty"` // Local login-session safety deadline, not a server TTL.
 	Error        string             `json:"error,omitempty"`
+	AppCode      bool               `json:"app_code_available,omitempty"`
 	Sync         syncStatus         `json:"sync"`
 	GuestHistory guestHistoryStatus `json:"guest_history"`
 }
@@ -64,12 +66,14 @@ type accountManager struct {
 	login            *loginAttempt
 	phase, lastError string
 	busy             bool
+	appCodeAllowed   bool
 	codeAfter        time.Time
 	smsState         string
 	generation       uint64
 	syncing          bool
 	syncError        string
 	lastSync         int64
+	notificationMu   sync.Mutex
 	wake             chan struct{}
 	cancelSync       context.CancelFunc
 }
@@ -193,6 +197,7 @@ func (m *accountManager) statusLocked() accountStatus {
 	}
 	if m.login != nil {
 		s.Phone = maskPhone(m.login.phone)
+		s.CountryCode = accountPhoneCountryCode(m.login.phone)
 		if m.login.mfa != nil && m.phase == "mfa" && time.Now().Before(m.login.mfaExpires) {
 			s.SMSNumber = m.login.mfa.Number
 			s.SMSContent = m.login.mfa.Content
@@ -200,6 +205,7 @@ func (m *accountManager) statusLocked() accountStatus {
 			s.MFAExpires = m.login.mfaExpires.UnixMilli()
 		}
 	}
+	s.AppCode = m.appCodeAllowed && m.login != nil && m.phase != "mfa" && m.disk.Profile == nil
 	if left := time.Until(m.codeAfter); left > 0 {
 		s.RetryAfter = int(math.Ceil(left.Seconds()))
 	}
@@ -244,13 +250,31 @@ func (m *accountManager) rejectExpiredMFA(g uint64, p map[string]any) error {
 	return err
 }
 func maskPhone(phone string) string {
-	if len(phone) == 11 {
-		return phone[:3] + "****" + phone[7:]
+	canonical, err := canonicalAccountPhone(phone)
+	if err != nil {
+		return ""
 	}
-	return ""
+	code := accountPhoneCountryCode(canonical)
+	local := strings.TrimPrefix(canonical, code)
+	if code == "+86" && len(local) == 11 {
+		return local[:3] + "****" + local[7:]
+	}
+	if len(local) < 5 {
+		return code + "****"
+	}
+	keep := 2
+	if len(local) > 8 {
+		keep = 3
+	}
+	return code + local[:keep] + "****" + local[len(local)-2:]
 }
 
 func (m *accountManager) beginLogin(ctx context.Context, phone string, send bool) (*loginAttempt, uint64, error) {
+	canonical, err := canonicalAccountPhone(phone)
+	if err != nil {
+		return nil, 0, err
+	}
+	phone = canonical
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.disk.Profile != nil {
@@ -265,6 +289,7 @@ func (m *accountManager) beginLogin(ctx context.Context, phone string, send bool
 		}
 		m.generation++
 		m.login = &loginAttempt{client: m.newClient(m.disk.Session), phone: phone, expires: time.Now().Add(10 * time.Minute)}
+		m.appCodeAllowed = false
 		m.smsState = "preparing"
 	}
 	if m.login == nil || m.login.phone != phone || time.Now().After(m.login.expires) {
@@ -324,6 +349,7 @@ func (m *accountManager) sendCode(ctx context.Context, phone string) error {
 		// Retain a guard if the request times out after delivery is possible.
 		m.codeAfter = time.Now().Add(time.Minute)
 		m.smsState = "uncertain"
+		m.appCodeAllowed = true
 	} else {
 		m.smsState = "rejected"
 		m.codeAfter = time.Time{}
@@ -364,6 +390,9 @@ func (m *accountManager) sendCode(ctx context.Context, phone string) error {
 	}
 	m.mu.Lock()
 	if g == m.generation {
+		if sent {
+			m.appCodeAllowed = false
+		}
 		m.smsState = state
 		if retry > 0 {
 			m.codeAfter = time.Now().Add(time.Duration(retry) * time.Second)
@@ -439,7 +468,7 @@ func (m *accountManager) verifyLogin(ctx context.Context) error {
 	m.busy = true
 	m.mu.Unlock()
 	defer a.cancelRequest()
-	p, err := a.client.verifyMFA(ctx, a.mfa)
+	p, err := a.client.verifyMFA(ctx, a.mfa, a.phone)
 	if err == nil && passportErrorCode(p) == "1045" {
 		m.endLogin(g, "mfa", nil)
 		return nil
@@ -524,6 +553,7 @@ func (m *accountManager) finishLogin(ctx context.Context, g uint64, a *loginAtte
 	m.disk = disk
 	m.store = store
 	m.login = nil
+	m.appCodeAllowed = false
 	m.phase = "logged_in"
 	m.syncError = ""
 	m.lastSync = storeCloudLastSync(store)
@@ -549,6 +579,7 @@ func (m *accountManager) logout() error {
 	m.disk = disk
 	m.store = m.guest
 	m.login = nil
+	m.appCodeAllowed = false
 	m.busy = false
 	m.phase = "phone"
 	m.lastError = ""
@@ -568,6 +599,7 @@ func (m *accountManager) cancelLogin() {
 		m.login.cancelRequest()
 	}
 	m.login = nil
+	m.appCodeAllowed = false
 	m.busy = false
 	m.phase = "phone"
 	m.lastError = ""
@@ -592,8 +624,9 @@ func (s *server) account(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Phone string `json:"phone"`
-		Code  string `json:"code"`
+		Phone       string `json:"phone"`
+		CountryCode string `json:"country_code"`
+		Code        string `json:"code"`
 	}
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048))
 	d.DisallowUnknownFields()
@@ -604,16 +637,22 @@ func (s *server) account(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch r.URL.Path {
 	case "/api/v1/account/send-code":
-		if !accountPhoneRE.MatchString(input.Phone) {
-			err = errors.New("请输入正确的手机号")
+		phone, normalizeErr := normalizeAccountPhone(input.CountryCode, input.Phone)
+		if normalizeErr != nil {
+			err = normalizeErr
 		} else {
-			err = s.accounts.sendCode(r.Context(), input.Phone)
+			err = s.accounts.sendCode(r.Context(), phone)
 		}
 	case "/api/v1/account/login":
-		if !accountPhoneRE.MatchString(input.Phone) || !accountCodeRE.MatchString(input.Code) {
-			err = errors.New("请输入手机号和验证码")
+		phone, normalizeErr := normalizeAccountPhone(input.CountryCode, input.Phone)
+		if normalizeErr != nil || !accountCodeRE.MatchString(input.Code) {
+			if normalizeErr != nil {
+				err = normalizeErr
+			} else {
+				err = errors.New("请输入手机号和验证码")
+			}
 		} else {
-			err = s.accounts.loginSMS(r.Context(), input.Phone, input.Code)
+			err = s.accounts.loginSMS(r.Context(), phone, input.Code)
 		}
 	case "/api/v1/account/verify":
 		err = s.accounts.verifyLogin(r.Context())

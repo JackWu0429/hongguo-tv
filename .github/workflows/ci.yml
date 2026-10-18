@@ -46,8 +46,13 @@ jobs:
           node --check core/cmd/hongguotv/ui/app.js
           node --check core/cmd/hongguotv/ui/native-player.js
           node --check core/cmd/hongguotv/ui/playback-diagnostics.js
+          node --check core/cmd/hongguotv/ui/playback-settings.js
+          node --check core/cmd/hongguotv/ui/sidebar-settings.js
+          node --check core/cmd/hongguotv/ui/auto-cinema.js
           node --check core/cmd/hongguotv/ui/compat.js
           node --check core/cmd/hongguotv/ui/episode-prefetch.js
+          node --check core/cmd/hongguotv/ui/playback-recovery.js
+          node --check core/cmd/hongguotv/ui/end-recommendations.js
           node --check core/cmd/hongguotv/ui/updates.js
           node --check core/cmd/hongguotv/ui/engagement.js
           node --check core/cmd/hongguotv/ui/sms-verification.js
@@ -60,5 +65,15 @@ jobs:
         run: bash scripts/build_android_binaries.sh
         env:
           VERSION: ${{ env.HONGGUO_CORE_VERSION }}
-      - name: Build and lint debug APK
-        run: gradle -p android testDebugUnitTest assembleDebug lintDebug
+      - name: Prepare LGPL MPV libraries and source kit
+        run: |
+          python3 scripts/prepare_mpv.py
+          python3 scripts/package_mpv_sources.py --out "$RUNNER_TEMP/hongguo-tv-mpv-library-source-$APP_VERSION.zip"
+      # Keep flavor packaging in separate Gradle invocations; AGP's native
+      # library splitter can race when both APK variants package together.
+      - name: Build and lint standard debug APK
+        run: gradle --no-daemon --max-workers=1 -p android testStandardDebugUnitTest assembleStandardDebug lintStandardDebug
+      - name: Build and lint MPV debug APK
+        run: gradle --no-daemon --max-workers=1 -p android testMpvDebugUnitTest assembleMpvDebug lintMpvDebug
+      - name: Verify debug edition isolation
+        run: python3 scripts/verify_apks.py --standard android/app/build/outputs/apk/standard/debug/app-standard-debug.apk --mpv android/app/build/outputs/apk/mpv/debug/app-mpv-debug.apk --version "$APP_VERSION" --standard-code "$APP_VERSION_CODE" --mpv-code "$MPV_VERSION_CODE" --debug

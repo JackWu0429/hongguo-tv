@@ -1,6 +1,18 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const diagnostics = require('../core/cmd/hongguotv/ui/playback-diagnostics.js');
+test('MPV reports actual decoding separately from preference, including software fallback and signed A/V difference',()=>{
+  function rows(native){return Object.fromEntries(diagnostics.report(snapshot({native:{engine:'mpv',state:'playing',...native}})).rows.map(x=>[x.label,x.value]));}
+  const hw=rows({mode:'mpv_auto',hwdec_current:'mediacodec-copy',decoder_frame_drop_count:2,frame_drop_count:0,demuxer_cache_duration:12.8,avsync:-0.032});
+  assert.match(hw['MPV 解码'],/自动解码.*实际：mediacodec-copy/);
+  assert.equal(hw['MPV 掉帧'],'解码 2 · 渲染 0');assert.equal(hw['MPV 音画差值'],'-32 ms');
+  assert.equal(hw['MPV 缓存时长'],'0:12');
+  assert.match(rows({mode:'mpv_auto',hwdec_current:'no'})['MPV 解码'],/自动解码.*实际：软件解码/);
+  const unknown=rows({mode:'mpv_software'});
+  assert.match(unknown['MPV 解码'],/实际：未取得/);
+  assert.equal(unknown['MPV 掉帧'],'解码 未取得 · 渲染 未取得');assert.equal(unknown['MPV 音画差值'],undefined);
+  assert.equal(unknown['MPV 缓存时长'],undefined);
+});
 function video(values={}) { return Object.assign({currentTime:8,duration:90,videoWidth:720,videoHeight:1280,readyState:4,networkState:1,paused:false,ended:false,seeking:false,muted:true,volume:1,buffered:{length:1,start:()=>0,end:()=>20},error:null},values); }
 function snapshot(values={}) { return Object.assign({video:diagnostics.readVideo(video()),flags:{preparing:true,audioHeld:true,source:true},episode:8,quality:'720P',userAgent:'Mozilla/5.0 Chrome/44.0.2403.119 HongguoTV-Android',capturedAt:'12:34:56',device:{app_version:'0.2.31',version_code:33,manufacturer:'TV maker',model:'TV-9',android_version:'9',sdk:28,process_bits:32},core:{version:'0.2.31-aabbccddeeff00112233445566778899aabbccdd',arch:'arm'}},values); }
 test('captures a frozen media snapshot without requiring frame APIs on old WebViews',()=>{
@@ -49,5 +61,35 @@ test('reports native decoder failures and codec state without exposing media URL
   assert.match(rows.Media3,/video\/hevc.*decoder 4003.*未出首帧/);
   assert.match(rows['最近错误'],/Media3 decoder（4003）/);
   s.native.url='https://media.invalid/a.mp4?key=secret';
+  assert.doesNotMatch(JSON.stringify(diagnostics.report(s)),/media\.invalid|secret/);
+});
+test('reports native track support separately from decoder and first-frame state',()=>{
+  const s=snapshot({native:{state:'preparing',surface:'SurfaceView',first_frame:false,video_decoder:'OMX.vendor.hevc.decoder',video_mime:'video/hevc',video_track:'video/hevc [hvc1.2.4.L150.B0] · 1920x1080 · 25fps',track_support:'FORMAT_HANDLED',track_selected:'是',unselected_hevc:'1280x720=FORMAT_EXCEEDS_CAPABILITIES'}});
+  const rows=Object.fromEntries(diagnostics.report(s).rows.map(x=>[x.label,x.value]));
+  assert.match(rows['视频轨道'],/video\/hevc.*FORMAT_HANDLED.*已选择/);
+  assert.match(rows['未选 HEVC'],/1280x720.*FORMAT_EXCEEDS_CAPABILITIES/);
+  assert.match(diagnostics.report(snapshot({native:{track_support:'FORMAT_UNSUPPORTED_SUBTYPE'}})).summary,/没有接受当前视频轨道/);
+});
+test('MPV reports actual audio output and native surface independently of the hidden HTML video',()=>{
+  const s=snapshot({flags:{source:true,videoVisible:false},native:{engine:'mpv',state:'playing',surface:'SurfaceView',output_ready:true,
+    restart_seen:true,vo_configured:true,video_output:'gpu',surface_width:1280,surface_height:720,surface_attached:true,surface_visible:true,
+    audio_output:'opensles',audio_codec:'aac',audio_format:'s16',audio_rate:48000,audio_channels:2,actual_mute:true,actual_volume:100,actual_pause:false,
+    output_messages:'音频输出警告'}});
+  s.video.muted=false;
+  const rows=Object.fromEntries(diagnostics.report(s).rows.map(x=>[x.label,x.value]));
+  assert.match(rows.MPV,/输出已就绪/);assert.doesNotMatch(rows.MPV,/已出首帧/);
+  assert.match(rows['MPV 视频输出'],/gpu.*1280 × 720.*重启信号/);
+  assert.match(rows['MPV 音频输出'],/opensles.*aac.*s16.*48000 Hz.*2 声道/);
+  assert.match(rows['MPV 实际状态'],/已静音.*100%.*运行中/);
+  assert.match(rows['声音状态'],/已解除静音/);
+  assert.match(rows['画面保护'],/原生视频层已显示/);assert.doesNotMatch(rows['画面保护'],/视频隐藏/);
+  assert.equal(rows['MPV 输出提示'],'音频输出警告');
+});
+test('MPV diagnostics retain signed native errors and do not invent output state from a legacy restart',()=>{
+  const s=snapshot({native:{engine:'mpv',state:'error',first_frame:true,frame_signal:'playback-restart',error_kind:'media',error_code:-13}});
+  const rows=Object.fromEntries(diagnostics.report(s).rows.map(x=>[x.label,x.value]));
+  assert.match(rows.MPV,/输出待确认/);assert.doesNotMatch(rows.MPV,/已出首帧/);
+  assert.match(rows['最近错误'],/media（-13）/);assert.match(rows['MPV 实际状态'],/状态未取得/);
+  s.native.log='https://media.invalid/a.mp4?key=secret';
   assert.doesNotMatch(JSON.stringify(diagnostics.report(s)),/media\.invalid|secret/);
 });

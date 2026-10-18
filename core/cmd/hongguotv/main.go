@@ -28,6 +28,7 @@ type server struct {
 	instanceID         string
 	startedAt          time.Time
 	hongguo            *hongguoClient
+	radar              *radarService
 	libraryStore       *libraryStore
 	accounts           *accountManager
 	numberInputs       *numberInputManager
@@ -62,7 +63,7 @@ func main() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	s := &server{instanceID: *instanceID, startedAt: time.Now().UTC(), hongguo: newHongguoClient(), libraryStore: library}
+	s := &server{instanceID: *instanceID, startedAt: time.Now().UTC(), hongguo: newHongguoClient(), radar: newRadarService(*dataDir, nil), libraryStore: library}
 	s.numberInputs = newNumberInputManager()
 	defer s.numberInputs.close()
 	s.searchHistoryStore, err = newSearchHistoryStore(*dataDir)
@@ -90,13 +91,16 @@ func main() {
 	mux.HandleFunc("/api/v1/Category", s.category)
 	mux.HandleFunc("/api/v1/rank", s.rank)
 	mux.HandleFunc("/api/v1/Rank", s.rank)
+	mux.HandleFunc("/api/v1/radar", s.radarSnapshot)
 	mux.HandleFunc("/api/v1/series/detail", s.seriesDetail)
 	mux.HandleFunc("/api/v1/SeriesDetail", s.seriesDetail)
 	mux.HandleFunc("/api/v1/series/next-season", s.nextSeason)
 	mux.HandleFunc("/api/v1/series/seasons", s.seriesSeasons)
 	mux.HandleFunc("/api/v1/search", s.search)
+	mux.HandleFunc("/api/v1/actors/works", s.actorWorks)
 	mux.HandleFunc("/api/v1/lists/", s.lists)
 	mux.HandleFunc("/api/v1/follow", s.follow)
+	mux.HandleFunc("/api/v1/notifications", s.notifications)
 	mux.HandleFunc("/api/v1/reservation", s.reservation)
 	mux.HandleFunc("/api/v1/comments", s.discussion)
 	mux.HandleFunc("/api/v1/danmaku", s.discussion)
@@ -130,7 +134,7 @@ func serveUI(root fs.FS) http.Handler {
 
 func (s *server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/v1/account") || r.URL.Path == "/api/v1/number-input" || strings.HasPrefix(r.URL.Path, "/api/v1/lists/") || r.URL.Path == "/api/v1/follow" || strings.HasPrefix(r.URL.Path, "/api/v1/player/") || r.URL.Path == "/api/v1/series/seasons" || r.URL.Path == "/api/v1/replies" || r.URL.Path == "/api/v1/reservation" || r.URL.Path == "/api/v1/comments" || r.URL.Path == "/api/v1/danmaku" || r.URL.Path == "/api/v1/library" {
+		if strings.HasPrefix(r.URL.Path, "/api/v1/account") || r.URL.Path == "/api/v1/number-input" || strings.HasPrefix(r.URL.Path, "/api/v1/lists/") || r.URL.Path == "/api/v1/follow" || r.URL.Path == "/api/v1/notifications" || strings.HasPrefix(r.URL.Path, "/api/v1/player/") || r.URL.Path == "/api/v1/series/seasons" || r.URL.Path == "/api/v1/replies" || r.URL.Path == "/api/v1/reservation" || r.URL.Path == "/api/v1/comments" || r.URL.Path == "/api/v1/danmaku" || r.URL.Path == "/api/v1/library" {
 			if !privateLocalRequest(r) {
 				writeError(w, http.StatusForbidden, "只允许应用本身访问账号和记录")
 				return
@@ -211,7 +215,7 @@ func (s *server) status(w http.ResponseWriter, r *http.Request) {
 		InstanceID:     s.instanceID,
 		Implementation: "go-api-adapter+embedded-playback",
 		StartedAt:      s.startedAt.Format(time.RFC3339),
-		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "search", "series-detail", "series-reviews", "related-series", "follow-updates", "play-info", "embedded-playback", "cenc-mp4", "range-media", "local-history", "local-favorites", "local-likes", "resume-playback", "next-episode", "next-season", "account-login", "account-mfa", "cloud-library", "new-series", "release-calendar", "reservations", "recommend-feed", "comments", "danmaku", "infinite-scroll"},
+		Capabilities:   []string{"tv-ui", "local-http", "focus-state-machine", "category", "rank", "actor-works", "ranking-radar", "search", "series-detail", "series-reviews", "related-series", "follow-updates", "notifications", "play-info", "embedded-playback", "cenc-mp4", "range-media", "local-history", "local-favorites", "local-likes", "resume-playback", "next-episode", "next-season", "account-login", "account-mfa", "cloud-library", "new-series", "release-calendar", "reservations", "recommend-feed", "comments", "danmaku", "infinite-scroll"},
 	})
 }
 
@@ -285,6 +289,24 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": result})
 }
 
+func (s *server) actorWorks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	actorID := strings.TrimSpace(r.URL.Query().Get("actor_id"))
+	if !validID(actorID) || actorID == "0" {
+		writeError(w, http.StatusBadRequest, "actor_id 无效")
+		return
+	}
+	result, err := s.hongguo.ActorWorks(r.Context(), actorID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": result})
+}
+
 func (s *server) follow(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		q, err := listQuery(r)
@@ -348,7 +370,12 @@ func (s *server) playInfo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := s.hongguo.PlayInfoQuality(r.Context(), r.URL.Query().Get("series_id"), r.URL.Query().Get("vid"), quality, r.URL.Query().Get("fallback") == "1")
+	var result PlayInfo
+	if r.URL.Query().Get("mode") == "range" {
+		result, err = s.hongguo.PlayInfoRangeQuality(r.Context(), r.URL.Query().Get("series_id"), r.URL.Query().Get("vid"), quality, r.URL.Query().Get("fallback") == "1", r.URL.Query().Get("prefetch") != "1")
+	} else {
+		result, err = s.hongguo.PlayInfoQuality(r.Context(), r.URL.Query().Get("series_id"), r.URL.Query().Get("vid"), quality, r.URL.Query().Get("fallback") == "1")
+	}
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return

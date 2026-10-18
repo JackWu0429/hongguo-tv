@@ -81,6 +81,7 @@ final class AppUpdater {
             name = json.getString("version_name"); packageName = json.getString("package_name");
             bytes = json.getLong("size"); sha256 = json.getString("sha256").toLowerCase(java.util.Locale.ROOT);
             url = json.getString("download_url"); notes = json.optString("release_notes", "");
+            UpdatePolicy.validateVariant(BuildConfig.VARIANT_ID, json.optString("variant", ""), packageName, minSdk);
             UpdatePolicy.validate(packageName, code, name, minSdk, bytes, sha256, url, installedPackage, BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME);
             if (notes.length() > 16000) throw new IOException("版本说明过长");
         }
@@ -124,7 +125,7 @@ final class AppUpdater {
         worker.execute(() -> {
             Manifest result = null;
             String error = "暂时无法连接更新服务，请稍后重试";
-            String origin = UpdatePolicy.MANIFEST + "?check=" + System.currentTimeMillis();
+            String origin = UpdatePolicy.manifestUrl(BuildConfig.VARIANT_ID) + "?check=" + System.currentTimeMillis();
             for (String source : UpdatePolicy.sources(origin, selectedProxy)) {
                 if (!valid(epoch)) return;
                 try {
@@ -450,6 +451,7 @@ final class AppUpdater {
         try {
             JSONObject value = new JSONObject();
             value.put("supported", !BuildConfig.DEBUG); value.put("current_version", BuildConfig.VERSION_NAME);
+            value.put("variant", BuildConfig.VARIANT_ID); value.put("edition", "mpv".equals(BuildConfig.VARIANT_ID) ? "MPV 版" : "标准版");
             value.put("current_code", BuildConfig.VERSION_CODE); value.put("state", state); value.put("message", message);
             value.put("proxy", proxy); value.put("downloaded", downloaded);
             value.put("latest_version", latest == null ? "" : latest.name);

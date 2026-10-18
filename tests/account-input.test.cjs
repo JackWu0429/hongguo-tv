@@ -13,6 +13,7 @@ function router() {
     var numericKeypad;function accountKeypadOpen(){return numericKeypad.isOpen()}
     function moveFrom(current,direction){moved.push(direction)}
     function handleBack(){return true}function handleMediaCommand(){return false}
+    function handleEndRecommendationKey(){return false}
   ` + keyNames + keys,c);
   c.changes=[];c.closes=[];
   c.numericKeypad=create({change:(kind,value)=>c.changes.push({kind,value}),close:r=>c.closes.push(r)});
@@ -57,4 +58,32 @@ test('account number fields are buttons, not editable elements or IME bridge cli
     assert.doesNotMatch(html,new RegExp('<input[^>]*id="'+id+'"'));
   }
   assert.doesNotMatch(source,/HongguoTVInput\.startAccountEditing|accountEditingInput|accountInputBlur/);
+});
+test('country selector is a TV-focusable modal with mainland default and restores to phone entry',()=>{
+  const html=fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/index.html'),'utf8');
+  const countries=fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/phone-countries.js'),'utf8');
+  assert.match(html,/id="account-country"[^>]*aria-haspopup="dialog"/);
+  assert.match(html,/id="account-country-modal"[^>]*aria-hidden="true"/);
+  assert.match(source,/accountPhoneCountryCode = '\+86'/);
+  assert.match(source,/closeAccountCountryModal\(true\)/);
+  assert.match(source,/closeAccountCountryModal\(false\)/);
+  assert.match(countries,/\{ code: '\+852', localeKey: 'country\.hongKong', minLength: 8, maxLength: 8 \}/);
+  assert.match(source,/country_code: accountPhoneCountryCode/);
+});
+test('country entry limits match the actual reference package, including leading-zero eleven-digit numbers',()=>{
+  const countriesSource=fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/phone-countries.js'),'utf8');
+  const context=vm.createContext({});
+  vm.runInContext(countriesSource,context);
+  const countries=context.HongguoPhoneCountries;
+  const evidence=JSON.parse(fs.readFileSync(require.resolve('../core/cmd/hongguotv/testdata/passport-international-v124.json'),'utf8'));
+  assert.equal(countries.length,evidence.regions.length);
+  for(const expected of evidence.regions){
+    const policy=countries.find(c=>c.code===expected.code);
+    assert.equal(policy.minLength,expected.min,expected.code);
+    assert.equal(policy.maxLength,expected.max,expected.code);
+    const pad=create({});
+    pad.open('phone','',policy);
+    for(const digit of expected.local) pad.press(digit);
+    assert.equal(pad.snapshot().value,expected.local,expected.code+' was truncated');
+  }
 });

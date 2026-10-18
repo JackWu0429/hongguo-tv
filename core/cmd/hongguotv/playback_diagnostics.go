@@ -71,6 +71,7 @@ type playbackDiagnosticResponse struct {
 	OS              string `json:"os"`
 	Arch            string `json:"arch"`
 	MediaPrepared   bool   `json:"media_prepared"`
+	MediaMode       string `json:"media_mode,omitempty"`
 	MediaBytes      int64  `json:"media_bytes"`
 	MediaHTTPStatus int    `json:"media_http_status"`
 	MediaAgeSeconds int    `json:"media_age_seconds"`
@@ -97,6 +98,11 @@ func (s *server) playbackDiagnostics(w http.ResponseWriter, r *http.Request) {
 		var file string
 		if job != nil && isMiniReelReady(job.Ready) && job.Err == nil {
 			file = job.Path
+			result.MediaMode = job.Mode
+			if job.Range != nil {
+				result.MediaPrepared = true
+				result.MediaBytes = int64(len(job.Range.Prefix))
+			}
 		}
 		miniReelState.Unlock()
 		if file != "" {

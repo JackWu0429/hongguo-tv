@@ -1,0 +1,3 @@
+/* Keep the internal bundle executable name stable for ZIP updater compatibility. */
+"CFBundleDisplayName" = "红果短剧";
+"CFBundleName" = "红果短剧";

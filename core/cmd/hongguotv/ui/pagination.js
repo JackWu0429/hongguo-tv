@@ -1,5 +1,14 @@
 (function (root) {
   'use strict';
+  function text(key, fallback, params) {
+    return root.HongguoI18n && root.HongguoI18n.t ? root.HongguoI18n.t(key, params, fallback) : fallback;
+  }
+  function errorText(error) {
+    var detail = error && typeof error === 'object' ? error.message : error;
+    var i18n = root.HongguoI18n;
+    if (detail && (!i18n || typeof i18n.locale !== 'function' || i18n.locale() === i18n.defaultLocale)) return String(detail);
+    return text('common.networkFailed', '连接失败');
+  }
   // Networking and progressive local rendering share this controller. Old
   // replies are invalidated before aborting, including WebViews without AbortController.
   function createPager(options) {
@@ -66,7 +75,7 @@
           return flush();
         }).catch(function (error) {
           if (generation !== p.generation || error.name === 'AbortError') return [];
-          p.error = error.message || '连接失败'; return [];
+          p.error = errorText(error); return [];
         }).then(function (added) {
           if (generation === p.generation) {
             p.busy = false; p.request = null; inFlight = null; status();

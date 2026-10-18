@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -152,7 +152,7 @@ func TestConfirmedLikePersistsPerEpisodeAndFailureDoesNotChange(t *testing.T) {
 	if err != nil || len(third.Entries[0].LikedVideos) != 1 || third.Entries[0].LikedVideos[0].Episode != 2 {
 		t.Fatal("cancel removed wrong episode", err)
 	}
-	reopened, err := newLibraryStore(strings.TrimSuffix(m.store.path, "/library.json"))
+	reopened, err := newLibraryStore(filepath.Dir(m.store.path))
 	if err != nil || len(reopened.snapshot().Entries[0].LikedVideos) != 1 {
 		t.Fatal("like lost on restart", err)
 	}

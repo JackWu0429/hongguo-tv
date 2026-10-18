@@ -16,8 +16,14 @@ local.properties
 *.jks
 *.apk
 *.aab
+*.aar
+android/mpv-jni/include/
+android/app/src/mpv/assets/mpv-notices.txt
 *.so
 *.log
 *.hprof
+__pycache__/
+*.pyc
 *.dmg
 *.exe
+desktop/frontend/wailsjs/

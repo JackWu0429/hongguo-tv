@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "红果短剧",
+  "outputfilename": "红果短剧",
+  "frontend:dir": "frontend",
+  "frontend:install": "npm install --ignore-scripts --no-audit --no-fund",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run build",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "aston314",
+    "email": ""
+  },
+  "info": {
+    "companyName": "aston314",
+    "productName": "红果短剧",
+    "productVersion": "0.2.84",
+    "comments": "红果短剧桌面版"
+  }
+}

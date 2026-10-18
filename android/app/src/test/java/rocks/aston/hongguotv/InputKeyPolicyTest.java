@@ -17,4 +17,9 @@ public class InputKeyPolicyTest {
     @Test public void completedEditingRestoresPageNavigation() {
         assertTrue(InputKeyPolicy.routeVerticalKey(false, false));
     }
+
+    @Test public void searchEditingKeepsVerticalNavigationOnPageRouter() {
+        assertTrue(InputKeyPolicy.routeSearchKey(true));
+        assertFalse(InputKeyPolicy.routeSearchKey(false));
+    }
 }

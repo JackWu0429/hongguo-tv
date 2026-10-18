@@ -2,7 +2,7 @@
 
 源码保持在私有仓库 `aston314/hongguo-tv`。公开仓库 `aston314/hongguo-tv-releases` 只保存 README、最新 update.json 和正式 Release 文件。任何人可以下载正式 APK。
 
-Android 6/API 23 起支持。首次安装带更新功能的版本（0.2.7 或更高）需要手动覆盖升级，此后可从“我的 → 版本更新”检查并下载安装新版本。系统安装界面仍需要用户确认。正式版包名和签名保持不变，升级保留账号与记录；调试版不覆盖安装正式版。
+Android 6/API 23 起支持。首次安装带更新功能的版本（0.2.7 或更高）需要手动覆盖升级，此后可从“设置 → 版本更新”检查并下载安装新版本。系统安装界面仍需要用户确认。正式版包名和签名保持不变，升级保留账号与记录；调试版不覆盖安装正式版。
 
 ## 检查与操作
 
@@ -18,7 +18,7 @@ Android 6/API 23 起支持。首次安装带更新功能的版本（0.2.7 或更
 
 私有仓库 Actions Secret `HONGGUO_RELEASES_TOKEN` 需为专用 Fine-grained PAT：仅公开发行仓库、Contents Read and write。配置并确认凭证后，将 Actions Variable `HONGGUO_PUBLIC_RELEASES_ENABLED` 设为 `true` 启用自动发布。默认关闭，未配置时正式编译和私有 Release 正常完成；可用本机已登录的 gh 调用公开上传脚本完成本次发行。不能使用私有仓库自带 GITHUB_TOKEN 写另一个仓库，也不将本机 gh 的广泛权限登录凭证复制到 Actions 或 APK。Token 过期后需在 Secrets 更新。
 
-Release workflow 从 build.gradle 读取版本，生成 APK/SHA256SUMS/update.json，先在公开仓库创建草稿、上传并验证文件，再发布 Release，最后更新稳定 JSON。公开发布任务串行，同版本不替换不同 APK，旧版本不能覆盖较新的 update.json。上传脚本只允许明确的三项发行文件，不上传工程源码或打包整个目录。
+Release workflow 从 build.gradle 读取版本，生成 APK/SHA256SUMS/update.json，先发布私有签名 Release，再将验证过的 APK、更新清单和校验和同步到公开仓库。MPV 对应的 LGPL 库源码 ZIP 只保留在私有 Release，不进入公开下载仓库。公开发布任务串行，同版本不替换不同 APK，旧版本不能覆盖较新的 update.json。上传脚本只允许明确的发行文件，不上传工程源码或打包整个目录。
 
 创建草稿后沿用接口返回的 Release ID，不依赖尚未生效的标签查询。中断后重试保留已有且校验一致的附件，只补齐缺失文件；所有附件校验完成并正式发布后才更新稳定 JSON。已发布附件不覆盖，重复执行且内容一致时不产生多余提交。
 

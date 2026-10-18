@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -104,6 +105,13 @@ type SeriesDetailResult struct {
 	Drama
 	Reviews []SeriesReview `json:"reviews,omitempty"`
 	Related []Drama        `json:"related,omitempty"`
+	Actors  []SeriesActor  `json:"actors,omitempty"`
+}
+
+type SeriesActor struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Avatar string `json:"avatar,omitempty"`
 }
 
 type SeriesReview struct {
@@ -121,15 +129,31 @@ type SearchResult struct {
 	Items []Drama `json:"items"`
 }
 
+// ActorWorksResult is returned by the public actor search page. Actor IDs are
+// kept as strings because Hongguo uses 19-digit identifiers.
+type ActorWorksResult struct {
+	Actor ActorSummary `json:"actor"`
+	Items []Drama      `json:"items"`
+}
+
+type ActorSummary struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Avatar      string `json:"avatar,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
 type RankRequest struct {
 	Path string
 }
 
 type PlayInfo struct {
-	Path      string   `json:"path"`
-	Quality   string   `json:"quality,omitempty"`
-	Qualities []string `json:"qualities,omitempty"`
-	Vid       string   `json:"vid"`
+	Path          string   `json:"path"`
+	Quality       string   `json:"quality,omitempty"`
+	Qualities     []string `json:"qualities,omitempty"`
+	Vid           string   `json:"vid"`
+	Mode          string   `json:"mode,omitempty"`
+	RangeFallback string   `json:"range_fallback,omitempty"`
 }
 
 type hongguoClient struct {
@@ -454,8 +478,137 @@ func (c *hongguoClient) SeriesDetail(ctx context.Context, seriesID string) (Seri
 			Locked: index >= drama.AccessibleEpisodeCnt,
 		})
 	}
-	routerMap, _ := asMap(router)
-	return SeriesDetailResult{Drama: drama, Reviews: normalizeSeriesReviews(routerMap), Related: normalizeRelatedDramas(routerMap, seriesID)}, nil
+	detailPage, ok := findObjectByKey(router, "detail_page")
+	if !ok {
+		detailPage, _ = asMap(router)
+	}
+	related := normalizeRelatedDramas(detailPage, seriesID)
+	if len(related) == 0 {
+		related = normalizeRelatedDramas(extractDeferredRecommendations(body), seriesID)
+	}
+	actors := normalizeSeriesActors(detailMap)
+	if len(actors) == 0 {
+		actors = normalizeSeriesActors(detailPage)
+	}
+	return SeriesDetailResult{Drama: drama, Reviews: normalizeSeriesReviews(detailPage), Related: related, Actors: actors}, nil
+}
+
+func normalizeSeriesActors(value map[string]any) []SeriesActor {
+	if value == nil {
+		return nil
+	}
+	var raw []any
+	for _, key := range []string{"celebrities", "celebrity_list", "actors", "actor_list"} {
+		if items, ok := value[key].([]any); ok {
+			raw = items
+			break
+		}
+	}
+	seen := make(map[string]bool)
+	actors := make([]SeriesActor, 0, len(raw))
+	for _, item := range raw {
+		person, ok := asMap(item)
+		if !ok {
+			continue
+		}
+		if nested, ok := asMap(person["user_info"]); ok {
+			person = nested
+			if base, ok := asMap(person["base_info"]); ok {
+				person = base
+			}
+		}
+		id := firstNonEmpty(asString(person["celebrity_id"]), asString(person["actor_id"]), asString(person["actor_id_str"]), asString(person["person_id"]))
+		name := firstNonEmpty(asString(person["nickname"]), asString(person["user_name"]), asString(person["celebrity_name"]), asString(person["actor_name"]), asString(person["name"]))
+		if name == "" {
+			continue
+		}
+		key := id
+		if key == "" {
+			key = name
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		actors = append(actors, SeriesActor{
+			ID:     id,
+			Name:   name,
+			Avatar: firstNonEmpty(asString(person["user_avatar"]), asString(person["avatar"]), asString(person["avatar_url"]), asString(person["cover_url"])),
+		})
+	}
+	return actors
+}
+
+func extractDeferredRecommendations(body []byte) map[string]any {
+	const marker = "<script"
+	for offset := 0; offset < len(body); {
+		start := bytes.Index(body[offset:], []byte(marker))
+		if start < 0 {
+			break
+		}
+		start += offset
+		end := scriptTagEnd(body, start)
+		if end < 0 {
+			break
+		}
+		token, err := xml.NewDecoder(bytes.NewReader(body[start : end+1])).Token()
+		if err != nil {
+			offset = end + 1
+			continue
+		}
+		element, ok := token.(xml.StartElement)
+		if !ok {
+			offset = end + 1
+			continue
+		}
+		script := map[string]string{}
+		for _, attr := range element.Attr {
+			script[attr.Name.Local] = attr.Value
+		}
+		offset = end + 1
+		if script["data-fn-name"] != "mergeLoaderData" || script["data-fn-args"] == "" {
+			continue
+		}
+		var args []any
+		if json.Unmarshal([]byte(script["data-fn-args"]), &args) != nil || len(args) < 2 || args[0] != "detail_page" {
+			continue
+		}
+		entries, _ := args[1].([]any)
+		for _, raw := range entries {
+			entry, _ := asMap(raw)
+			if asString(entry["key"]) != "recommendations" || asString(entry["routerDataFnName"]) != "p" {
+				continue
+			}
+			fnArgs, _ := entry["routerDataFnArgs"].([]any)
+			if len(fnArgs) == 0 {
+				continue
+			}
+			encoded, _ := fnArgs[0].(string)
+			var result map[string]any
+			if json.Unmarshal([]byte(encoded), &result) == nil {
+				return result
+			}
+		}
+	}
+	return nil
+}
+
+func scriptTagEnd(data []byte, start int) int {
+	var quote byte
+	for i := start; i < len(data); i++ {
+		if quote != 0 {
+			if data[i] == quote {
+				quote = 0
+			}
+			continue
+		}
+		if data[i] == '\'' || data[i] == '"' {
+			quote = data[i]
+		} else if data[i] == '>' {
+			return i
+		}
+	}
+	return -1
 }
 
 func normalizeSeriesReviews(router map[string]any) []SeriesReview {
@@ -503,12 +656,11 @@ func normalizeSeriesReviews(router map[string]any) []SeriesReview {
 }
 
 func normalizeRelatedDramas(router map[string]any, currentID string) []Drama {
-	keys := []string{"related", "detail_page_more_related", "related_video", "rawRelatedVideo"}
-	var rows []any
+	keys := []string{"related_list", "videoList", "related", "detail_page_more_related", "related_video", "rawRelatedVideo"}
+	rows := make([]any, 0)
 	for _, key := range keys {
 		if found, ok := findArrayByKey(router, key); ok {
-			rows = found
-			break
+			rows = append(rows, found...)
 		}
 	}
 	out := make([]Drama, 0, len(rows))
@@ -564,6 +716,58 @@ func (c *hongguoClient) Search(ctx context.Context, query string) (SearchResult,
 	return result, nil
 }
 
+// ActorWorks uses the public character page used by the web client. The page
+// carries actor metadata in userInfo and the real works in videoList.
+func (c *hongguoClient) ActorWorks(ctx context.Context, actorID string) (ActorWorksResult, error) {
+	actorID = strings.TrimSpace(actorID)
+	if !validID(actorID) || actorID == "0" {
+		return ActorWorksResult{}, errors.New("actor_id 无效")
+	}
+	body, err := c.getBytes(ctx, c.webBase+"/character/"+url.PathEscape(actorID), "text/html")
+	if err != nil {
+		return ActorWorksResult{}, err
+	}
+	router, err := extractRouterData(body)
+	if err != nil {
+		return ActorWorksResult{}, err
+	}
+	routerObject, ok := asMap(router)
+	if !ok {
+		return ActorWorksResult{}, errors.New("演员作品响应根数据无效")
+	}
+	loaderData, ok := asMap(routerObject["loaderData"])
+	if !ok {
+		return ActorWorksResult{}, errors.New("演员作品响应缺少 loaderData")
+	}
+	page, ok := asMap(loaderData["character_(id)/page"])
+	if !ok {
+		return ActorWorksResult{}, errors.New("演员作品响应缺少详情页面数据")
+	}
+	result := ActorWorksResult{Actor: ActorSummary{ID: actorID}, Items: []Drama{}}
+	user, userOK := asMap(page["userInfo"])
+	if !userOK {
+		return ActorWorksResult{}, errors.New("演员作品响应缺少 userInfo")
+	}
+	id := firstNonEmpty(asString(user["actor_id"]), asString(user["actor_id_str"]), asString(user["person_id"]))
+	if id != actorID {
+		return ActorWorksResult{}, errors.New("演员作品响应与请求不一致")
+	}
+	result.Actor.Name = firstNonEmpty(asString(user["user_name"]), asString(user["name"]), "未知演员")
+	result.Actor.Avatar = firstNonEmpty(asString(user["user_avatar"]), asString(user["avatar"]))
+	result.Actor.Description = firstNonEmpty(asString(user["description"]), asString(user["intro"]))
+	works, _ := page["videoList"].([]any)
+	seen := map[string]bool{}
+	for _, work := range works {
+		drama, valid := normalizeDrama(work)
+		if !valid || !validID(drama.SeriesID) || drama.SeriesID == "0" || seen[drama.SeriesID] {
+			continue
+		}
+		seen[drama.SeriesID] = true
+		result.Items = append(result.Items, drama)
+	}
+	return result, nil
+}
+
 func (c *hongguoClient) PlayInfo(ctx context.Context, seriesID, vid string) (PlayInfo, error) {
 	return c.PlayInfoQuality(ctx, seriesID, vid, "", true)
 }
@@ -588,6 +792,24 @@ func (c *hongguoClient) PlayInfoQuality(ctx context.Context, seriesID, vid, qual
 	return result, nil
 }
 
+func (c *hongguoClient) PlayInfoRangeQuality(ctx context.Context, seriesID, vid, quality string, fallback, allowStandardFallback bool) (PlayInfo, error) {
+	if !validID(seriesID) || !validID(vid) {
+		return PlayInfo{}, errors.New("播放参数无效")
+	}
+	value, err := resolveMiniReelMediaRangeQuality(ctx, seriesID, vid, quality, fallback, allowStandardFallback)
+	if err != nil {
+		return PlayInfo{}, fmt.Errorf("按需读取播放准备失败: %w", err)
+	}
+	return PlayInfo{
+		Path:          asString(value["path"]),
+		Quality:       asString(value["quality"]),
+		Qualities:     value["qualities"].([]string),
+		Vid:           firstNonEmpty(value["vid"], vid),
+		Mode:          asString(value["mode"]),
+		RangeFallback: asString(value["range_fallback"]),
+	}, nil
+}
+
 func embeddedMiniReelPlayInfo(ctx context.Context, seriesID, vid, quality string, fallback bool) (PlayInfo, error) {
 	value, err := resolveMiniReelMediaQuality(ctx, seriesID, vid, quality, fallback)
 	if err != nil {
@@ -598,6 +820,7 @@ func embeddedMiniReelPlayInfo(ctx context.Context, seriesID, vid, quality string
 		Quality:   asString(value["quality"]),
 		Qualities: value["qualities"].([]string),
 		Vid:       firstNonEmpty(value["vid"], vid),
+		Mode:      asString(value["mode"]),
 	}, nil
 }
 

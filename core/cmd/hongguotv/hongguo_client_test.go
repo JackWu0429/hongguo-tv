@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	stdhtml "html"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -175,6 +176,60 @@ func TestSeriesDetailCreatesLockedEpisodes(t *testing.T) {
 	}
 }
 
+func TestSeriesDetailParsesActorsFromDetailData(t *testing.T) {
+	html := `<!doctype html><script>window._ROUTER_DATA = {"loaderData":{"detail_page":{"seriesDetail":{"series_id":"1234567890123456789","series_name":"演员测试","episode_cnt":1,"vid_list":["9988776655443322110"],"celebrities":[{"celebrity_id":"7377326001203713305","nickname":"测试演员","avatar":"https://avatar"},{"celebrity_id":"7377326001203713305","nickname":"重复演员"},{"nickname":"无编号演员"}]}}}};</script>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(html))
+	}))
+	defer server.Close()
+	client := newHongguoClient()
+	client.webBase = server.URL
+	client.httpClient.Timeout = 2 * time.Second
+	result, err := client.SeriesDetail(context.Background(), "1234567890123456789")
+	if err != nil {
+		t.Fatalf("SeriesDetail failed: %v", err)
+	}
+	if len(result.Actors) != 2 || result.Actors[0].ID != "7377326001203713305" || result.Actors[0].Name != "测试演员" || result.Actors[0].Avatar != "https://avatar" || result.Actors[1].Name != "无编号演员" {
+		t.Fatalf("unexpected actors: %#v", result.Actors)
+	}
+}
+
+func TestActorWorksParsesNestedVideoList(t *testing.T) {
+	html := `<!doctype html><script>window._ROUTER_DATA = {"loaderData":{"character_layout":{"videoList":[]},"character_(id)/page":{"userInfo":{"actor_id":"7377326001203713305","user_name":"测试演员","user_avatar":"https://avatar","description":"演员简介"},"videoList":[{"series_id":"1234567890123456789","series_title":"第一部","series_cover":"https://cover-1","series_intro":"简介1","episode_cnt":12,"vid_list":["1111111111111111111"]},{"series_id":"2234567890123456789","series_title":"第二部","series_cover":"https://cover-2","series_intro":"简介2","episode_cnt":8,"vid_list":["2222222222222222222"]}]}}};</script>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/character/7377326001203713305" {
+			t.Fatalf("unexpected actor path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(html))
+	}))
+	defer server.Close()
+	client := newHongguoClient()
+	client.webBase = server.URL
+	result, err := client.ActorWorks(context.Background(), "7377326001203713305")
+	if err != nil {
+		t.Fatalf("ActorWorks failed: %v", err)
+	}
+	if result.Actor.ID != "7377326001203713305" || result.Actor.Name != "测试演员" || len(result.Items) != 2 {
+		t.Fatalf("unexpected actor result: %#v", result)
+	}
+	if result.Items[0].SeriesID != "1234567890123456789" || result.Items[0].Title != "第一部" || result.Items[1].VidList[0] != "2222222222222222222" {
+		t.Fatalf("nested works were not normalized: %#v", result.Items)
+	}
+}
+
+func TestActorWorksRejectsMismatchedActor(t *testing.T) {
+	html := `<!doctype html><script>window._ROUTER_DATA = {"loaderData":{"character_(id)/page":{"userInfo":{"actor_id":"9999999999999999999"},"videoList":[]}}};</script>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(html)) }))
+	defer server.Close()
+	client := newHongguoClient()
+	client.webBase = server.URL
+	if _, err := client.ActorWorks(context.Background(), "7377326001203713305"); err == nil || !strings.Contains(err.Error(), "不一致") {
+		t.Fatalf("mismatched actor should fail, got %v", err)
+	}
+}
+
 func TestNormalizeDramaReadsTopLevelAndNestedSeriesStatus(t *testing.T) {
 	ongoing, ok := normalizeDrama(map[string]any{
 		"series_id": "1234567890123456789", "series_title": "连载剧", "series_status": json.Number("0"),
@@ -192,7 +247,7 @@ func TestNormalizeDramaReadsTopLevelAndNestedSeriesStatus(t *testing.T) {
 }
 
 func TestSeriesDetailParsesReviewsAndRelated(t *testing.T) {
-	html := `<!doctype html><script>window._ROUTER_DATA = {"loaderData":{"detail_page":{"seriesDetail":{"series_id":"1234567890123456789","series_name":"社交测试","episode_cnt":1,"vid_list":["9988776655443322110"]},"seriesSocialInfo":{"reviews":[{"review_id":"r1","user_name":"观众","content":"很好看","rating":9,"digg_count":3}]},"detail_page_more_related":[{"series_id":"2234567890123456789","series_title":"相关剧","series_cover":"https://cover","episode_cnt":4}]}}};</script>`
+	html := `<!doctype html><script>window._ROUTER_DATA = {"loaderData":{"detail_page":{"seriesDetail":{"series_id":"1234567890123456789","series_name":"社交测试","episode_cnt":1,"vid_list":["9988776655443322110"]},"seriesSocialInfo":{"reviews":[{"review_id":"r1","user_name":"观众","content":"很好看","rating":9,"digg_count":3}]},"related":[],"related_list":[{"series_id":"2234567890123456789","series_name":"相关推荐剧","series_cover":"https://related-cover","episode_cnt":4}]}}};</script>`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(html))
@@ -204,6 +259,33 @@ func TestSeriesDetailParsesReviewsAndRelated(t *testing.T) {
 	result, err := client.SeriesDetail(context.Background(), "1234567890123456789")
 	if err != nil || len(result.Reviews) != 1 || result.Reviews[0].Content != "很好看" || len(result.Related) != 1 || result.Related[0].SeriesID != "2234567890123456789" {
 		t.Fatalf("unexpected social detail: %#v err=%v", result, err)
+	}
+}
+
+func TestSeriesDetailParsesDeferredRecommendations(t *testing.T) {
+	recommendations, err := json.Marshal(map[string]any{"videoList": []any{map[string]any{
+		"series_id": "2234567890123456789", "series_name": "延迟相关推荐", "series_cover": "https://cover", "episode_cnt": 12,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fnArgs, err := json.Marshal([]any{"detail_page", []any{map[string]any{
+		"key": "recommendations", "routerDataFnName": "p", "routerDataFnArgs": []string{string(recommendations)},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := `<!doctype html><script>_ROUTER_DATA={"loaderData":{"detail_page":{"seriesDetail":{"series_id":"1234567890123456789","series_name":"社交测试","episode_cnt":1,"vid_list":["9988776655443322110"]},"seriesSocialInfo":{"reviews":[]},"recommendations":{}}}};</script><script data-fn-name="mergeLoaderData" data-fn-args="` + stdhtml.EscapeString(string(fnArgs)) + `"></script>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(page))
+	}))
+	defer server.Close()
+	client := newHongguoClient()
+	client.webBase = server.URL
+	result, err := client.SeriesDetail(context.Background(), "1234567890123456789")
+	if err != nil || len(result.Related) != 1 || result.Related[0].SeriesID != "2234567890123456789" || result.Related[0].Title != "延迟相关推荐" {
+		t.Fatalf("deferred recommendations were not normalized: %#v err=%v", result.Related, err)
 	}
 }
 

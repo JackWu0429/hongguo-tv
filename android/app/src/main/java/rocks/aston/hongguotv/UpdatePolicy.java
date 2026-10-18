@@ -7,7 +7,17 @@ import java.util.Locale;
 /** Rules shared by checking, downloading and the final installer hand-off. */
 final class UpdatePolicy {
     static final String REPOSITORY = "aston314/hongguo-tv-releases";
-    static final String MANIFEST = "https://raw.githubusercontent.com/" + REPOSITORY + "/main/update.json";
+    static String manifestUrl(String variant) {
+        return "https://raw.githubusercontent.com/" + REPOSITORY + "/main/" +
+                ("mpv".equals(variant) ? "update-mpv.json" : "update.json");
+    }
+    static void validateVariant(String variant, String declared, String packageName, int minSdk) {
+        if (!("standard".equals(variant) || "mpv".equals(variant))
+                || !(variant.equals(declared) || "standard".equals(variant) && declared.isEmpty())
+                || !("rocks.aston.hongguotv" + ("mpv".equals(variant) ? ".mpv" : "")).equals(packageName)
+                || minSdk < 23)
+            throw new IllegalArgumentException("更新包与当前应用版本类型不匹配");
+    }
     static final String DEFAULT_PROXY = "https://ghfast.top/";
     static final long MAX_APK_BYTES = 100L * 1024 * 1024;
     static final long CHECK_INTERVAL = 24L * 60 * 60 * 1000;
@@ -46,7 +56,8 @@ final class UpdatePolicy {
         if (!"https".equals(uri.getScheme()) || !"github.com".equals(uri.getHost())
                 || uri.getRawUserInfo() != null || uri.getPort() != -1
                 || uri.getRawQuery() != null || uri.getRawFragment() != null
-                || path == null || !path.equals(prefix + "hongguo-tv-" + name + ".apk"))
+                || path == null || !path.equals(prefix + "hongguo-tv-" +
+                    (installedPackage.endsWith(".mpv") ? "mpv-" : "") + name + ".apk"))
             throw new IllegalArgumentException("安装包地址不是红果短剧公开发行文件");
     }
 

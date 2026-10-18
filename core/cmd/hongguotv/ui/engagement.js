@@ -5,11 +5,15 @@
   else root.HongguoEngagement = api;
 }(typeof window !== 'undefined' ? window : this, function () {
   'use strict';
+  function text(key, fallback) {
+    var root = typeof window !== 'undefined' ? window : this;
+    return root && root.HongguoI18n && typeof root.HongguoI18n.t === 'function' ? root.HongguoI18n.t(key, null, fallback) : fallback;
+  }
   function countText(value) {
     if (typeof value !== 'number' || !isFinite(value) || value < 0 || Math.floor(value) !== value) return '—';
     if (value < 10000) return String(value);
     var unit = value >= 100000000 ? 100000000 : 10000;
-    return (Math.floor(value / unit * 10) / 10).toFixed(1).replace(/\.0$/, '') + (unit === 10000 ? '万' : '亿');
+    return (Math.floor(value / unit * 10) / 10).toFixed(1).replace(/\.0$/, '') + (unit === 10000 ? text('ui.unitTenThousand', '万') : text('ui.unitBillion', '亿'));
   }
   function create(options) {
     var epoch = 0, target = null, data = null, request = null, cache = {};

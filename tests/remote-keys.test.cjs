@@ -2,6 +2,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+require('./helpers/app-text.cjs');
 const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'), 'utf8');
 const keyNames = source.match(/  var keyNames = \{[\s\S]*?\n  \};/)[0];
 const keys = source.slice(source.indexOf('  function normalizedKey('), source.indexOf('  function showNotice('));
@@ -13,14 +14,21 @@ function keyboard() {
     var detailModalOpen=false,playerOptionsOpen=false,confirmOpen=false,discussionOpen=false;
     var androidShell=false; function accountKeypadOpen(){return false}
     function firstVisible(selector){return {id:selector.slice(1)}}
-    var shell={classList:{contains:function(){return false}}};
-    var moved=[],focused=[],clicks=0,backs=0,searches=0;
+    var shellState={};
+    var shell={classList:{contains:function(name){return shellState[name]===true}}};
+    var moved=[],focused=[],clicks=0,backs=0,searches=0,played=[],notices=[];
+    var activePlayback=null,playbackRequest=null,feedItems=[],feedIndex=0,featuredItem=null;
+    function playFeedItem(index,episode,position){played.push([index,episode,position])}
+    function showNotice(message){notices.push(message)}
+    document.getElementById=function(id){return {id:id}}
     function pageMode(){return 'search'}
     function isPlaybackPage(){return false}
     function zoneOf(){return 'sidebar'}
     function moveFrom(current,direction){moved.push(direction);return {id:direction}}
     function goFocus(target){focused.push(target.id)}
+    function revealControls(){}
     function handleMediaCommand(){return false}
+    function handleEndRecommendationKey(){return false}
     function handleBack(){backs++;return true}
     function submitSearch(){searches++}
     current.click=function(){clicks++};
@@ -82,6 +90,11 @@ test('search Enter still submits once while up/down retain focus navigation', ()
   c.handleKey({...event,keyCode:38});c.handleKey({...event,keyCode:40});
   assert.equal(c.searches,1);assert.deepEqual(Array.from(c.moved),['up','down']);assert.equal(c.backs,0);
 });
+test('Android search input notifies the native shell without changing browser focus behavior', () => {
+  assert.match(source, /startSearchEditing/);
+  assert.match(source, /event\.target\.id === 'search-input'/);
+  assert.match(source, /androidShell && event\.target/);
+});
 test('native vertical bridge uses the existing router once and ignores text editing keys', () => {
   const c=keyboard();
   assert.equal(c.remoteKey(20,false),true);
@@ -105,4 +118,102 @@ test('Android account number buttons route all arrows to navigation', () => {
   vm.runInContext("androidShell=true;document.activeElement={id:'account-phone',classList:{contains:function(name){return name==='account-input'}}}",c);
   for (const keyCode of [37,38,39,40]) c.handleKey({keyCode,preventDefault(){},stopPropagation(){}});
   assert.deepEqual(Array.from(c.moved),['left','up','right','down']);
+});
+test('single-player feed arrows switch episodes while recommendation arrows stay on recommendation items', () => {
+  const c=keyboard();
+  vm.runInContext(`
+    pageMode=function(){return 'player'};
+    zoneOf=function(){return 'feed'};
+    isPlaybackPage=function(){return true};
+    activePlayback={episode:4,item:{series_id:'series-1',episode_count:8}};
+    feedItems=[activePlayback.item]; feedIndex=0;
+  `,c);
+  c.handleKey({keyCode:38,preventDefault(){},stopPropagation(){}});
+  c.handleKey({keyCode:40,preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[[0,3,0],[0,5,0]]);
+  assert.deepEqual(Array.from(c.focused),['hero-feed-focus','hero-feed-focus']);
+
+  vm.runInContext(`pageMode=function(){return 'recommend'}; played=[]; focused=[];`,c);
+  vm.runInContext(`switchRecommendation=function(step){played.push(['recommend',step])}`,c);
+  c.handleKey({keyCode:38,preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[['recommend',-1]]);
+});
+test('fullscreen recommendation playback switches episodes, while windowed recommendation playback changes dramas', () => {
+  const c=keyboard();
+  vm.runInContext(`
+    pageMode=function(){return 'recommend'};
+    zoneOf=function(){return 'feed'};
+    activePlayback={episode:2,item:{series_id:'series-1',episode_count:6}};
+    feedItems=[activePlayback.item]; feedIndex=0; played=[]; focused=[];
+    shellState['is-cinema']=true;
+  `,c);
+  c.handleKey({keyCode:38,preventDefault(){},stopPropagation(){}});
+  c.handleKey({keyCode:40,preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[[0,1,0],[0,3,0]]);
+  assert.deepEqual(Array.from(c.focused),['hero-feed-focus','hero-feed-focus']);
+
+  vm.runInContext(`shellState['is-cinema']=false; played=[]; focused=[]; switchRecommendation=function(step){played.push(['recommend',step])}`,c);
+  c.handleKey({keyCode:38,preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[['recommend',-1]]);
+});
+test('single-player episode switching consumes held arrows and reports season boundaries', () => {
+  const c=keyboard();
+  vm.runInContext(`
+    pageMode=function(){return 'player'};
+    zoneOf=function(){return 'feed'};
+    activePlayback={episode:1,item:{series_id:'series-1',episode_count:3}};
+    feedItems=[activePlayback.item]; feedIndex=0; played=[]; notices=[];
+  `,c);
+  c.handleKey({keyCode:38,preventDefault(){},stopPropagation(){}});
+  c.handleKey({keyCode:40,repeat:true,preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(Array.from(c.played),[]);
+  assert.deepEqual(Array.from(c.notices),['已经是第一集']);
+
+  vm.runInContext(`activePlayback.episode=3; notices=[];`,c);
+  c.handleKey({keyCode:40,preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(Array.from(c.played),[]);
+  assert.deepEqual(Array.from(c.notices),['已经是本季最后一集']);
+});
+test('playback control focus keeps its existing vertical focus routing', () => {
+  const c=keyboard();
+  vm.runInContext(`
+    pageMode=function(){return 'player'};
+    isPlaybackPage=function(){return true};
+    zoneOf=function(){return 'controls'};
+    moveFrom=function(current,direction){moved.push(direction);return {id:'control-'+direction}};
+    revealControls=function(){};
+    document.activeElement={classList:{contains:function(name){return name==='control-button'}}};
+  `,c);
+  c.handleKey({keyCode:38,preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(Array.from(c.moved),['up']);
+  assert.deepEqual(Array.from(c.focused),['control-up']);
+  assert.deepEqual(Array.from(c.played),[]);
+});
+test('single-player feed seeks horizontally only in cinema or hidden-controls mode', () => {
+  const c=keyboard();
+  vm.runInContext(`
+    pageMode=function(){return 'player'};
+    zoneOf=function(){return 'feed'};
+    isPlaybackPage=function(){return true};
+    seekBy=function(delta,reveal){played.push(['seek',delta,reveal])};
+    shellState['is-controls-hidden']=true;
+  `,c);
+  c.handleKey({keyCode:37,preventDefault(){},stopPropagation(){}});
+  c.handleKey({keyCode:39,repeat:true,preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[['seek',-10,false],['seek',10,false]]);
+  assert.deepEqual(Array.from(c.focused),[]);
+
+  vm.runInContext(`shellState['is-controls-hidden']=false; shellState['is-cinema']=false; played=[]; moveFrom=function(current,direction){return {id:'route-'+direction}}`,c);
+  c.handleKey({keyCode:37,preventDefault(){},stopPropagation(){}});
+  c.handleKey({keyCode:39,preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[]);
+  assert.deepEqual(Array.from(c.focused),['route-left','route-right']);
+
+  vm.runInContext(`shellState['is-cinema']=true; focused=[]`,c);
+  c.handleKey({keyCode:39,preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[['seek',10,false]]);
+
+  vm.runInContext(`pageMode=function(){return 'recommend'}; shellState['is-cinema']=true; played=[]`,c);
+  c.handleKey({keyCode:37,preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[['seek',-10,false]]);
 });

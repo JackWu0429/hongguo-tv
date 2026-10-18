@@ -3,8 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>红果短剧</title>
+  <title data-i18n="app.name">红果短剧</title>
   <script src="/compat.js"></script>
+  <script src="/locales/zh-CN.js"></script>
+  <script src="/locales/zh-TW.js"></script>
+  <script src="/locales/ja-JP.js"></script>
+  <script src="/i18n.js"></script>
   <link rel="stylesheet" href="/app.css">
   <link rel="stylesheet" href="/compat.css">
 </head>
@@ -22,298 +26,421 @@
     <symbol id="icon-reservation" viewBox="0 0 24 24"><path d="M6 4h12a2 2 0 0 1 2 2v14H4V6a2 2 0 0 1 2-2zM4 9h16M8 2v4M16 2v4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"/><circle cx="12" cy="15" r="3.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 13.5V15l1.3.8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/></symbol>
     <symbol id="icon-heart" viewBox="0 0 24 24"><path d="M12 20S4 15.2 4 9.7A4.1 4.1 0 0 1 12 7a4.1 4.1 0 0 1 8 2.7C20 15.2 12 20 12 20Z" fill="currentColor"/></symbol>
     <symbol id="icon-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5 20a7 7 0 0 1 14 0" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.7"/></symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24"><path d="m9 3-.7 2.4-2 .9-2.3-.6-2 3.5 1.7 1.8v2L2 14.8l2 3.5 2.3-.6 2 .9L9 21h6l.7-2.4 2-.9 2.3.6 2-3.5-1.7-1.8v-2L22 9.2l-2-3.5-2.3.6-2-.9L15 3z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
     <symbol id="icon-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z" fill="currentColor"/></symbol>
     <symbol id="icon-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM14 5h4v14h-4z" fill="currentColor"/></symbol>
     <symbol id="icon-fullscreen" viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="icon-fullscreen-exit" viewBox="0 0 24 24"><path d="M4 9h5V4M20 9h-5V4M9 20v-5H4M15 20v-5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="icon-comment" viewBox="0 0 24 24"><path d="M4 4h16v13H9l-5 4zM8 8h8M8 12h5" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.7"/></symbol>
     <symbol id="icon-danmaku" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6 8h6M9 12h9M6 16h7" stroke="currentColor" stroke-width="1.7"/></symbol>
+    <symbol id="icon-danmaku-off" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6 8h6M9 12h9M6 16h7M4 4l16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
     <symbol id="icon-connection" viewBox="0 0 24 24"><path d="M10 7l2-2a5 5 0 0 1 7 7l-2 2M14 17l-2 2a5 5 0 0 1-7-7l2-2M8 16l8-8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="icon-send-danmaku" viewBox="0 0 24 24"><path d="M11 19H9l-5 3V5h16v6M8 9h8M8 13h3M14 17l5-5 3 3-5 5-4 1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="icon-episodes" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 5h1v2H4zM4 11h1v2H4zM4 17h1v2H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="icon-seasons" viewBox="0 0 24 24"><path d="M7 3h14v14M4 6h14v14H4zM8 10h6M8 14h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="icon-quality" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 21h8M12 17v4M7 8v5M10 8v5M7 10.5h3M14 8h2a2.5 2.5 0 0 1 0 5h-2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="icon-speed" viewBox="0 0 24 24"><path d="M4 19a9 9 0 1 1 16 0M12 5v2M5 10l2 1M19 10l-2 1M12 15l4-5M8 20h8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="15" r="1.5" fill="currentColor"/></symbol>
+    <symbol id="icon-retry" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3.9L3 10M3 5v5h5M4 13a8 8 0 0 0 14.9 3.9L21 14M21 19v-5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="icon-diagnostics" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM6 12h3l2-5 3 10 2-5h2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="icon-volume" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zM16 8a6 6 0 0 1 0 8M19 5a10 10 0 0 1 0 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="icon-volume-muted" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zM17 9l5 6M22 9l-5 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   </svg>
   <main class="app-shell" data-mode="recommend">
-    <aside class="sidebar" aria-label="主导航">
-      <div class="brand"><span class="brand-mark"><svg viewBox="0 0 24 24"><use href="#icon-play" xlink:href="#icon-play"></use></svg></span><span>红果短剧</span></div>
+    <aside class="sidebar" aria-label="主导航" data-i18n-aria-label="accessibility.mainNav">
+      <div class="brand"><span class="brand-mark"><svg viewBox="0 0 24 24"><use href="#icon-play" xlink:href="#icon-play"></use></svg></span><span data-i18n="app.name">红果短剧</span></div>
       <nav class="side-nav" id="side-nav" data-focus-zone="sidebar">
-        <button class="side-item is-active" data-page="recommend" data-focus="sidebar-recommend"><svg class="side-icon"><use href="#icon-recommend" xlink:href="#icon-recommend"></use></svg><span>推荐</span></button>
-        <button class="side-item" data-page="search" data-focus="sidebar-search"><svg class="side-icon"><use href="#icon-search" xlink:href="#icon-search"></use></svg><span>找剧</span></button>
-        <button class="side-item" data-page="rank" data-focus="sidebar-rank"><svg class="side-icon"><use href="#icon-rank" xlink:href="#icon-rank"></use></svg><span>排行榜</span></button>
-        <button class="side-item" data-page="new" data-focus="sidebar-new"><svg class="side-icon"><use href="#icon-new" xlink:href="#icon-new"></use></svg><span>新剧</span></button>
-        <button class="side-item" data-page="history" data-focus="sidebar-history"><svg class="side-icon"><use href="#icon-history" xlink:href="#icon-history"></use></svg><span>历史</span></button>
-        <button class="side-item" data-page="favorites" data-focus="sidebar-favorites"><svg class="side-icon"><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><span>收藏</span></button>
-        <button class="side-item" data-page="likes" data-focus="sidebar-likes"><svg class="side-icon"><use href="#icon-like" xlink:href="#icon-like"></use></svg><span>点赞</span></button>
-        <button class="side-item" data-page="follows" data-focus="sidebar-follows"><svg class="side-icon"><use href="#icon-bell" xlink:href="#icon-bell"></use></svg><span>追更</span></button>
-        <button class="side-item" data-page="reservations" data-focus="sidebar-reservations"><svg class="side-icon"><use href="#icon-reservation" xlink:href="#icon-reservation"></use></svg><span>预约</span></button>
-        <button class="side-item" data-page="support" data-focus="sidebar-support"><svg class="side-icon"><use href="#icon-heart" xlink:href="#icon-heart"></use></svg><span>打赏</span></button>
+        <button class="side-item is-active" data-page="recommend" data-focus="sidebar-recommend" aria-label="推荐" data-i18n-aria-label="nav.recommend"><svg class="side-icon"><use href="#icon-recommend" xlink:href="#icon-recommend"></use></svg><span data-i18n="nav.recommend">推荐</span></button>
+        <button class="side-item" data-page="search" data-focus="sidebar-search" aria-label="找剧" data-i18n-aria-label="nav.search"><svg class="side-icon"><use href="#icon-search" xlink:href="#icon-search"></use></svg><span data-i18n="nav.search">找剧</span></button>
+        <button class="side-item" data-page="rank" data-focus="sidebar-rank" aria-label="排行榜" data-i18n-aria-label="nav.rank"><svg class="side-icon"><use href="#icon-rank" xlink:href="#icon-rank"></use></svg><span data-i18n="nav.rank">排行榜</span></button>
+        <button class="side-item" data-page="new" data-focus="sidebar-new" aria-label="新剧" data-i18n-aria-label="nav.new"><svg class="side-icon"><use href="#icon-new" xlink:href="#icon-new"></use></svg><span data-i18n="nav.new">新剧</span></button>
+        <button class="side-item" data-page="history" data-focus="sidebar-history" aria-label="历史" data-i18n-aria-label="nav.history"><svg class="side-icon"><use href="#icon-history" xlink:href="#icon-history"></use></svg><span data-i18n="nav.history">历史</span></button>
+        <button class="side-item" data-page="favorites" data-focus="sidebar-favorites" aria-label="收藏" data-i18n-aria-label="nav.favorites"><svg class="side-icon"><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><span data-i18n="nav.favorites">收藏</span></button>
+        <button class="side-item" data-page="likes" data-focus="sidebar-likes" aria-label="点赞" data-i18n-aria-label="nav.likes"><svg class="side-icon"><use href="#icon-like" xlink:href="#icon-like"></use></svg><span data-i18n="nav.likes">点赞</span></button>
+        <button class="side-item" data-page="follows" data-focus="sidebar-follows" aria-label="追更" data-i18n-aria-label="nav.follow"><svg class="side-icon"><use href="#icon-bell" xlink:href="#icon-bell"></use></svg><span data-i18n="nav.follow">追更</span></button>
+        <button class="side-item" data-page="reservations" data-focus="sidebar-reservations" aria-label="预约" data-i18n-aria-label="nav.reservations"><svg class="side-icon"><use href="#icon-reservation" xlink:href="#icon-reservation"></use></svg><span data-i18n="nav.reservations">预约</span></button>
+        <button class="side-item" data-page="support" data-focus="sidebar-support" aria-label="打赏" data-i18n-aria-label="nav.support"><svg class="side-icon"><use href="#icon-heart" xlink:href="#icon-heart"></use></svg><span data-i18n="nav.support">打赏</span></button>
       </nav>
       <div class="sidebar-bottom">
-        <button class="side-item side-item-secondary" data-page="account" data-focus="sidebar-account"><svg class="side-icon"><use href="#icon-user" xlink:href="#icon-user"></use></svg><span>我的</span></button>
+        <button class="side-item side-item-secondary" data-page="account" data-focus="sidebar-account" aria-label="我的" data-i18n-aria-label="nav.account"><svg class="side-icon"><use href="#icon-user" xlink:href="#icon-user"></use></svg><span data-i18n="nav.account">我的</span></button>
+        <button class="side-item side-item-secondary" data-page="settings" data-focus="sidebar-settings" aria-label="设置" data-i18n-aria-label="nav.settings"><svg class="side-icon"><use href="#icon-settings" xlink:href="#icon-settings"></use></svg><span data-i18n="nav.settings">设置</span></button>
       </div>
     </aside>
 
     <section class="main-surface" id="main-surface" tabindex="-1">
       <div class="top-bar">
-        <div class="page-context" id="page-context">推荐</div>
-        <div class="channel-tabs" id="channel-tabs" data-focus-zone="channels" aria-label="推荐频道">
-          <button class="channel-tab" data-focus="channel-follow">关注</button>
-          <button class="channel-tab" data-focus="channel-comic">漫剧</button>
-          <button class="channel-tab" data-focus="channel-real">真人剧</button>
-          <button class="channel-tab is-active" data-focus="channel-recommend">推荐</button>
-          <button class="channel-tab recommend-refresh" id="recommend-refresh" data-focus="recommend-refresh" aria-label="换一批推荐">换一批</button>
+        <button type="button" class="page-context" id="page-context" data-action="return-player" data-focus="player-return" aria-label="返回" data-i18n-aria-label="common.back" disabled>推荐</button>
+        <div class="channel-tabs" id="channel-tabs" data-focus-zone="channels" aria-label="推荐频道" data-i18n-aria-label="hero.recommendChannels">
+          <button class="channel-tab" data-focus="channel-follow" data-i18n="channel.follow">关注</button>
+          <button class="channel-tab" data-focus="channel-comic" data-i18n="channel.comic">漫剧</button>
+          <button class="channel-tab" data-focus="channel-real" data-i18n="channel.real">真人剧</button>
+          <button class="channel-tab is-active" data-focus="channel-recommend" data-i18n="nav.recommend">推荐</button>
+          <button class="channel-tab recommend-refresh" id="recommend-refresh" data-focus="recommend-refresh" aria-label="换一批推荐" data-i18n-aria-label="channel.refresh" data-i18n="channel.refresh">换一批</button>
         </div>
         <div class="top-status" id="core-status"><svg class="status-icon" aria-hidden="true" focusable="false"><use href="#icon-connection" xlink:href="#icon-connection"></use></svg><span id="core-status-label">连接核心服务…</span></div>
       </div>
 
       <section class="page-placeholder is-hidden" id="page-placeholder" aria-live="polite">
         <div class="page-placeholder-mark"><svg><use href="#icon-recommend" xlink:href="#icon-recommend"></use></svg></div>
-        <h1 id="page-placeholder-title">页面准备中</h1>
-        <p id="page-placeholder-copy">这个页面的红果数据接口还在接入。</p>
-        <button class="primary-action page-placeholder-action" data-action="return-recommend" data-focus="page-placeholder-action">返回推荐</button>
+        <h1 id="page-placeholder-title" data-i18n="page.preparing">页面准备中</h1>
+        <p id="page-placeholder-copy" data-i18n="page.notReady">这个页面的红果数据接口还在接入。</p>
+        <button class="primary-action page-placeholder-action" data-action="return-recommend" data-focus="page-placeholder-action" data-i18n="page.returnRecommend">返回推荐</button>
       </section>
 
-      <section class="search-page is-hidden" id="search-page" aria-label="找剧">
+      <section class="search-page is-hidden" id="search-page" aria-label="找剧" data-i18n-aria-label="search.title">
         <div class="search-heading-row">
           <div>
-            <h1>找剧</h1>
-            <p>选择分类浏览，或输入剧名搜索</p>
+            <h1 data-i18n="search.title">找剧</h1>
+            <p data-i18n="search.description">选择分类浏览，或输入剧名搜索</p>
           </div>
           <div class="search-box">
-            <input id="search-input" class="search-input" type="search" maxlength="100" autocomplete="off" placeholder="输入剧名 / 关键词" aria-label="输入剧名或关键词">
-            <button class="search-submit search-action" data-action="search-submit" data-focus="search-submit">搜索</button>
-            <button id="search-scan" class="search-browse search-action search-scan" data-action="search-scan" data-focus="search-scan" aria-haspopup="dialog" aria-controls="search-scan-modal"><svg aria-hidden="true"><use href="#icon-scan" xlink:href="#icon-scan"></use></svg><span>扫码输入</span></button>
-            <button id="search-browse" class="search-browse search-action is-hidden" data-action="search-browse" data-focus="search-browse">按分类找剧</button>
+            <input id="search-input" class="search-input" type="search" maxlength="100" autocomplete="off" placeholder="输入剧名 / 关键词" aria-label="输入剧名或关键词" data-i18n-placeholder="search.placeholder" data-i18n-aria-label="search.inputLabel">
+            <button class="search-submit search-action" data-action="search-submit" data-focus="search-submit" data-i18n="common.search">搜索</button>
+            <button id="search-scan" class="search-browse search-action search-scan" data-action="search-scan" data-focus="search-scan" aria-haspopup="dialog" aria-controls="search-scan-modal"><svg aria-hidden="true"><use href="#icon-scan" xlink:href="#icon-scan"></use></svg><span data-i18n="search.scanInput">扫码输入</span></button>
+            <button id="search-browse" class="search-browse search-action is-hidden" data-action="search-browse" data-focus="search-browse" data-i18n="search.browseByCategory">按分类找剧</button>
           </div>
         </div>
-        <div id="search-history" class="search-history is-hidden" aria-label="最近搜索">
-          <strong>最近搜索</strong><div id="search-history-items" class="search-history-items"></div>
-          <button class="search-history-action search-history-clear" data-action="search-history-clear" data-focus="search-history-clear">清空</button>
+        <div id="search-history" class="search-history is-hidden" aria-label="最近搜索" data-i18n-aria-label="search.recent">
+          <strong data-i18n="search.recent">最近搜索</strong><div id="search-history-items" class="search-history-items"></div>
+          <button class="search-history-action search-history-clear" data-action="search-history-clear" data-focus="search-history-clear" data-i18n="common.clear">清空</button>
         </div>
         <div class="filter-panel is-collapsed" id="filter-panel" data-focus-zone="searchFilters">
-          <div class="filter-panel-heading"><div class="filter-panel-summary"><span>筛选：</span><strong id="filter-state">全部短剧</strong></div><button class="filter-toggle" id="filter-toggle" data-action="toggle-search-filters" data-focus="filter-toggle" aria-expanded="false">展开筛选</button></div>
-          <div id="filter-rows"><div class="filter-status">正在读取筛选条件…</div></div>
-          <div class="filter-row filter-row-note"><span>左右选择，上下切换筛选项</span></div>
+          <div class="filter-panel-heading"><div class="filter-panel-summary"><span data-i18n="search.filter">筛选：</span><strong id="filter-state" data-i18n="search.allDrama">全部短剧</strong></div><button class="filter-toggle" id="filter-toggle" data-action="toggle-search-filters" data-focus="filter-toggle" aria-expanded="false" data-i18n="search.expandFilter">展开筛选</button></div>
+          <div id="filter-rows"><div class="filter-status" data-i18n="search.loadingDrama">正在读取筛选条件…</div></div>
+          <div class="filter-row filter-row-note"><span data-i18n="search.filterHint">左右选择，上下切换筛选项</span></div>
         </div>
-        <div class="search-result-head"><strong id="search-result-title">全部短剧</strong><span id="search-result-count"></span></div>
+        <div class="search-result-head"><strong id="search-result-title" data-i18n="search.allDrama">全部短剧</strong><span id="search-result-count"></span></div>
         <div class="search-results" id="search-results" data-focus-zone="searchResults" aria-live="polite"></div>
         <div id="search-pagination" class="list-status" role="status"></div>
       </section>
 
-      <section class="rank-page page-workspace is-hidden" id="rank-page" aria-label="排行榜">
+      <section class="rank-page page-workspace is-hidden" id="rank-page" aria-label="排行榜" data-i18n-aria-label="rank.title">
         <div class="rank-heading-row">
-          <h1>排行榜</h1>
-          <div class="rank-heading-actions"><button class="rank-filter-open" id="rank-filter-open" data-focus="rank-filter-open">筛选</button><div class="rank-tabs" id="rank-tabs" data-focus-zone="rankTabs"></div></div>
+          <h1 data-i18n="rank.title">排行榜</h1>
+          <div class="rank-view-switch" data-focus-zone="rankViews" aria-label="榜单视图" data-i18n-aria-label="rank.view">
+            <button class="rank-view-tab is-active" data-rank-view="official" data-focus="rank-view-official" aria-pressed="true" data-i18n="rank.official">红果榜</button>
+            <button class="rank-view-tab" data-rank-view="radar" data-focus="rank-view-radar" aria-pressed="false" data-i18n="rank.radar">榜单雷达</button>
+          </div>
+          <div class="rank-heading-actions" id="rank-official-controls"><button class="rank-filter-open" id="rank-filter-open" data-focus="rank-filter-open" data-i18n="rank.filter">筛选</button><div class="rank-tabs" id="rank-tabs" data-focus-zone="rankTabs"></div></div>
         </div>
         <div class="rank-layout">
-          <nav class="rank-subnav" id="rank-subnav" data-focus-zone="rankSubnav" aria-label="榜单类型"></nav>
+          <nav class="rank-subnav" id="rank-subnav" data-focus-zone="rankSubnav" aria-label="榜单类型" data-i18n-aria-label="rank.type"></nav>
           <div class="rank-main">
-            <div class="rank-list-heading"><strong id="rank-list-title">热播榜</strong><span id="rank-list-update">红果热播榜</span></div>
+            <div class="rank-list-heading"><strong id="rank-list-title" data-i18n="rank.hot">热播榜</strong><span id="rank-list-update" data-i18n="rank.officialSnapshot">红果热播榜</span></div>
             <div class="rank-filter-panel is-collapsed" id="rank-filter-panel">
-              <div class="rank-filter-heading"><span>筛选：<strong id="rank-filter-state">全部 · 热播榜</strong></span><button class="rank-filter-toggle" id="rank-filter-toggle" data-action="toggle-rank-filters" data-focus="rank-filter-toggle" aria-expanded="false">展开筛选</button></div>
+              <div class="rank-filter-heading"><span data-i18n="search.filter">筛选：</span><strong id="rank-filter-state" data-i18n="rank.hot">全部 · 热播榜</strong><button class="rank-filter-toggle" id="rank-filter-toggle" data-action="toggle-rank-filters" data-focus="rank-filter-toggle" aria-expanded="false" data-i18n="search.expandFilter">展开筛选</button></div>
               <div id="rank-panels" class="rank-panels" data-focus-zone="rankPanels"></div>
             </div>
             <div class="rank-list" id="rank-list" data-focus-zone="rankItems" aria-live="polite"></div>
             <div id="rank-pagination" class="list-status" role="status"></div>
           </div>
         </div>
+          <section class="rank-radar-view is-hidden" id="rank-radar-view" aria-label="榜单雷达" data-i18n-aria-label="rank.radar">
+          <div class="radar-heading">
+            <div>
+              <h2 class="radar-title" data-i18n="rank.radar">榜单雷达</h2>
+              <div class="radar-status" id="radar-status" role="status" aria-live="polite" data-i18n="rank.loadingRadar">打开榜单雷达后读取最新数据</div>
+            </div>
+            <button class="radar-refresh" id="radar-refresh" data-focus="radar-refresh" aria-label="刷新榜单雷达" data-i18n-aria-label="rank.refreshRadar" data-i18n="common.refresh">刷新</button>
+          </div>
+          <nav class="radar-view-switch" id="radar-view-switch" data-focus-zone="radarViewTabs" aria-label="榜单雷达视图" data-i18n-aria-label="rank.radarView">
+            <button class="radar-view-tab is-active" data-radar-view="official" data-focus="radar-view-official" aria-pressed="true" data-i18n="rank.official">官方榜</button>
+            <button class="radar-view-tab" data-radar-view="growth" data-focus="radar-view-growth" aria-pressed="false" data-i18n="rank.growth">飙升榜</button>
+          </nav>
+          <section class="radar-section" id="radar-official-section" aria-label="官方榜" data-i18n-aria-label="rank.official">
+            <div class="radar-section-heading"><h3 data-i18n="rank.official">官方榜</h3><span data-i18n="rank.officialSnapshot">红果榜单快照</span></div>
+            <nav class="radar-filter-row" id="radar-official-tabs" data-focus-zone="radarOfficialTabs" aria-label="官方榜分类" data-i18n-aria-label="rank.officialCategory">
+              <button class="radar-filter is-active" data-radar-official="hot" data-focus="radar-official-hot" aria-pressed="true" data-i18n="rank.overall">综合</button>
+              <button class="radar-filter" data-radar-official="real" data-focus="radar-official-real" aria-pressed="false" data-i18n="rank.real">真人</button>
+              <button class="radar-filter" data-radar-official="ai" data-focus="radar-official-ai" aria-pressed="false" data-i18n="rank.ai">AI</button>
+              <button class="radar-filter" data-radar-official="comic" data-focus="radar-official-comic" aria-pressed="false" data-i18n="rank.comic">漫剧</button>
+            </nav>
+            <div class="radar-table radar-official-table" aria-label="官方榜数据" data-i18n-aria-label="rank.officialData"><div class="radar-table-head"><span data-i18n="rank.rankPosition">名次</span><span data-i18n="rank.change">变化</span><span data-i18n="rank.dramaName">剧名</span><span data-i18n="rank.type">类型</span><span data-i18n="rank.heat">热度</span><span data-i18n="rank.hotDaily">热度日增</span><span data-i18n="rank.favoriteDaily">收藏日增</span><span data-i18n="rank.score">评分</span><span data-i18n="rank.onRank">在榜</span></div>
+              <div class="radar-rows" id="radar-official-rows" data-focus-zone="radarOfficialItems" aria-live="polite"></div>
+            </div>
+          </section>
+          <section class="radar-section is-hidden" id="radar-growth-section" aria-label="飙升榜" data-i18n-aria-label="rank.growth">
+            <div class="radar-section-heading"><h3 data-i18n="rank.growth">飙升榜</h3><span data-i18n="rank.growthDescription">按指标查看日增趋势</span></div>
+            <nav class="radar-filter-row" id="radar-growth-metrics" data-focus-zone="radarGrowthMetrics" aria-label="飙升榜指标" data-i18n-aria-label="rank.growthMetric">
+              <button class="radar-filter is-active" data-radar-metric="d_hot" data-focus="radar-metric-hot" aria-pressed="true" data-i18n="rank.hotDaily">热度日增</button>
+              <button class="radar-filter" data-radar-metric="d_fav" data-focus="radar-metric-fav" aria-pressed="false" data-i18n="rank.favoriteDaily">收藏日增</button>
+              <button class="radar-filter" data-radar-metric="r_hot" data-focus="radar-metric-rate" aria-pressed="false" data-i18n="rank.hotRate">热度增长率</button>
+            </nav>
+            <nav class="radar-filter-row radar-growth-types" id="radar-growth-types" data-focus-zone="radarGrowthTypes" aria-label="飙升榜分类" data-i18n-aria-label="rank.growthCategory">
+              <button class="radar-filter radar-growth-type is-active" data-radar-type="all" data-focus="radar-type-all" aria-pressed="true" data-i18n="rank.all">全部</button>
+              <button class="radar-filter radar-growth-type" data-radar-type="real" data-focus="radar-type-real" aria-pressed="false" data-i18n="rank.real">真人</button>
+              <button class="radar-filter radar-growth-type" data-radar-type="ai" data-focus="radar-type-ai" aria-pressed="false" data-i18n="rank.ai">AI</button>
+              <button class="radar-filter radar-growth-type" data-radar-type="comic" data-focus="radar-type-comic" aria-pressed="false" data-i18n="rank.comic">漫剧</button>
+              <button class="radar-filter radar-growth-type" data-radar-type="unknown" data-focus="radar-type-unknown" aria-pressed="false" data-i18n="rank.unknown">未知</button>
+            </nav>
+            <div class="radar-table radar-growth-table" aria-label="飙升榜数据" data-i18n-aria-label="rank.growthData">
+              <div class="radar-table-head"><span data-i18n="rank.rankPosition">名次</span><span data-i18n="rank.dramaName">剧名</span><span data-i18n="rank.type">类型</span><span data-i18n="rank.heat">热度</span><span data-i18n="rank.hotDaily">热度日增</span><span data-i18n="rank.growthRate">增长率</span><span data-i18n="rank.favoriteDaily">收藏日增</span><span data-i18n="rank.hot7Days">7日热度增量</span></div>
+              <div class="radar-rows" id="radar-growth-rows" data-focus-zone="radarGrowthItems" aria-live="polite"></div>
+            </div>
+          </section>
+        </section>
       </section>
-      <section class="rank-filter-modal is-hidden" id="rank-filter-modal" aria-hidden="true"><div class="rank-filter-dialog" role="dialog" aria-modal="true" aria-labelledby="rank-filter-title"><div class="rank-filter-header"><h2 id="rank-filter-title">排行榜筛选</h2><button class="rank-filter-close" id="rank-filter-close" data-focus="rank-filter-close">关闭</button></div><div id="rank-filter-options" class="rank-filter-options"></div><div class="rank-filter-actions"><button class="rank-filter-close rank-filter-cancel" id="rank-filter-cancel" data-focus="rank-filter-cancel">取消</button><button class="rank-filter-apply" id="rank-filter-apply" data-focus="rank-filter-apply">应用筛选</button></div></div></section>
-      <section class="new-page page-workspace is-hidden" id="new-page" aria-label="新剧">
+      <section class="rank-filter-modal is-hidden" id="rank-filter-modal" aria-hidden="true"><div class="rank-filter-dialog" role="dialog" aria-modal="true" aria-labelledby="rank-filter-title"><div class="rank-filter-header"><h2 id="rank-filter-title" data-i18n="rank.filterTitle">排行榜筛选</h2><button class="rank-filter-close" id="rank-filter-close" data-focus="rank-filter-close" data-i18n="common.close">关闭</button></div><div id="rank-filter-options" class="rank-filter-options"></div><div class="rank-filter-actions"><button class="rank-filter-close rank-filter-cancel" id="rank-filter-cancel" data-focus="rank-filter-cancel" data-i18n="common.cancel">取消</button><button class="rank-filter-apply" id="rank-filter-apply" data-focus="rank-filter-apply" data-i18n="common.apply">应用筛选</button></div></div></section>
+      <section class="actor-works-modal is-hidden" id="actor-works-modal" aria-hidden="true"><div class="actor-works-dialog" role="dialog" aria-modal="true" aria-labelledby="actor-works-name"><div class="actor-works-header"><div class="actor-works-person"><img id="actor-works-avatar" class="actor-works-avatar is-hidden" alt=""><div><h2 id="actor-works-name" data-i18n="ui.actorWorks">演员作品</h2><p id="actor-works-description"></p></div></div><button class="actor-works-close" id="actor-works-close" data-focus="actor-works-close" data-i18n="common.close">关闭</button></div><div class="actor-works-progress" id="actor-works-progress" role="status" aria-live="polite" data-i18n="ui.actorWorksLoading">正在读取作品…</div><button class="actor-works-retry is-hidden" id="actor-works-retry" data-focus="actor-works-retry" data-i18n="common.retry">重试</button><div class="actor-works-list" id="actor-works-list" data-focus-zone="actorWorks" aria-live="polite"></div></div></section>
+      <section class="new-page page-workspace is-hidden" id="new-page" aria-label="新剧" data-i18n-aria-label="nav.new">
         <div class="new-heading-row">
-          <h1>新剧</h1>
+          <h1 data-i18n="nav.new">新剧</h1>
           <div class="new-tabs" data-focus-zone="newTabs">
-            <button class="new-tab is-active" data-new-mode="recommend" data-focus="new-tab-recommend">新剧推荐</button>
-            <button class="new-tab" data-new-mode="calendar" data-focus="new-tab-calendar">上新日历</button>
+            <button class="new-tab is-active" data-new-mode="recommend" data-focus="new-tab-recommend" data-i18n="new.recommend">新剧推荐</button>
+            <button class="new-tab" data-new-mode="calendar" data-focus="new-tab-calendar" data-i18n="new.calendar">上新日历</button>
           </div>
           <div class="new-filters" data-focus-zone="newFilters">
-            <button class="new-filter is-active" data-new-gender="all" data-focus="new-filter-all">全部</button>
-            <button class="new-filter" data-new-gender="male" data-focus="new-filter-male">男频</button>
-            <button class="new-filter" data-new-gender="female" data-focus="new-filter-female">女频</button>
+            <button class="new-filter is-active" data-new-gender="all" data-focus="new-filter-all" data-i18n="common.all">全部</button>
+            <button class="new-filter" data-new-gender="male" data-focus="new-filter-male" data-i18n="new.male">男频</button>
+            <button class="new-filter" data-new-gender="female" data-focus="new-filter-female" data-i18n="new.female">女频</button>
           </div>
         </div>
-        <div class="new-date-strip is-hidden" id="new-date-strip" data-focus-zone="calendarDays" aria-label="上新日期"></div>
+        <div class="new-date-strip is-hidden" id="new-date-strip" data-focus-zone="calendarDays" aria-label="上新日期" data-i18n-aria-label="new.calendarDays"></div>
         <div class="new-grid" id="new-grid" data-focus-zone="newItems" aria-live="polite"></div>
         <div id="new-pagination" class="list-status" role="status"></div>
         <div class="calendar-list is-hidden" id="calendar-list" data-focus-zone="calendarItems" aria-live="polite"></div>
         <div id="calendar-pagination" class="list-status is-hidden" role="status"></div>
       </section>
 
-      <section class="reservation-page page-workspace is-hidden" id="reservation-page" aria-label="我的预约">
-        <h1>我的预约</h1>
+      <section class="reservation-page page-workspace is-hidden" id="reservation-page" aria-label="我的预约" data-i18n-aria-label="reservation.title">
+        <h1 data-i18n="reservation.title">我的预约</h1>
         <div class="reservation-tabs" data-focus-zone="reservationTabs">
-          <button class="reservation-tab is-active" data-reservation-mode="online" data-focus="reservation-online">已上线</button>
-          <button class="reservation-tab" data-reservation-mode="upcoming" data-focus="reservation-upcoming">待上线</button>
+          <button class="reservation-tab is-active" data-reservation-mode="online" data-focus="reservation-online" data-i18n="common.online">已上线</button>
+          <button class="reservation-tab" data-reservation-mode="upcoming" data-focus="reservation-upcoming" data-i18n="common.upcoming">待上线</button>
         </div>
         <div class="calendar-list" id="reservation-list" data-focus-zone="reservationItems"></div>
         <div id="reservation-pagination" class="list-status" role="status"></div>
       </section>
 
-      <section class="follow-page page-workspace is-hidden" id="follow-page" aria-label="追更">
-        <div class="follow-heading"><div><h1>追更</h1><p>关注正在更新的短剧，看到新集会继续出现在这里。</p></div><button class="library-toolbar-button" id="follow-refresh" data-focus="follow-refresh">刷新</button></div>
-        <div class="follow-grid" id="follow-grid" data-focus-zone="followItems" aria-live="polite"></div>
-        <div id="follow-pagination" class="list-status" role="status"></div>
+      <section class="follow-page page-workspace is-hidden" id="follow-page" aria-label="追更" data-i18n-aria-label="nav.follow">
+        <div class="follow-heading"><div><h1 data-i18n="nav.follow">追更</h1><p data-i18n="follow.description">关注正在更新的短剧，看到新集会继续出现在这里。</p></div><div class="follow-actions" data-focus-zone="followActions"><button class="library-toolbar-button follow-action" id="follow-notifications-open" data-focus="follow-notifications-open" data-i18n="follow.notifications">更新提醒<span class="follow-notification-badge is-hidden" id="follow-notifications-badge"></span></button><button class="library-toolbar-button follow-action" id="follow-refresh" data-focus="follow-refresh" data-i18n="common.refresh">刷新</button></div></div>
+        <div id="follow-list-view">
+          <div class="follow-grid" id="follow-grid" data-focus-zone="followItems" aria-live="polite"></div>
+          <div id="follow-pagination" class="list-status" role="status"></div>
+        </div>
+        <div class="follow-notification-view is-hidden" id="follow-notification-view" aria-label="更新提醒" data-i18n-aria-label="follow.notifications">
+          <div class="follow-notification-heading"><button class="library-toolbar-button follow-notification-action" id="follow-notifications-back" data-focus="follow-notifications-back" data-i18n="follow.back">返回追更</button><div><strong data-i18n="follow.notifications">更新提醒</strong><button class="library-toolbar-button follow-notification-action" id="follow-notifications-read-all" data-focus="follow-notifications-read-all" data-i18n="follow.markAllRead">全部标为已读</button></div></div>
+          <p class="follow-notification-copy" data-i18n="follow.notificationCopy">追更更新和预约上线会保留在这里，关闭右下角提示也不会丢失。</p>
+          <div class="follow-notification-list" id="follow-notification-list" data-focus-zone="followNotifications" aria-live="polite"></div>
+        </div>
       </section>
 
-      <section class="library-page page-workspace is-hidden" id="library-page" aria-label="我的短剧">
+      <section class="library-page page-workspace is-hidden" id="library-page" aria-label="我的短剧" data-i18n-aria-label="library.title">
         <div class="library-heading-row">
-          <div><h1 id="library-title">历史</h1><p id="library-hint">保存在本机的观看记录</p></div>
+          <div><h1 id="library-title" data-i18n="nav.history">历史</h1><p id="library-hint" data-i18n="library.localHistory">保存在本机的观看记录</p></div>
           <div class="library-toolbar">
-            <button class="library-toolbar-button" id="library-manage" data-focus="library-manage">管理</button>
-            <button class="library-toolbar-button" id="library-clear" data-focus="library-clear">清空</button>
+            <button class="library-toolbar-button" id="library-manage" data-focus="library-manage" data-i18n="common.manage">管理</button>
+            <button class="library-toolbar-button" id="library-clear" data-focus="library-clear" data-i18n="common.clear">清空</button>
           </div>
         </div>
-        <div class="history-filters is-hidden" id="history-filters" role="group" aria-label="观看状态筛选">
-          <button class="history-filter is-active" data-history-filter="all" data-focus="history-all" aria-pressed="true">全部</button>
-          <button class="history-filter" data-history-filter="unfinished" data-focus="history-unfinished" aria-pressed="false">未看完</button>
-          <button class="history-filter" data-history-filter="finished" data-focus="history-finished" aria-pressed="false">已看完</button>
+        <div class="history-filters is-hidden" id="history-filters" role="group" aria-label="观看状态筛选" data-i18n-aria-label="library.watchStatusFilter">
+          <button class="history-filter is-active" data-history-filter="all" data-focus="history-all" aria-pressed="true" data-i18n="common.all">全部</button>
+          <button class="history-filter" data-history-filter="unfinished" data-focus="history-unfinished" aria-pressed="false" data-i18n="library.unfinished">未看完</button>
+          <button class="history-filter" data-history-filter="finished" data-focus="history-finished" aria-pressed="false" data-i18n="library.finished">已看完</button>
         </div>
-        <div class="library-type-filters is-hidden" id="library-type-filters" role="group" aria-label="剧集类型筛选">
-          <button class="library-type-filter is-active" data-library-type="all" data-focus="library-type-all">全部</button>
-          <button class="library-type-filter" data-library-type="real" data-focus="library-type-real">真人剧</button>
-          <button class="library-type-filter" data-library-type="comic" data-focus="library-type-comic">漫剧</button>
-          <button class="library-type-filter" data-library-type="ai" data-focus="library-type-ai">AI剧</button>
+        <div class="library-type-filters is-hidden" id="library-type-filters" role="group" aria-label="剧集类型筛选" data-i18n-aria-label="library.typeFilter">
+          <button class="library-type-filter is-active" data-library-type="all" data-focus="library-type-all" data-i18n="common.all">全部</button>
+          <button class="library-type-filter" data-library-type="real" data-focus="library-type-real" data-i18n="channel.real">真人剧</button>
+          <button class="library-type-filter" data-library-type="comic" data-focus="library-type-comic" data-i18n="channel.comic">漫剧</button>
+          <button class="library-type-filter" data-library-type="ai" data-focus="library-type-ai" data-i18n="rank.ai">AI剧</button>
         </div>
         <div id="library-count" class="library-count"></div>
         <div id="library-grid" class="library-grid" aria-live="polite"></div>
         <div id="library-pagination" class="list-status" role="status"></div>
-        <div id="library-empty" class="library-empty is-hidden"><svg><use href="#icon-history" xlink:href="#icon-history"></use></svg><strong id="library-empty-title">还没有观看记录</strong><p id="library-empty-copy">开始播放后，会自动保存集数和进度</p><button class="library-toolbar-button" data-action="library-discover" data-focus="library-discover">去找剧</button></div>
+        <div id="library-empty" class="library-empty is-hidden"><svg><use href="#icon-history" xlink:href="#icon-history"></use></svg><strong id="library-empty-title" data-i18n="ui.noHistory">还没有观看记录</strong><p id="library-empty-copy" data-i18n="ui.libraryStartHint">开始播放后，会自动保存集数和进度</p><button class="library-toolbar-button" data-action="library-discover" data-focus="library-discover" data-i18n="library.findDrama">去找剧</button></div>
       </section>
 
-      <section class="account-page page-workspace is-hidden" id="account-page" aria-label="我的账号">
-        <div class="account-heading"><h1>我的账号</h1><p>登录红果账号，同步收藏与观看进度</p></div>
+      <section class="account-page page-workspace is-hidden" id="account-page" aria-label="我的账号" data-i18n-aria-label="account.title">
+        <div class="account-heading"><h1 data-i18n="account.title">我的账号</h1><p data-i18n="account.description">登录红果账号，同步收藏与观看进度</p></div>
         <div class="account-layout">
           <div class="account-card">
             <div id="account-login-form">
-              <h2>手机号登录</h2>
-              <label for="account-phone">手机号</label><button type="button" class="account-input is-empty" id="account-phone" data-focus="account-phone" value="" aria-haspopup="dialog" aria-controls="account-keypad-modal">请输入手机号</button>
-              <div class="account-code-field is-hidden" id="account-code-field"><label for="account-code">短信验证码</label><button type="button" class="account-input is-empty" id="account-code" data-focus="account-code" value="" aria-haspopup="dialog" aria-controls="account-keypad-modal">请输入验证码</button></div>
-              <p class="account-input-help">确认键打开数字键盘，输入后选择“完成”；返回键保留输入并关闭键盘。</p><div class="account-form-actions"><button class="account-action" id="account-send-code" data-focus="account-send">获取验证码</button><button class="account-action account-primary is-hidden" id="account-login" data-focus="account-login">登录</button><button class="account-action is-hidden" id="account-change-phone" data-focus="account-change-phone">换手机号</button></div>
+              <h2 data-i18n="account.phoneLogin">手机号登录</h2>
+              <label for="account-phone" data-i18n="ui.phoneLabel">手机号</label><div class="account-phone-row"><button type="button" class="account-country-button" id="account-country" data-focus="account-country" aria-haspopup="dialog" aria-controls="account-country-modal"><span id="account-country-name" data-i18n="country.mainlandChina">中国大陆</span><span id="account-country-code">+86</span><span class="account-country-chevron" aria-hidden="true">⌄</span></button><button type="button" class="account-input is-empty" id="account-phone" data-focus="account-phone" value="" aria-haspopup="dialog" aria-controls="account-keypad-modal" data-i18n="ui.inputPhone">请输入手机号</button></div>
+              <div class="account-code-field is-hidden" id="account-code-field"><label for="account-code" data-i18n="ui.codeLabel">短信验证码</label><button type="button" class="account-input is-empty" id="account-code" data-focus="account-code" value="" aria-haspopup="dialog" aria-controls="account-keypad-modal" data-i18n="ui.inputCode">请输入验证码</button></div>
+              <p class="account-input-help" data-i18n="account.inputHelp">确认键打开数字键盘，输入后选择“完成”；返回键保留输入并关闭键盘。</p><div class="account-form-actions"><button class="account-action" id="account-send-code" data-focus="account-send" data-i18n="account.getCode">获取验证码</button><button class="account-action account-primary is-hidden" id="account-login" data-focus="account-login" data-i18n="account.login">登录</button><button class="account-action is-hidden" id="account-change-phone" data-focus="account-change-phone" data-i18n="account.changePhone">换手机号</button></div>
             </div>
             <div id="account-mfa" class="is-hidden">
-              <h2>还需要短信验证</h2><p>红果要求本次登录完成短信验证。请用登录的手机号发送以下短信：</p><p id="account-mfa-session" class="account-footnote"></p>
-              <div class="account-sms-details"><dl><dt>收件号码</dt><dd id="account-sms-number"></dd><dt>短信内容</dt><dd id="account-sms-content"></dd></dl><button id="account-sms-qr" class="account-action account-sms-qr is-hidden" data-focus="account-sms-qr" aria-label="放大短信验证二维码"><img id="account-sms-qr-image" alt="收件号码与短信内容二维码"><span>手机扫码 · 确认键放大</span></button></div>
-              <p id="account-sms-qr-help" class="account-footnote is-hidden">用手机相机扫码，尝试打开短信编辑；若扫码工具显示文本，可复制其中的号码与内容。请核对后手动发送。</p>
-              <p>先发送短信，再点击“我已发送”。点击后最多等待 90 秒确认结果，这不是输入号码的倒计时；验证会话仍有有效期。</p>
+              <h2 data-i18n="account.mfaTitle">还需要短信验证</h2><p data-i18n="account.mfaDescription">红果要求本次登录完成短信验证。请用登录的手机号发送以下短信：</p><p id="account-mfa-session" class="account-footnote"></p>
+              <div class="account-sms-details"><dl><dt data-i18n="account.recipient">收件号码</dt><dd id="account-sms-number"></dd><dt data-i18n="account.smsContent">短信内容</dt><dd id="account-sms-content"></dd></dl><button id="account-sms-qr" class="account-action account-sms-qr is-hidden" data-focus="account-sms-qr" aria-label="放大短信验证二维码" data-i18n-aria-label="account.enlargeSmsQr"><img id="account-sms-qr-image" alt="收件号码与短信内容二维码" data-i18n-alt="account.smsQrAlt"><span data-i18n="account.scanSms">手机扫码 · 确认键放大</span></button></div>
+              <p id="account-sms-qr-help" class="account-footnote is-hidden" data-i18n="account.smsQrHelp">用手机相机扫码，尝试打开短信编辑；若扫码工具显示文本，可复制其中的号码与内容。请核对后手动发送。</p>
+              <p data-i18n="account.mfaSendHint">先发送短信，再点击“我已发送”。点击后最多等待 90 秒确认结果，这不是输入号码的倒计时；验证会话仍有有效期。</p>
               <p id="account-mfa-wait" role="status" aria-live="polite"></p>
-              <div class="account-form-actions"><button class="account-action account-primary" id="account-verify" data-focus="account-verify">我已发送</button><button class="account-action" id="account-cancel" data-focus="account-cancel">取消验证</button></div>
+              <div class="account-form-actions"><button class="account-action account-primary" id="account-verify" data-focus="account-verify" data-i18n="account.sent">我已发送</button><button class="account-action" id="account-cancel" data-focus="account-cancel" data-i18n="account.cancelVerification">取消验证</button></div>
             </div>
-            <div id="account-profile" class="is-hidden"><div class="account-avatar"><svg><use href="#icon-user" xlink:href="#icon-user"></use></svg></div><h2 id="account-name"></h2><p id="account-phone-mask"></p><button class="account-action" id="account-logout" data-focus="account-logout">退出账号</button></div>
-            <p id="account-message" class="account-message" role="status" aria-live="polite"></p>
+            <div id="account-profile" class="is-hidden"><div class="account-avatar"><svg><use href="#icon-user" xlink:href="#icon-user"></use></svg></div><h2 id="account-name"></h2><p id="account-phone-mask"></p><button class="account-action" id="account-logout" data-focus="account-logout" data-i18n="account.logout">退出账号</button></div>
+            <div id="account-feedback" class="is-hidden"><p id="account-message" class="account-message" role="status" aria-live="polite"></p><p id="account-app-code-help" class="account-input-help is-hidden" role="note"></p></div>
           </div>
-          <div class="account-card account-sync-card"><h2>云同步</h2><p class="account-sync-state" id="account-sync-state">未登录 · 记录保存在本机</p><p id="account-sync-detail">收藏、点赞、观看历史和播放进度会与红果账号同步。</p><button class="account-action account-primary" id="account-sync" data-focus="account-sync" disabled>立即同步</button><div class="account-history-import"><button class="account-action" id="account-import-history" data-focus="account-import-history" disabled>合并登录前记录</button><p id="account-import-detail" role="status" aria-live="polite">登录后可将本机观看历史合并到当前账号。</p></div><p class="account-footnote">同一部剧保留较新的观看进度，合并后自动同步。登录前的原记录继续保留，退出账号后仍可查看。点赞针对当前播放集，登录后可使用。</p></div>
+          <div class="account-card account-sync-card"><h2 data-i18n="account.cloudSync">云同步</h2><p class="account-sync-state" id="account-sync-state" data-i18n="ui.notLoggedInLocal">未登录 · 记录保存在本机</p><p id="account-sync-detail" data-i18n="ui.loginSyncCopy">收藏、点赞、观看历史和播放进度会与红果账号同步。</p><button class="account-action account-primary" id="account-sync" data-focus="account-sync" disabled data-i18n="account.syncNow">立即同步</button><div class="account-history-import"><button class="account-action" id="account-import-history" data-focus="account-import-history" disabled data-i18n="account.mergeHistory">合并登录前记录</button><p id="account-import-detail" role="status" aria-live="polite" data-i18n="ui.mergeLocalHistory">登录后可将本机观看历史合并到当前账号。</p></div><p class="account-footnote" data-i18n="account.syncFootnote">同一部剧保留较新的观看进度，合并后自动同步。登录前的原记录继续保留，退出账号后仍可查看。点赞针对当前播放集，登录后可使用。</p></div>
         </div>
-        <div class="account-card app-update-card" id="app-update-card">
-          <h2>版本更新</h2>
-          <p>当前版本 <strong id="app-current-version">读取中…</strong></p>
-          <p id="app-update-state" role="status" aria-live="polite">启动后每天自动检查一次，播放时不打扰。</p>
-          <div class="app-update-actions"><button class="app-update-action account-action" id="app-check-update" data-focus="app-check-update">检查更新</button></div>
+      </section>
+
+      <section class="settings-page page-workspace is-hidden" id="settings-page" aria-labelledby="settings-title">
+        <div class="settings-heading"><h1 id="settings-title" data-i18n="settings.title">设置</h1></div>
+        <div class="settings-card app-update-card" id="sidebar-display-settings">
+          <h2 data-i18n="settings.sidebar">侧边栏显示</h2>
+          <p data-i18n="settings.sidebarDescription">选择导航栏的显示方式。默认显示菜单文字，也可以只显示图标以扩大内容区域。</p>
+          <div class="app-update-actions"><button class="sidebar-display-action account-action" id="sidebar-display-expanded" data-mode="expanded" data-focus="sidebar-display-expanded" aria-pressed="false" data-i18n="settings.sidebarExpanded">展开显示</button><button class="sidebar-display-action account-action" id="sidebar-display-icons" data-mode="icons" data-focus="sidebar-display-icons" aria-pressed="false" data-i18n="settings.sidebarIcons">仅显示图标</button></div>
+          <p id="sidebar-display-state" role="status" aria-live="polite"></p>
+        </div>
+        <div class="settings-card app-update-card" id="language-settings">
+          <h2 data-i18n="settings.language">界面语言</h2>
+          <p data-i18n="settings.languageDescription">选择应用界面语言。切换后会重新加载界面。</p>
+          <div class="app-update-actions"><button class="locale-action account-action" id="locale-zh-CN" data-locale="zh-CN" data-focus="locale-zh-CN" aria-pressed="false" data-i18n="settings.languageChineseSimplified">简体中文</button><button class="locale-action account-action" id="locale-zh-TW" data-locale="zh-TW" data-focus="locale-zh-TW" aria-pressed="false" data-i18n="settings.languageChineseTraditional">繁體中文</button><button class="locale-action account-action" id="locale-ja-JP" data-locale="ja-JP" data-focus="locale-ja-JP" aria-pressed="false" data-i18n="settings.languageJapanese">日本語</button></div>
+          <p id="language-state" role="status" aria-live="polite"></p>
+        </div>
+        <div class="settings-card app-update-card is-hidden" id="auto-cinema-settings">
+          <h2 data-i18n="settings.autoCinema">播放时隐藏侧边栏</h2>
+          <p data-i18n="settings.autoCinemaDescription">从卡片进入单剧播放后隐藏左侧菜单。播放控件和自动清屏沿用现有逻辑，推荐页不受影响。</p>
+          <div class="app-update-actions"><button class="auto-cinema-action account-action" id="auto-cinema-toggle" data-focus="auto-cinema-toggle" aria-pressed="true" data-i18n="settings.autoCinemaEnabled">已开启</button></div>
+          <p id="auto-cinema-state" role="status" aria-live="polite"></p>
+        </div>
+        <div class="settings-card app-update-card" id="app-update-card">
+          <h2 data-i18n="settings.updates">版本更新</h2>
+          <p><span data-i18n="settings.currentVersion">当前版本 </span><strong id="app-current-version" data-i18n="ui.readingVersion">读取中…</strong></p>
+          <p id="app-update-state" role="status" aria-live="polite" data-i18n="ui.updateDefault">启动后每天自动检查一次，播放时不打扰。</p>
+          <div class="app-update-actions"><button class="app-update-action account-action" id="app-check-update" data-focus="app-check-update" data-i18n="settings.checkUpdates">检查更新</button><button class="app-update-action account-action is-hidden" id="desktop-download-update" data-focus="desktop-download-update" data-i18n="ui.downloadZip">下载更新 ZIP</button><button class="app-update-action account-action is-hidden" id="desktop-open-update-folder" data-focus="desktop-open-update-folder" data-i18n="settings.openFolder">打开所在文件夹</button><button class="app-update-action account-action is-hidden" id="app-open-licenses" data-focus="app-open-licenses" data-i18n="settings.licenses">开源许可</button></div>
+          <pre id="desktop-update-notes" class="desktop-update-notes is-hidden"></pre>
+        </div>
+        <div class="settings-card app-update-card is-hidden" id="mpv-playback-settings">
+          <h2 data-i18n="settings.playback">播放解码</h2>
+          <p data-i18n="settings.playbackDescription">自动解码优先尝试硬件加速；画面异常时可选软件解码。设置在下次播放或切集时生效。</p>
+          <div class="app-update-actions"><button class="playback-mode-action account-action" id="mpv-decode-auto" data-mode="mpv_auto" data-focus="mpv-decode-auto" aria-pressed="false" data-i18n="settings.autoDecode">自动解码</button><button class="playback-mode-action account-action" id="mpv-decode-software" data-mode="mpv_software" data-focus="mpv-decode-software" aria-pressed="false" data-i18n="settings.softwareDecode">软件解码</button></div>
+          <p id="mpv-decode-state" role="status" aria-live="polite"></p>
+        </div>
+        <div class="settings-card app-update-card is-hidden" id="mpv-playback-settings">
+          <h2>播放解码</h2>
+          <p>自动解码优先尝试硬件加速；画面异常时可选软件解码。设置在下次播放或切集时生效。</p>
+          <div class="app-update-actions"><button class="playback-mode-action account-action" id="mpv-decode-auto" data-mode="mpv_auto" data-focus="mpv-decode-auto" aria-pressed="false">自动解码</button><button class="playback-mode-action account-action" id="mpv-decode-software" data-mode="mpv_software" data-focus="mpv-decode-software" aria-pressed="false">软件解码</button></div>
+          <p id="mpv-decode-state" role="status" aria-live="polite"></p>
         </div>
       </section>
 
       <section id="support-page" class="page-workspace support-page is-hidden" aria-labelledby="support-title">
-        <div class="support-heading"><span class="support-kicker">谢谢你的支持</span><h1 id="support-title">喜欢这里？请我喝杯咖啡</h1><p>如果这里让你少花一点找剧的时间，多一点追剧的快乐，欢迎请我喝杯咖啡。<br>你的支持，会成为继续打磨体验、保持更新的一份动力。</p></div>
+        <div class="support-heading"><span class="support-kicker" data-i18n="support.thanks">谢谢你的支持</span><h1 id="support-title" data-i18n="support.title">喜欢这里？请我喝杯咖啡</h1><p data-i18n="support.description">如果这里让你少花一点找剧的时间，多一点追剧的快乐，欢迎请我喝杯咖啡。<br>你的支持，会成为继续打磨体验、保持更新的一份动力。</p></div>
         <div class="support-methods">
-          <button class="support-card" data-focus="support-wechat" aria-label="放大微信打赏二维码"><div class="support-card-head"><span class="support-method-dot support-method-wechat"></span><h2>微信打赏</h2><span>确认键放大</span></div><div class="support-qr-frame"><img src="/images/support-wechat.png" alt="微信打赏二维码" draggable="false"></div><p>打开微信，扫一扫</p></button>
-          <button class="support-card" data-focus="support-alipay" aria-label="放大支付宝打赏二维码"><div class="support-card-head"><span class="support-method-dot support-method-alipay"></span><h2>支付宝打赏</h2><span>确认键放大</span></div><div class="support-qr-frame"><img src="/images/support-alipay.png" alt="支付宝打赏二维码" draggable="false"></div><p>打开支付宝，扫一扫</p></button>
+          <button class="support-card" data-focus="support-wechat" aria-label="放大微信打赏二维码" data-i18n-aria-label="support.wechatQr"><div class="support-card-head"><span class="support-method-dot support-method-wechat"></span><h2 data-i18n="support.wechat">微信打赏</h2><span data-i18n="support.enlarge">确认键放大</span></div><div class="support-qr-frame"><img src="/images/support-wechat.png" alt="微信打赏二维码" data-i18n-alt="support.wechatQrImage" draggable="false"></div><p data-i18n="support.openWechat">打开微信，扫一扫</p></button>
+          <button class="support-card" data-focus="support-alipay" aria-label="放大支付宝打赏二维码" data-i18n-aria-label="support.alipayQr"><div class="support-card-head"><span class="support-method-dot support-method-alipay"></span><h2 data-i18n="support.alipay">支付宝打赏</h2><span data-i18n="support.enlarge">确认键放大</span></div><div class="support-qr-frame"><img src="/images/support-alipay.png" alt="支付宝打赏二维码" data-i18n-alt="support.alipayQrImage" draggable="false"></div><p data-i18n="support.openAlipay">打开支付宝，扫一扫</p></button>
         </div>
-        <p class="support-thanks">一杯咖啡，一份鼓励。谢谢你，让这里变得更好。</p>
+        <p class="support-thanks" data-i18n="support.copy">一杯咖啡，一份鼓励。谢谢你，让这里变得更好。</p>
       </section>
-      <div id="support-modal" class="support-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="support-modal-title" aria-hidden="true"><div class="support-modal-panel"><div class="support-modal-heading"><h2 id="support-modal-title">扫码打赏</h2><button id="support-close" class="support-close" data-focus="support-close">关闭</button></div><img id="support-large-qr" alt="打赏二维码"><p>用手机扫一扫 · 按返回键关闭</p></div></div>
+      <div id="support-modal" class="support-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="support-modal-title" aria-hidden="true"><div class="support-modal-panel"><div class="support-modal-heading"><h2 id="support-modal-title" data-i18n="support.scanTitle">扫码打赏</h2><button id="support-close" class="support-close" data-focus="support-close" data-i18n="common.close">关闭</button></div><img id="support-large-qr" alt="打赏二维码" data-i18n-alt="support.largeQr"><p data-i18n="support.scanHint">用手机扫一扫 · 按返回键关闭</p></div></div>
 
-      <section class="hero is-catalog-loading" id="hero" aria-label="推荐视频">
+      <section class="hero is-catalog-loading" id="hero" aria-label="推荐视频" data-i18n-aria-label="hero.recommendVideo">
         <div class="hero-media">
-          <div id="hero-transition" class="hero-transition" aria-hidden="true"><div id="hero-backdrop" class="hero-backdrop"></div><div id="hero-loading-poster" class="hero-loading-poster"></div></div>
+          <div id="hero-transition" class="hero-transition" aria-hidden="true"><div id="hero-backdrop" class="hero-backdrop"></div><div id="hero-loading-poster" class="hero-loading-poster"></div><canvas id="hero-last-frame" class="hero-last-frame" width="0" height="0" aria-hidden="true"></canvas></div>
           <video id="hero-video" class="hero-video" playsinline preload="metadata"></video>
           <div id="danmaku-layer" class="danmaku-layer" aria-hidden="true"></div>
-          <button class="hero-feed-focus" id="hero-feed-focus" data-focus="hero-feed" aria-label="当前推荐短剧"></button>
+          <button class="hero-feed-focus" id="hero-feed-focus" data-focus="hero-feed" aria-label="当前推荐短剧" data-i18n-aria-label="hero.currentDrama"></button>
           <div class="hero-placeholder" id="hero-placeholder">
-            <div class="placeholder-kicker">红果短剧</div>
-            <h1 id="hero-placeholder-title">正在读取推荐</h1>
+            <div class="placeholder-kicker" data-i18n="app.name">红果短剧</div>
+            <h1 id="hero-placeholder-title" data-i18n="hero.loadingRecommendations">正在读取推荐</h1>
             <p id="hero-placeholder-summary" class="is-hidden"></p>
           </div>
           <div class="hero-gradient"></div>
-          <div class="hero-top-copy" id="hero-top-copy"><strong id="hero-top-title">红果短剧</strong><span id="hero-top-episode">第1集</span></div>
-          <div class="hero-top-right"><strong id="hero-top-count">1 / 0</strong><span>↑↓ 切换</span></div>
-          <div class="catalog-ribbon" id="catalog-ribbon" aria-label="分类内容">
-            <div class="catalog-heading" id="catalog-heading">热播短剧</div>
-            <div class="catalog-track" id="catalog-track" data-focus-zone="catalog" aria-label="短剧列表"></div>
+          <div class="hero-top-copy" id="hero-top-copy"><strong id="hero-top-title" data-i18n="app.name">红果短剧</strong><span id="hero-top-episode" data-i18n="ui.episodePlaceholder">第1集</span></div>
+          <div class="hero-top-right"><strong id="hero-top-count">1 / 0</strong><span data-i18n="hero.switchHint">↑↓ 切换</span></div>
+          <div class="catalog-ribbon" id="catalog-ribbon" aria-label="分类内容" data-i18n-aria-label="hero.catalogContent">
+            <div class="catalog-heading" id="catalog-heading" data-i18n="ui.hotDrama">热播短剧</div>
+            <div class="catalog-track" id="catalog-track" data-focus-zone="catalog" aria-label="短剧列表" data-i18n-aria-label="hero.dramaList"></div>
           </div>
           <div class="hero-title"></div>
           <div class="hero-episode"></div>
           <div class="hero-summary"></div>
         </div>
 
-        <div class="right-actions" data-focus-zone="actions" aria-label="视频操作">
-          <button class="round-action" data-action="like" data-focus="hero-like" aria-label="点赞" aria-pressed="false"><svg aria-hidden="true" focusable="false"><use href="#icon-like" xlink:href="#icon-like"></use></svg><strong class="action-count" id="hero-like-count">—</strong></button>
-          <button class="round-action" data-action="favorite" data-focus="hero-favorite" aria-label="收藏" aria-pressed="false"><svg aria-hidden="true" focusable="false"><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><strong class="action-count" id="hero-favorite-count">—</strong></button>
-          <button class="round-action" data-action="comment" data-focus="hero-comment" aria-label="评论"><svg aria-hidden="true" focusable="false"><use href="#icon-comment" xlink:href="#icon-comment"></use></svg><strong class="action-count" id="hero-comment-count">—</strong></button>
-          <button class="round-action" data-action="follow" data-focus="hero-follow" aria-label="追更" aria-pressed="false"><svg aria-hidden="true" focusable="false"><use href="#icon-bell" xlink:href="#icon-bell"></use></svg><small>追更</small></button>
-          <button class="round-action" data-action="danmaku" data-focus="hero-danmaku" aria-pressed="false"><svg><use href="#icon-danmaku" xlink:href="#icon-danmaku"></use></svg><small>弹幕关</small></button>
+        <div class="right-actions" data-focus-zone="actions" aria-label="视频操作" data-i18n-aria-label="hero.videoActions">
+          <button class="round-action" data-action="like" data-focus="hero-like" aria-label="点赞" data-i18n-aria-label="nav.likes" aria-pressed="false"><svg aria-hidden="true" focusable="false"><use href="#icon-like" xlink:href="#icon-like"></use></svg><strong class="action-count" id="hero-like-count">—</strong></button>
+          <button class="round-action" data-action="favorite" data-focus="hero-favorite" aria-label="收藏" data-i18n-aria-label="nav.favorites" aria-pressed="false"><svg aria-hidden="true" focusable="false"><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><strong class="action-count" id="hero-favorite-count">—</strong></button>
+          <button class="round-action" data-action="comment" data-focus="hero-comment" aria-label="评论" data-i18n-aria-label="modal.reviews"><svg aria-hidden="true" focusable="false"><use href="#icon-comment" xlink:href="#icon-comment"></use></svg><strong class="action-count" id="hero-comment-count">—</strong></button>
         </div>
 
-        <div class="bottom-controls" data-focus-zone="controls" aria-label="播放控制">
+        <div class="bottom-controls" data-focus-zone="controls" aria-label="播放控制" data-i18n-aria-label="hero.playbackControls">
           <div class="playback-timeline">
             <span class="time-label">00:00 / --:--</span>
-            <button class="control-button progress-track" id="control-progress" data-focus="control-progress" role="slider" aria-label="播放进度" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" disabled><span></span></button>
+            <button class="control-button progress-track" id="control-progress" data-focus="control-progress" role="slider" aria-label="播放进度" data-i18n-aria-label="hero.playbackProgress" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" disabled><span></span></button>
           </div>
           <div class="playback-buttons">
-          <button class="control-button has-icon" data-action="pause" data-focus="control-pause" aria-label="播放"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-play" xlink:href="#icon-play"></use></svg><span class="control-label">播放</span></span></button>
-          <button class="control-button has-icon" data-action="send-danmaku" data-focus="control-send-danmaku"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-send-danmaku" xlink:href="#icon-send-danmaku"></use></svg><span class="control-label">发弹幕</span></span></button>
-          <button class="control-button has-icon" data-action="episodes" data-focus="control-episodes"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-episodes" xlink:href="#icon-episodes"></use></svg><span class="control-label">选集 · -- 集</span></span></button>
-          <button class="control-button has-icon is-hidden" data-action="seasons" data-focus="control-seasons"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-seasons" xlink:href="#icon-seasons"></use></svg><span class="control-label">选季…</span></span></button>
-          <button class="control-button has-icon" data-action="quality" data-focus="control-quality"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-quality" xlink:href="#icon-quality"></use></svg><span class="control-label">清晰度</span></span></button>
+          <button class="control-button has-icon" data-action="pause" data-focus="control-pause" aria-label="播放" data-i18n-aria-label="common.play"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-play" xlink:href="#icon-play"></use></svg><span class="control-label" data-i18n="common.play">播放</span></span></button>
+          <button class="control-button has-icon" data-action="send-danmaku" data-focus="control-send-danmaku" aria-label="发弹幕" data-i18n-aria-label="player.sendDanmaku"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-send-danmaku" xlink:href="#icon-send-danmaku"></use></svg><span class="control-label" data-i18n="player.sendDanmaku">发弹幕</span></span></button>
+          <button class="control-button has-icon" data-action="episodes" data-focus="control-episodes"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-episodes" xlink:href="#icon-episodes"></use></svg><span class="control-label" data-i18n="modal.selectEpisode">选集 · -- 集</span></span></button>
+          <button class="control-button has-icon is-hidden" data-action="seasons" data-focus="control-seasons"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-seasons" xlink:href="#icon-seasons"></use></svg><span class="control-label" data-i18n="ui.selectSeasonLoading">选季…</span></span></button>
+          <button class="control-button has-icon" data-action="quality" data-focus="control-quality"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-quality" xlink:href="#icon-quality"></use></svg><span class="control-label" data-i18n="ui.quality">清晰度</span></span></button>
           <button class="control-button has-icon" data-action="speed" data-focus="control-speed"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-speed" xlink:href="#icon-speed"></use></svg><span class="control-label">1.0x</span></span></button>
-          <button class="control-button has-icon" data-action="volume" data-focus="control-volume"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-volume" xlink:href="#icon-volume"></use></svg><span class="control-label">音量</span></span></button>
-          <button class="control-button has-icon" data-action="diagnostics" data-focus="control-diagnostics" aria-haspopup="dialog" aria-controls="player-options"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-diagnostics" xlink:href="#icon-diagnostics"></use></svg><span class="control-label">诊断</span></span></button>
-          <button class="control-button has-icon" data-action="fullscreen" data-focus="control-fullscreen" aria-label="全屏"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-fullscreen" xlink:href="#icon-fullscreen"></use></svg><span class="control-label">全屏</span></span></button>
+          <button class="control-button has-icon" data-action="volume" data-focus="control-volume"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-volume" xlink:href="#icon-volume"></use></svg><span class="control-label" data-i18n="ui.volume">音量</span></span></button>
+          <button class="control-button has-icon" data-action="diagnostics" data-focus="control-diagnostics" aria-label="诊断" data-i18n-aria-label="modal.diagnostics" aria-haspopup="dialog" aria-controls="player-options"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-diagnostics" xlink:href="#icon-diagnostics"></use></svg><span class="control-label" data-i18n="modal.diagnostics">诊断</span></span></button>
+          <div class="playback-utility-group" aria-label="播放显示" data-i18n-aria-label="hero.playbackDisplay">
+            <button class="control-button has-icon" data-action="danmaku" data-focus="control-danmaku" aria-label="弹幕已关闭" data-i18n-aria-label="ui.danmakuDisabled" aria-pressed="false"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-danmaku-off" xlink:href="#icon-danmaku-off"></use></svg><span class="control-label" data-i18n="ui.danmakuClosed">弹幕关</span></span></button>
+            <button class="control-button has-icon" data-action="fullscreen" data-focus="control-fullscreen" aria-label="全屏" data-i18n-aria-label="ui.fullscreen"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-fullscreen" xlink:href="#icon-fullscreen"></use></svg><span class="control-label" data-i18n="ui.fullscreen">全屏</span></span></button>
+          </div>
           </div>
         </div>
-        <div class="player-status is-hidden" id="player-status" role="status" aria-live="polite"><span class="player-spinner" aria-hidden="true"></span><span class="player-status-title is-hidden" id="player-status-title"></span><span id="player-status-text"></span><button class="control-button is-hidden" id="player-retry" data-action="retry" data-focus="player-retry">重试播放</button></div>
+        <div class="player-status is-hidden" id="player-status" role="status" aria-live="polite"><span class="player-spinner" aria-hidden="true"></span><span class="player-status-title is-hidden" id="player-status-title"></span><span id="player-status-text"></span><div class="player-status-actions"><button class="control-button has-icon player-failure-action player-failure-retry is-hidden" id="player-retry" data-action="retry" data-focus="player-retry"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-retry" xlink:href="#icon-retry"></use></svg><span class="control-label" data-i18n="common.retryPlayback">重试播放</span></span></button><button class="control-button has-icon player-failure-action player-failure-diagnostics is-hidden" id="player-failure-diagnostics" data-action="diagnostics" data-focus="player-failure-diagnostics" aria-haspopup="dialog" aria-controls="player-options"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-diagnostics" xlink:href="#icon-diagnostics"></use></svg><span class="control-label" data-i18n="modal.diagnostics">播放诊断</span></span></button></div></div>
+        <section id="end-recommendations" class="end-recommendations is-hidden" role="dialog" aria-modal="true" aria-labelledby="end-recommendations-title" aria-hidden="true">
+          <div class="end-recommendations-panel">
+            <div class="end-recommendations-heading"><div><h2 id="end-recommendations-title" data-i18n="modal.recommendations">接着看点什么</h2><p data-i18n="modal.recommendationsDescription">本剧相关推荐</p></div><button id="end-recommendations-close" class="end-recommendations-close" data-focus="end-recommendations-close" aria-label="关闭相关推荐" data-i18n-aria-label="ui.closeRelated" data-i18n="common.close">关闭 <span aria-hidden="true">×</span></button></div>
+            <div id="end-recommendations-track" class="end-recommendations-track" aria-label="相关推荐短剧" data-i18n-aria-label="ui.relatedDramaList"></div>
+          </div>
+        </section>
         <div id="player-diagnostics-shade" class="diagnostic-shade is-hidden" aria-hidden="true"></div>
-        <section class="player-options is-hidden" id="player-options" role="dialog" aria-modal="true" aria-labelledby="player-options-title"><div class="player-options-heading"><strong id="player-options-title"></strong><button class="player-option" id="player-options-close" data-focus="player-options-close" aria-label="关闭">×</button></div><div id="player-options-list"></div><div id="player-diagnostics" class="is-hidden"><p id="player-diagnostics-summary"></p><div id="player-diagnostics-rows" class="diagnostic-rows"></div><div class="diagnostic-footer"><span id="player-diagnostics-time"></span><div><button id="player-diagnostics-refresh" class="player-option diagnostic-action" data-focus="diagnostics-refresh">刷新诊断</button><button id="player-diagnostics-close" class="player-option diagnostic-action" data-focus="diagnostics-close">关闭</button></div></div></div><div id="player-compose" class="is-hidden"><label id="player-compose-label" for="player-compose-input">说点什么…</label><textarea id="player-compose-input" class="player-text-input" data-focus="player-compose-input" rows="3" maxlength="200" placeholder="发一条弹幕…"></textarea><div class="player-compose-actions"><button id="player-compose-scan" class="player-option player-compose-scan" data-action="danmaku-scan" data-focus="player-compose-scan"><svg aria-hidden="true" focusable="false"><use href="#icon-scan" xlink:href="#icon-scan"></use></svg><span>扫码输入</span></button><button id="player-compose-send" class="player-option" data-focus="player-compose-send">发送</button></div></div><p id="player-options-message" class="player-form-message" role="status" aria-live="polite"></p></section>
+        <section class="player-options is-hidden" id="player-options" role="dialog" aria-modal="true" aria-labelledby="player-options-title"><div class="player-options-heading"><strong id="player-options-title"></strong><button class="player-option" id="player-options-close" data-focus="player-options-close" aria-label="关闭" data-i18n-aria-label="common.close">×</button></div><div id="player-options-list"></div><div id="player-diagnostics" class="is-hidden"><div id="player-diagnostics-scroll" class="diagnostic-scroll" tabindex="0" data-focus="diagnostics-scroll" aria-label="诊断内容" data-i18n-aria-label="ui.diagnosticContent"><p id="player-diagnostics-summary"></p><div id="player-diagnostics-rows" class="diagnostic-rows"></div></div><div class="diagnostic-footer"><span id="player-diagnostics-time"></span><div><button id="player-diagnostics-refresh" class="player-option diagnostic-action" data-focus="diagnostics-refresh" data-i18n="common.refresh">刷新诊断</button><button id="player-diagnostics-close" class="player-option diagnostic-action" data-focus="diagnostics-close" data-i18n="common.close">关闭</button></div></div></div><div id="player-compose" class="is-hidden"><label id="player-compose-label" for="player-compose-input" data-i18n="ui.danmakuInputLabel">说点什么…</label><textarea id="player-compose-input" class="player-text-input" data-focus="player-compose-input" rows="3" maxlength="200" placeholder="发一条弹幕…" data-i18n-placeholder="player.danmakuPlaceholder"></textarea><div class="player-compose-actions"><button id="player-compose-scan" class="player-option player-compose-scan" data-action="danmaku-scan" data-focus="player-compose-scan"><svg aria-hidden="true" focusable="false"><use href="#icon-scan" xlink:href="#icon-scan"></use></svg><span data-i18n="search.scanInput">扫码输入</span></button><button id="player-compose-send" class="player-option" data-focus="player-compose-send" data-i18n="common.send">发送</button></div></div><p id="player-options-message" class="player-form-message" role="status" aria-live="polite"></p></section>
       </section>
 
-      <section class="detail-modal is-hidden" id="detail-modal" aria-hidden="true" aria-label="选集与系列剧">
+      <section class="detail-modal is-hidden" id="detail-modal" aria-hidden="true" aria-label="选集与系列剧" data-i18n-aria-label="modal.detail">
         <div class="detail-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-title">
           <div class="detail-header">
-            <span id="detail-title">选集</span>
-            <button class="detail-close modal-action" id="detail-close" data-focus="detail-close" aria-label="关闭">×</button>
+            <img id="detail-cover" class="detail-cover is-empty" alt="">
+            <div class="detail-heading-copy">
+              <div class="detail-title-row">
+                <div class="detail-title-copy"><h2 id="detail-title" data-i18n="modal.selectEpisode">选集</h2><p id="detail-meta"></p></div>
+                <div class="detail-header-actions">
+                  <button type="button" class="detail-header-action" id="detail-follow" data-focus="detail-follow" aria-pressed="false"><svg aria-hidden="true"><use href="#icon-bell" xlink:href="#icon-bell"></use></svg><span data-i18n="ui.follow">追更</span></button>
+                  <button type="button" class="detail-header-action" id="detail-favorite" data-focus="detail-favorite" aria-pressed="false"><svg aria-hidden="true"><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><span data-i18n="ui.favorite">收藏</span></button>
+                </div>
+              </div>
+              <p id="detail-intro" class="detail-intro"></p>
+            </div>
+            <button type="button" class="detail-close modal-action" id="detail-close" data-focus="detail-close" aria-label="关闭" data-i18n-aria-label="common.close">×</button>
           </div>
-          <div class="detail-tabs" role="tablist" aria-label="选集与系列剧"><button class="detail-tab is-active" id="detail-tab-episodes" data-focus="detail-tab-episodes" role="tab" aria-selected="true" aria-controls="detail-episode-panel">选集</button><button class="detail-tab" id="detail-tab-series" data-focus="detail-tab-series" role="tab" aria-selected="false" aria-controls="detail-series-panel">系列剧<span id="detail-series-count"></span></button><button class="detail-tab" id="detail-tab-reviews" data-focus="detail-tab-reviews" role="tab" aria-selected="false" aria-controls="detail-reviews-panel">剧评</button><button class="detail-tab" id="detail-tab-related" data-focus="detail-tab-related" role="tab" aria-selected="false" aria-controls="detail-related-panel">相关推荐</button></div>
+          <div class="detail-cast is-hidden" id="detail-cast"><strong class="detail-cast-label" data-i18n="ui.cast">演员</strong><div class="detail-cast-strip" id="detail-cast-strip" data-focus-zone="detailCast"></div><button type="button" class="detail-cast-more is-hidden" id="detail-cast-more" data-focus="detail-cast-more" aria-haspopup="dialog" aria-controls="detail-cast-modal"></button></div>
+          <div class="detail-tabs" role="tablist" aria-label="选集与系列剧" data-i18n-aria-label="modal.detail"><button class="detail-tab is-active" id="detail-tab-episodes" data-focus="detail-tab-episodes" role="tab" aria-selected="true" aria-controls="detail-episode-panel" data-i18n="modal.selectEpisode">选集</button><button class="detail-tab" id="detail-tab-series" data-focus="detail-tab-series" role="tab" aria-selected="false" aria-controls="detail-series-panel"><span data-i18n="modal.series">系列剧</span><span id="detail-series-count"></span></button><button class="detail-tab" id="detail-tab-reviews" data-focus="detail-tab-reviews" role="tab" aria-selected="false" aria-controls="detail-reviews-panel" data-i18n="modal.reviews">剧评</button><button class="detail-tab" id="detail-tab-related" data-focus="detail-tab-related" role="tab" aria-selected="false" aria-controls="detail-related-panel" data-i18n="modal.related">相关推荐</button></div>
           <div id="detail-episode-panel" role="tabpanel" aria-labelledby="detail-tab-episodes">
-          <div class="detail-progress" id="detail-progress" role="status" aria-live="polite">正在读取集数…</div>
-          <button class="detail-retry modal-action is-hidden" id="detail-retry" data-focus="detail-retry">重试</button>
-          <div class="detail-episodes" id="detail-episodes" data-focus-zone="episodes" aria-label="集数列表"></div>
+          <div class="detail-progress" id="detail-progress" role="status" aria-live="polite" data-i18n="content.readingEpisodes">正在读取集数…</div>
+          <button class="detail-retry modal-action is-hidden" id="detail-retry" data-focus="detail-retry" data-i18n="common.retry">重试</button>
+          <div class="detail-episodes" id="detail-episodes" data-focus-zone="episodes" aria-label="集数列表" data-i18n-aria-label="content.episodeList"></div>
           </div>
-          <div id="detail-series-panel" class="detail-series-panel is-hidden" role="tabpanel" aria-labelledby="detail-tab-series"><div id="detail-series-list" class="detail-series-list"></div><div class="detail-series-message" id="detail-series-message" role="status" aria-live="polite"></div><button class="series-retry is-hidden" id="detail-series-retry" data-focus="detail-series-retry">重试</button></div>
+          <div id="detail-series-panel" class="detail-series-panel is-hidden" role="tabpanel" aria-labelledby="detail-tab-series"><div id="detail-series-list" class="detail-series-list"></div><div class="detail-series-message" id="detail-series-message" role="status" aria-live="polite"></div><button class="series-retry is-hidden" id="detail-series-retry" data-focus="detail-series-retry" data-i18n="common.retry">重试</button></div>
           <div id="detail-reviews-panel" class="detail-reviews-panel is-hidden" role="tabpanel" aria-labelledby="detail-tab-reviews"><div id="detail-reviews-list" class="detail-reviews-list"></div><div id="detail-reviews-message" class="detail-series-message" role="status" aria-live="polite"></div></div>
           <div id="detail-related-panel" class="detail-related-panel is-hidden" role="tabpanel" aria-labelledby="detail-tab-related"><div id="detail-related-list" class="detail-related-list"></div><div id="detail-related-message" class="detail-series-message" role="status" aria-live="polite"></div></div>
+          <section class="detail-cast-modal is-hidden" id="detail-cast-modal" aria-hidden="true"><div class="detail-cast-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-cast-title"><div class="detail-cast-heading"><h2 id="detail-cast-title" data-i18n="ui.allActors">全部演员</h2><button type="button" id="detail-cast-close" class="detail-cast-close" data-focus="detail-cast-close" aria-label="关闭" data-i18n-aria-label="common.close">×</button></div><div id="detail-cast-all" class="detail-cast-all" data-focus-zone="detailCastModal"></div></div></section>
         </div>
       </section>
 
-      <section class="discussion-panel is-hidden" id="discussion-panel" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="discussion-title"><div class="discussion-head"><h2 id="discussion-title">本集评论</h2><button id="discussion-close" class="discussion-close" data-focus="discussion-close">关闭</button></div><div id="discussion-scroll" class="discussion-scroll"><div id="discussion-list"></div><div id="discussion-pagination" class="list-status" role="status"></div></div><div class="discussion-composer"><p id="discussion-target" class="is-hidden"></p><label for="discussion-input" class="is-hidden">评论内容</label><textarea id="discussion-input" class="player-text-input" data-focus="discussion-input" rows="2" maxlength="1000" placeholder="说点什么…"></textarea><div class="discussion-compose-actions"><button id="discussion-cancel-reply" class="discussion-action is-hidden" data-focus="discussion-cancel-reply">取消回复</button><button id="discussion-send" class="discussion-action" data-focus="discussion-send">发送</button></div><p id="discussion-message" class="player-form-message" role="status" aria-live="polite"></p></div></section>
-      <section class="confirm-modal is-hidden" id="confirm-modal" aria-hidden="true"><div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><h2 id="confirm-title">清空记录？</h2><p id="confirm-copy"></p><div class="confirm-actions"><button id="confirm-cancel" class="confirm-button" data-focus="confirm-cancel">取消</button><button id="confirm-accept" class="confirm-button confirm-danger" data-focus="confirm-accept">清空</button></div></div></section>
-      <section class="account-keypad-modal is-hidden" id="account-keypad-modal" aria-hidden="true"><div class="account-keypad-dialog" role="dialog" aria-modal="true" aria-labelledby="account-keypad-title"><h2 id="account-keypad-title">输入手机号</h2><div class="account-keypad-body"><div class="account-keypad-left"><div class="account-keypad-value" id="account-keypad-value" aria-live="polite"></div><p class="account-keypad-hint" id="account-keypad-hint"></p><div class="account-keypad-keys" id="account-keypad-keys"></div><p class="account-keypad-error" id="account-keypad-error" role="status" aria-live="polite"></p><p class="account-keypad-help">方向键选择 · 确认键输入 · 返回键关闭</p></div><div class="account-number-scan"><h3>也可用手机输入</h3><div class="account-number-qr-box"><img class="is-hidden" id="account-number-qr" alt="手机扫码输入" width="240" height="240"></div><p id="account-number-scan-status" role="status" aria-live="polite"></p><p class="account-number-scan-hint">手机和电视需在同一局域网<br>5分钟有效，关闭后失效<br>完成后请在电视继续操作</p></div></div></div></section>
+      <section class="discussion-panel is-hidden" id="discussion-panel" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="discussion-title"><div class="discussion-head"><h2 id="discussion-title" data-i18n="modal.comments">本集评论</h2><button id="discussion-close" class="discussion-close" data-focus="discussion-close" data-i18n="common.close">关闭</button></div><div id="discussion-scroll" class="discussion-scroll"><div id="discussion-list"></div><div id="discussion-pagination" class="list-status" role="status"></div></div><div class="discussion-composer"><p id="discussion-target" class="is-hidden"></p><label for="discussion-input" class="is-hidden" data-i18n="discussion.contentLabel">评论内容</label><textarea id="discussion-input" class="player-text-input" data-focus="discussion-input" rows="2" maxlength="1000" placeholder="说点什么…" data-i18n-placeholder="discussion.placeholder"></textarea><div class="discussion-compose-actions"><button id="discussion-cancel-reply" class="discussion-action is-hidden" data-focus="discussion-cancel-reply" data-i18n="discussion.cancelReply">取消回复</button><button id="discussion-send" class="discussion-action" data-focus="discussion-send" data-i18n="common.send">发送</button></div><p id="discussion-message" class="player-form-message" role="status" aria-live="polite"></p></div></section>
+      <section class="confirm-modal is-hidden" id="confirm-modal" aria-hidden="true"><div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><h2 id="confirm-title" data-i18n="confirm.clearTitle">清空记录？</h2><p id="confirm-copy"></p><div class="confirm-actions"><button id="confirm-cancel" class="confirm-button" data-focus="confirm-cancel" data-i18n="common.cancel">取消</button><button id="confirm-accept" class="confirm-button confirm-danger" data-focus="confirm-accept" data-i18n="common.clear">清空</button></div></div></section>
+      <section class="account-country-modal is-hidden" id="account-country-modal" aria-hidden="true"><div class="account-country-dialog" role="dialog" aria-modal="true" aria-labelledby="account-country-title"><div class="account-country-heading"><h2 id="account-country-title" data-i18n="modal.country">选择国家和地区</h2><button id="account-country-close" class="account-country-close" data-focus="account-country-close" aria-label="关闭" data-i18n-aria-label="common.close">×</button></div><div id="account-country-list" class="account-country-list" role="listbox" aria-label="国家和地区" data-i18n-aria-label="modal.country"></div></div></section>
+      <section class="account-keypad-modal is-hidden" id="account-keypad-modal" aria-hidden="true"><div class="account-keypad-dialog" role="dialog" aria-modal="true" aria-labelledby="account-keypad-title"><h2 id="account-keypad-title" data-i18n="ui.keypadPhone">输入手机号</h2><div class="account-keypad-body"><div class="account-keypad-left"><div class="account-keypad-value" id="account-keypad-value" aria-live="polite"></div><p class="account-keypad-hint" id="account-keypad-hint"></p><div class="account-keypad-keys" id="account-keypad-keys"></div><p class="account-keypad-error" id="account-keypad-error" role="status" aria-live="polite"></p><p class="account-keypad-help" data-i18n="ui.keypadHelp">方向键选择 · 确认键输入 · 返回键关闭</p></div><div class="account-number-scan"><h3 data-i18n="ui.phoneInputByMobile">也可用手机输入</h3><div class="account-number-qr-box"><img class="is-hidden" id="account-number-qr" alt="手机扫码输入" data-i18n-alt="ui.phoneQrAlt" width="240" height="240"></div><p id="account-number-scan-status" role="status" aria-live="polite"></p><p class="account-number-scan-hint" data-i18n="ui.numberInputHint">手机和电视需在同一局域网<br>5分钟有效，关闭后失效<br>完成后请在电视继续操作</p></div></div></div></section>
       <div class="notice is-hidden" id="action-notice" role="status" aria-live="polite"></div>
+      <div class="notification-popup is-hidden" id="notification-popup" role="status" aria-live="polite" aria-atomic="true"></div>
     </section>
   </main>
   <script src="/pagination.js"></script>
   <script src="/episode-prefetch.js"></script>
+  <script src="/end-recommendations.js"></script>
   <script src="/updates.js"></script>
   <script src="/engagement.js"></script>
   <script src="/sms-verification.js"></script>
-  <section id="search-scan-modal" class="search-scan-modal is-hidden" aria-hidden="true"><div class="search-scan-dialog" role="dialog" aria-modal="true" aria-labelledby="search-scan-title"><h2 id="search-scan-title">手机扫码搜索</h2><p id="search-scan-copy">手机输入或粘贴剧名，发送后在电视上搜索</p><div class="search-scan-qr-box"><img id="search-scan-qr" class="is-hidden" width="240" height="240" alt="扫码输入剧名"></div><p id="search-scan-status" role="status" aria-live="polite"></p><p id="search-scan-hint" class="search-scan-hint">手机和电视需在同一局域网<br>二维码5分钟有效，关闭后失效</p><div class="search-scan-actions"><button id="search-scan-refresh" class="search-scan-action" data-focus="search-scan-refresh">刷新二维码</button><button id="search-scan-close" class="search-scan-action" data-focus="search-scan-close">返回搜索</button></div></div></section>
+  <script src="/phone-countries.js"></script>
+  <section id="search-scan-modal" class="search-scan-modal is-hidden" aria-hidden="true"><div class="search-scan-dialog" role="dialog" aria-modal="true" aria-labelledby="search-scan-title"><h2 id="search-scan-title" data-i18n="ui.scanSearchTitle">手机扫码搜索</h2><p id="search-scan-copy" data-i18n="ui.scanSearchCopy">手机输入或粘贴剧名，发送后在电视上搜索</p><div class="search-scan-qr-box"><img id="search-scan-qr" class="is-hidden" width="240" height="240" alt="扫码输入剧名" data-i18n-alt="ui.searchQrAlt"></div><p id="search-scan-status" role="status" aria-live="polite"></p><p id="search-scan-hint" class="search-scan-hint" data-i18n="ui.scanHint">手机和电视需在同一局域网<br>二维码5分钟有效，关闭后失效</p><div class="search-scan-actions"><button id="search-scan-refresh" class="search-scan-action" data-focus="search-scan-refresh" data-i18n="ui.scanRefresh">刷新二维码</button><button id="search-scan-close" class="search-scan-action" data-focus="search-scan-close" data-i18n="ui.scanBackSearch">返回搜索</button></div></div></section>
   <script src="/search-history.js"></script>
   <script src="/numeric-keypad.js"></script>
   <script src="/number-input.js"></script>
   <script src="/playback-diagnostics.js"></script>
+  <script src="/playback-recovery.js"></script>
   <script src="/native-player.js"></script>
+  <script src="/playback-settings.js"></script>
+  <script src="/auto-cinema.js"></script>
+  <script src="/sidebar-settings.js"></script>
+  <script src="/desktop.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

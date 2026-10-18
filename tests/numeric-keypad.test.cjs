@@ -15,6 +15,14 @@ test('phone digits are bounded and deletion can correct them before completion',
   f.pad.press('delete');f.pad.press('1');f.pad.press('done');
   assert.deepEqual(f.closes,[{kind:'phone',value:'13800000001',reason:'complete'}]);assert.equal(f.pad.isOpen(),false);
 });
+test('phone policy changes length and validation for the selected region',()=>{
+  const f=fixture(), hk={code:'+852',name:'中国香港',minLength:8,maxLength:8};
+  f.pad.open('phone','',hk);
+  for(const digit of '61234567') f.pad.press(digit);
+  assert.equal(f.pad.snapshot().maxLength,8);assert.equal(f.pad.snapshot().countryCode,'+852');
+  f.pad.press('8');assert.match(f.pad.snapshot().error,/最多8位/);
+  f.pad.press('done');assert.deepEqual(f.closes,[{kind:'phone',value:'61234567',reason:'complete'}]);
+});
 test('invalid phone and too-short code keep the keyboard open without submitting',()=>{
   for(const [kind,value] of [['phone','123'],['phone','12800000000'],['code','012']]){
     const f=fixture();f.pad.open(kind,value);f.pad.press('done');assert.equal(f.pad.isOpen(),true);assert.ok(f.pad.snapshot().error);assert.equal(f.closes.length,0);

@@ -1,5 +1,8 @@
 (function (window, document) {
   'use strict';
+  function t(key, fallback, params) {
+    return window.HongguoI18n && window.HongguoI18n.t ? window.HongguoI18n.t(key, params, fallback) : fallback;
+  }
   // Android 6 can retain its original Chromium 44 WebView. Keep this file
   // ES5 and load it before pagination and app initialization.
   if (window.NodeList && !NodeList.prototype.forEach) NodeList.prototype.forEach = Array.prototype.forEach;
@@ -54,7 +57,7 @@
       var signal = options.signal;
       function cleanup() { if (signal) signal.removeEventListener('abort', abort); }
       function failure(name, message) { cleanup(); var error = new Error(message); error.name = name; reject(error); }
-      function abort() { xhr.abort(); failure('AbortError', '请求已取消'); }
+      function abort() { xhr.abort(); failure('AbortError', t('ui.requestCancelled', '请求已取消')); }
       if (signal && signal.aborted) { abort(); return; }
       xhr.open(options.method || 'GET', url, true);
       xhr.timeout = 180000;
@@ -64,8 +67,8 @@
         resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status,
           json: function () { try { return Promise.resolve(JSON.parse(xhr.responseText)); } catch (error) { return Promise.reject(error); } } });
       };
-      xhr.onerror = function () { failure('TypeError', '连接失败'); };
-      xhr.ontimeout = function () { failure('TimeoutError', '连接超时'); };
+      xhr.onerror = function () { failure('TypeError', t('ui.networkFailed', '连接失败')); };
+      xhr.ontimeout = function () { failure('TimeoutError', t('ui.networkTimeout', '连接超时')); };
       if (signal) signal.addEventListener('abort', abort);
       xhr.send(options.body === undefined ? null : options.body);
     });
@@ -114,6 +117,6 @@
 
   window.addEventListener('error', function () {
     var status = document.getElementById('core-status');
-    if (status && status.textContent === '连接核心服务…') { status.textContent = '界面启动失败，请重新打开应用'; status.dataset.ok = 'false'; }
+    if (status && status.textContent === t('ui.coreConnecting', '连接核心服务…')) { status.textContent = t('ui.startupFailed', '界面启动失败，请重新打开应用'); status.dataset.ok = 'false'; }
   });
 })(window, document);

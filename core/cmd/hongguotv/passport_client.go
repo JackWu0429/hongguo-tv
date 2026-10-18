@@ -66,11 +66,23 @@ func passportQuery(s accountSession) url.Values {
 }
 
 func (c *passportClient) request(ctx context.Context, path, method string, params url.Values, body []byte, contentType string) (map[string]any, error) {
+	return c.requestWithSignature(ctx, path, method, params, body, contentType, passportSignatureFull)
+}
+
+func (c *passportClient) requestWithSignature(ctx context.Context, path, method string, params url.Values, body []byte, contentType string, mode passportSignatureMode) (map[string]any, error) {
 	q := passportQuery(c.session)
 	for k, vs := range params {
 		q[k] = append([]string(nil), vs...)
 	}
-	raw, h, err := signPassportRequest(q, body, time.Now().UnixMilli(), c.session.DeviceID)
+	var raw string
+	var h http.Header
+	var err error
+	stamp := time.Now().UnixMilli()
+	if mode == passportSignatureInternational {
+		raw, h, err = signInternationalPassportRequest(q, body, stamp)
+	} else {
+		raw, h, err = signPassportRequest(q, body, stamp, c.session.DeviceID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -153,12 +165,23 @@ func passportXOR(s string) string {
 	return hex.EncodeToString(b)
 }
 
-var accountPhoneRE = regexp.MustCompile(`^1[3-9][0-9]{9}$`)
 var accountCodeRE = regexp.MustCompile(`^[0-9]{4,8}$`)
 var accountPrivateDigitsRE = regexp.MustCompile(`[0-9]{7,}`)
 
 func passportForm(phone string) url.Values {
-	return url.Values{"mobile": {passportXOR("+86" + phone)}, "account_sdk_source": {"app"}, "passport_support_flow": {"captcha,verify"}, "mix_mode": {"1"}}
+	return url.Values{"mobile": {passportXOR(passportWirePhone(phone))}, "account_sdk_source": {"app"}, "passport_support_flow": {"captcha,verify"}, "mix_mode": {"1"}}
+}
+
+func (c *passportClient) loginRequest(ctx context.Context, path, phone string, form url.Values) (map[string]any, error) {
+	canonical, err := canonicalAccountPhone(phone)
+	if err != nil {
+		return nil, err
+	}
+	mode := passportSignatureFull
+	if accountPhoneCountryCode(canonical) != "+86" {
+		mode = passportSignatureInternational
+	}
+	return c.requestWithSignature(ctx, path, http.MethodPost, nil, []byte(form.Encode()), "application/x-www-form-urlencoded; charset=UTF-8", mode)
 }
 
 func (c *passportClient) sendCode(ctx context.Context, phone string) (map[string]any, error) {
@@ -166,7 +189,7 @@ func (c *passportClient) sendCode(ctx context.Context, phone string) (map[string
 	f.Set("auto_read", "0")
 	f.Set("unbind_exist", "34")
 	f.Set("type", passportXOR("24"))
-	return c.request(ctx, "/passport/mobile/send_code/v1/", http.MethodPost, nil, []byte(f.Encode()), "application/x-www-form-urlencoded; charset=UTF-8")
+	return c.loginRequest(ctx, "/passport/mobile/send_code/v1/", phone, f)
 }
 
 func (c *passportClient) smsLogin(ctx context.Context, phone, code, ticket string) (map[string]any, error) {
@@ -176,7 +199,7 @@ func (c *passportClient) smsLogin(ctx context.Context, phone, code, ticket strin
 		f.Set("passport_mfa_retry_tag", "1")
 		f.Set("sms_code_key", passportXOR(ticket))
 	}
-	return c.request(ctx, "/passport/mobile/sms_login/", http.MethodPost, nil, []byte(f.Encode()), "application/x-www-form-urlencoded; charset=UTF-8")
+	return c.loginRequest(ctx, "/passport/mobile/sms_login/", phone, f)
 }
 
 type accountMFA struct {
@@ -214,12 +237,12 @@ func parseAccountMFA(data map[string]any) *accountMFA {
 	return m
 }
 
-func (c *passportClient) verifyMFA(ctx context.Context, m *accountMFA) (map[string]any, error) {
+func (c *passportClient) verifyMFA(ctx context.Context, m *accountMFA, phone string) (map[string]any, error) {
 	biz, _ := json.Marshal(map[string]string{"passport_mfa_retry_tag": "1", "sms_code_key": m.CodeKey})
 	// Reference UpsmsVerify uses string lengths 3/6/0 for ato/1.1.31/empty.
 	// Its adjacent binary string previews are not the actual field values.
 	f := url.Values{"encrypt_uid": {m.EncryptUID}, "verify_ticket": {""}, "verify_scene": {"sms_login"}, "verify_reason": {"ato"}, "copywriting_key": {"sms_login"}, "ies_safety_diversion_tag": {"mfa"}, "new_verify_flow": {""}, "new_authn_sdk_version": {"1.1.31"}, "new_authn_sdk_verify_reason": {"ato"}, "new_authn_sdk_verify_scene": {"sms_login"}, "request_tag_from": {"h5"}, "biz_params": {string(biz)}, "new_authn_sdk_log_id": {m.LogID}}
-	return c.request(ctx, "/passport/upsms/verify/", http.MethodPost, nil, []byte(f.Encode()), "application/x-www-form-urlencoded; charset=UTF-8")
+	return c.loginRequest(ctx, "/passport/upsms/verify/", phone, f)
 }
 
 func passportData(p map[string]any) map[string]any { d, _ := asMap(p["data"]); return d }
@@ -278,7 +301,7 @@ func passportFailure(p map[string]any) error {
 		msg = ""
 	}
 	if msg == "" {
-		msg = "验证失败，请检查验证码或稍后重试"
+		msg = "红果未提供具体失败原因"
 	}
 	msg = accountPrivateDigitsRE.ReplaceAllString(msg, "***")
 	return fmt.Errorf("%s（%s）", msg, code)

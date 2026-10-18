@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -39,7 +40,8 @@ func TestSearchHistoryPersistsAndDeduplicatesBoundedDeviceKeywords(t *testing.T)
 		t.Fatal("restart lost keywords")
 	}
 	info, _ := os.Stat(s.path)
-	if info.Mode().Perm() != 0600 {
+	// Windows uses the user profile directory ACL rather than Unix mode bits.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 		t.Fatal(info.Mode())
 	}
 	if _, err = s.change("", true); err != nil {

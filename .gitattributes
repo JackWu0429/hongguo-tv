@@ -1,0 +1,11 @@
+# Shared embedded UI must have identical bytes in macOS/Windows/Android builds.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.zip binary
+*.apk binary
+*.so binary

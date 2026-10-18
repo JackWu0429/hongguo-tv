@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+require('./helpers/app-text.cjs');
 const HongguoPagination = require('../core/cmd/hongguotv/ui/pagination.js');
 const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'), 'utf8');
 const slice = (a, b) => source.slice(source.indexOf('  function ' + a + '('), source.indexOf('  function ' + b + '('));
@@ -47,13 +48,16 @@ function fixture({ failSave = false, writeGate = null, sourceGate = null } = {})
       return { path: '/media/' + item.series_id + '/' + item.vid + '.mp4', quality: '720P', qualities: ['720P'] };
     }
   });
+  vm.runInContext("var desktopShell=false;" + source.match(/  function applicationHidden[^\n]+/)[0], c);
   vm.runInContext(`
     var shell={dataset:{mode:'recommend'},classList:document.getElementById('shell').classList}, mainSurface=document.getElementById('main-surface');
     var searchPage=document.getElementById('search-page'),pagePlaceholder=document.getElementById('placeholder'),libraryPage=document.getElementById('library-page'),accountPage=document.getElementById('account-page'),supportPage=document.getElementById('support-page');
     var searchScanOpen=false,smsVerification=null,supportModalOpen=false,detailModalOpen=false,engagement={clear:function(){}};
+    var autoCinemaEnabled=false,autoCinemaCandidate=false,autoCinemaGeneration=0,autoCinemaSession=null;
     var feedItems=Array.from({length:5},function(_,i){return {series_id:'r'+i,title:'Drama '+i,vid:'r'+i+'-1',episode_count:3,vid_list:['r'+i+'-1','r'+i+'-2','r'+i+'-3']}}),feedIndex=1,feedGeneration=1,continuationGeneration=0;
     var recommendationSession=null,accountEpoch=1,accountData={logged_in:true},activePlayback={item:feedItems[1],episode:2,position:12,vid:'r1-2',owner:1,generation:1,started:true,lastWrite:0,completed:false};
     var playbackRequest=null,playbackInfoRequest=null,playbackPrefetchHandoff=null,controlsTimer=null,playbackQuality='',playbackQualities=[],playbackPreferences={quality:'720P'},applicationInBackground=false;
+    var playbackRecovery={reset:function(){},next:function(){return 'stop'},attempts:function(){return 0}};
     var libraryData={owner_id:'account',entries:[]},libraryReady=Promise.resolve(),libraryQueue=Promise.resolve(),libraryLoaded=true,libraryError='',libraryEditing=false;
     var playerReturnPage=null,playerReturnFocus=null;
     var searchPager={loaded:true,cancel:function(){}},searchKind='browse',activeSearchQuery='',searchHistory={load:function(){}};
@@ -66,10 +70,12 @@ function fixture({ failSave = false, writeGate = null, sourceGate = null } = {})
     function updateSavedButtons(){}function updateDetailProgress(){}function renderLibrary(){}function updateSeriesRows(){}function updatePlaybackControls(){}function updateSeasonControl(){}
     function cancelPlaybackPreparation(){if(playbackInfoRequest)playbackInfoRequest.abort();playbackInfoRequest=null;}
     function setFeatured(x){windowFeatured=x}function holdPlaybackAudio(){}function releasePlaybackAudio(){}
-    function waitForPlaybackPaint(){return Promise.resolve(true)}function bindPlaybackPresentation(){}
+    function hasLastPlaybackFrame(){return false}function captureLastPlaybackFrame(){}function clearLastPlaybackFrame(){}
+    function waitForPlaybackPaint(){return Promise.resolve(true)}function bindPlaybackPresentation(){}function clearRangeTransitionHint(){}function waitForPlaybackPrefetch(handoff){return handoff ? handoff.promise : Promise.resolve(null)}
     function setPlayerStatus(){}function showRecommendationPlaceholder(){}function episodeLoadingText(){return 'loading'}function revealControls(){}function showNotice(x){calls.push({kind:'notice',text:x})}
     function playMedia(v){v.paused=false;calls.push({kind:'play',src:v.src});return Promise.resolve()}
     function accountKeypadOpen(){return false}function hideWorkspacePages(){}function goFocus(x){document.activeElement=x}function firstContentFocus(){return pageMode()==='recommend'?activeChannel():document.getElementById('hero-feed-focus')}
+    function cancelPendingAutoCinema(){autoCinemaCandidate=false;autoCinemaSession=null;autoCinemaGeneration=0}
     function resetPlayerUI(){cancelPlaybackPreparation()}function renderAccount(){}function pollAccount(){}function queueTailCheck(){}
     var feedPager=HongguoPagination.create({request:function(params,signal){return fetchData('/api/v1/lists/recommend?'+new URLSearchParams(params),{signal:signal})},render:function(items,append){if(append)feedItems=feedItems.concat(items);else renderFeed(items)}});
     feedPager.local(feedItems,feedItems.length);feedPager.params={channel:'16'};var allPagers=[feedPager,searchPager];

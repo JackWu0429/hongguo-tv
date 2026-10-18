@@ -35,13 +35,15 @@ import (
 )
 
 const (
-	miniReelMaxJSONBytes = 5 * 1024 * 1024
-	miniReelAPIBase      = "https://api5-normal-sinfonlineb.fqnovel.com"
-	miniReelAPIPath      = "/novel/player/video_model/v1/"
-	miniReelAppUA        = "com.phoenix.read/73532 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
-	miniReelTTL          = 2 * time.Hour
-	miniReelMaxBytes     = 512 << 20
-	miniReelMaxCache     = 512 << 20
+	miniReelMaxJSONBytes       = 5 * 1024 * 1024
+	miniReelAPIBase            = "https://api5-normal-sinfonlineb.fqnovel.com"
+	miniReelAPIPath            = "/novel/player/video_model/v1/"
+	miniReelAppUA              = "com.phoenix.read/73532 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
+	miniReelTTL                = 2 * time.Hour
+	miniReelRangeTTL           = 15 * time.Minute
+	miniReelMaxBytes           = 512 << 20
+	miniReelMaxCache           = 512 << 20
+	miniReelVideoModelAttempts = 3
 )
 
 var miniReelDefinitionRE = regexp.MustCompile(`(?i)(\d{3,4})`)
@@ -59,6 +61,8 @@ type miniReelOption struct {
 type miniReelMediaJob struct {
 	Ready     chan struct{}
 	Path      string
+	Range     *miniReelRangeSource
+	Mode      string
 	Quality   string
 	Qualities []string
 	Err       error
@@ -76,11 +80,22 @@ var miniReelState = struct {
 	lastRootCleanup time.Time
 }{jobs: make(map[string]*miniReelMediaJob)}
 
-var miniReelIdentity = struct {
+// plan/v is a metadata endpoint and keeps its existing process identity. This
+// must not be reused for video_model, whose device identity is one-shot.
+var miniReelSeasonIdentity = struct {
 	sync.Once
 	deviceID  string
 	installID string
 }{}
+
+var errMiniReelVideoModelEmpty = errors.New("MiniReel video_model response is empty")
+
+// A video_model request consumes its device identity at the upstream. Keep the
+// static app profile stable, but never reuse these per-request identifiers.
+type miniReelDevice struct {
+	deviceID  string
+	installID string
+}
 
 func handleMiniReelResolve(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -107,6 +122,11 @@ func handleMiniReelResolve(w http.ResponseWriter, r *http.Request) {
 var miniReelIDRE = regexp.MustCompile(`^[0-9]{1,32}$`)
 
 func handleMiniReelMedia(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		miniReelApplyCORS(w.Header())
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD, OPTIONS")
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
@@ -126,7 +146,15 @@ func handleMiniReelMedia(w http.ResponseWriter, r *http.Request) {
 		job.Accessed = time.Now()
 	}
 	miniReelState.Unlock()
-	if job == nil || !isMiniReelReady(job.Ready) || job.Path == "" {
+	if job == nil || !isMiniReelReady(job.Ready) {
+		writeJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "media is not prepared"})
+		return
+	}
+	if job.Range != nil {
+		serveMiniReelRangeMedia(w, r, job.Range)
+		return
+	}
+	if job.Path == "" {
 		writeJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "media is not prepared"})
 		return
 	}
@@ -160,6 +188,12 @@ func resolveMiniReelMediaQuality(ctx context.Context, seriesID, vid, quality str
 // one request only cancels networking when no other consumer needs the job.
 func resolveMiniReelMediaWith(ctx context.Context, seriesID, vid, quality string, fallback bool,
 	prepare func(context.Context, *miniReelMediaJob, string, string, string, string, bool)) (map[string]any, error) {
+	token := miniReelQualityToken(seriesID, vid, quality, fallback)
+	return resolveMiniReelMediaWithToken(ctx, token, seriesID, vid, quality, fallback, prepare)
+}
+
+func resolveMiniReelMediaWithToken(ctx context.Context, token, seriesID, vid, quality string, fallback bool,
+	prepare func(context.Context, *miniReelMediaJob, string, string, string, string, bool)) (map[string]any, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -167,7 +201,6 @@ func resolveMiniReelMediaWith(ctx context.Context, seriesID, vid, quality string
 	if err != nil {
 		return nil, err
 	}
-	token := miniReelQualityToken(seriesID, vid, quality, fallback)
 	// A just-aborted speculative job must finish cleaning its partial file before
 	// another job for the same token writes to that directory.
 acquire:
@@ -248,6 +281,7 @@ acquire:
 		"quality":   job.Quality,
 		"qualities": job.Qualities,
 		"vid":       vid,
+		"mode":      firstNonEmpty(job.Mode, "full"),
 	}, nil
 }
 
@@ -274,6 +308,7 @@ func prepareMiniReelMedia(ctx context.Context, job *miniReelMediaJob, token, ser
 	}
 	job.Quality = option.Quality
 	job.Qualities = miniReelQualities(options)
+	job.Mode = "full"
 	if err := ensureMiniReelRoot(); err != nil {
 		job.Err = err
 		return
@@ -448,7 +483,12 @@ func miniReelCleanupLocked() {
 		miniReelState.lastRootCleanup = now
 	}
 	for token, job := range miniReelState.jobs {
-		if job.Waiters > 0 || now.Sub(job.Accessed) <= miniReelTTL || job.Ready != nil && !isMiniReelReady(job.Ready) {
+		ready := job.Ready != nil && isMiniReelReady(job.Ready)
+		ttl := miniReelTTL
+		if ready && job.Range != nil {
+			ttl = miniReelRangeTTL
+		}
+		if job.Waiters > 0 || now.Sub(job.Accessed) <= ttl || !ready {
 			continue
 		}
 		if miniReelState.root != "" {
@@ -467,10 +507,17 @@ func miniReelCleanupLocked() {
 	entries := []cacheEntry{}
 	var total int64
 	for token, job := range miniReelState.jobs {
-		if job.Ready == nil || !isMiniReelReady(job.Ready) || job.Path == "" {
+		if job.Ready == nil || !isMiniReelReady(job.Ready) {
 			continue
 		}
-		size := miniReelDirectorySize(filepath.Dir(job.Path))
+		size := int64(0)
+		if job.Range != nil {
+			size = miniReelRangeMemorySize(job.Range)
+		} else if job.Path != "" {
+			size = miniReelDirectorySize(filepath.Dir(job.Path))
+		} else {
+			continue
+		}
 		total += size
 		if job.Waiters > 0 {
 			continue
@@ -569,16 +616,34 @@ func selectMiniReelQuality(options []miniReelOption, quality string, fallback bo
 }
 
 func miniReelNativeOptions(ctx context.Context, vid string) ([]miniReelOption, error) {
-	miniReelIdentity.Do(func() {
-		miniReelIdentity.deviceID = miniReelRandomID()
-		miniReelIdentity.installID = miniReelRandomID()
-	})
+	return miniReelNativeOptionsEndpoint(ctx, vid, miniReelAPIBase+miniReelAPIPath)
+}
+
+func miniReelNativeOptionsEndpoint(ctx context.Context, vid, endpoint string) ([]miniReelOption, error) {
+	var lastErr error
+	for attempt := 0; attempt < miniReelVideoModelAttempts; attempt++ {
+		options, err := miniReelNativeOptionsAttempt(ctx, vid, endpoint, miniReelFreshDevice())
+		if err == nil {
+			return options, nil
+		}
+		lastErr = err
+		if !errors.Is(err, errMiniReelVideoModelEmpty) {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("MiniReel video_model empty after %d fresh device attempts: %w", miniReelVideoModelAttempts, lastErr)
+}
+
+func miniReelNativeOptionsAttempt(ctx context.Context, vid, endpoint string, device miniReelDevice) ([]miniReelOption, error) {
 	stamp := time.Now().UnixMilli()
 	params := url.Values{
 		"_rticket": {strconv.FormatInt(stamp, 10)}, "ac": {"wifi"}, "aid": {"8662"},
-		"channel": {"update_64"}, "device_brand": {"Redmi"}, "device_id": {miniReelIdentity.deviceID},
+		"channel": {"update_64"}, "device_brand": {"Redmi"}, "device_id": {device.deviceID},
 		"device_platform": {"android"}, "device_type": {"25053RT47C"}, "dpi": {"520"},
-		"iid": {miniReelIdentity.installID}, "language": {"zh"}, "manifest_version_code": {"73532"},
+		"iid": {device.installID}, "language": {"zh"}, "manifest_version_code": {"73532"},
 		"os": {"android"}, "os_api": {"36"}, "os_version": {"16"}, "resolution": {"1280*2772"},
 		"ssmix": {"a"}, "update_version_code": {"73532"}, "version_code": {"73532"},
 		"version_name": {"7.3.5.32"}, "app_name": {"novelread"},
@@ -588,18 +653,23 @@ func miniReelNativeOptions(ctx context.Context, vid string) ([]miniReelOption, e
 		"video_id": vid, "content_type": 1,
 		"biz_param": map[string]any{"need_all_video_definition": true, "video_platform": 3},
 	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, miniReelAPIBase+miniReelAPIPath+"?"+query, bytes.NewReader(bodyBytes))
+	query, signedHeaders, err := signPassportRequest(params, bodyBytes, stamp, device.deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("MiniReel request signing failed: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"?"+query, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
+	req.Header = signedHeaders
 	req.Header.Set("User-Agent", miniReelAppUA)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("X-XS-From-Web", "0")
 	req.Header.Set("Sdk-Version", "2")
-	for key, value := range miniReelSignRequest(query, string(bodyBytes), stamp) {
-		req.Header.Set(key, value)
-	}
+	req.Header.Set("X-SS-DP", "8662")
+	req.Header.Set("X-Tt-Store-Region", "cn")
+	req.Header.Set("X-Tt-Store-Region-Src", "did")
 	client := &http.Client{Timeout: 35 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -612,6 +682,10 @@ func miniReelNativeOptions(ctx context.Context, vid string) ([]miniReelOption, e
 	data, err := miniReelReadLimited(resp.Body, miniReelMaxJSONBytes)
 	if err != nil {
 		return nil, err
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		log.Printf("[minireel] video_model empty response status=%d content_length=%d tt_logid=%q device_digits=%d iid_digits=%d", resp.StatusCode, resp.ContentLength, resp.Header.Get("X-Tt-Logid"), len(device.deviceID), len(device.installID))
+		return nil, errMiniReelVideoModelEmpty
 	}
 	var envelope map[string]any
 	if err := json.Unmarshal(data, &envelope); err != nil {
@@ -677,6 +751,18 @@ func miniReelRandomID() string {
 		return strconv.FormatInt(time.Now().UnixNano(), 10)
 	}
 	return strconv.FormatUint(binary.BigEndian.Uint64(buf)%8000000000000000000+1000000000000000000, 10)
+}
+
+func miniReelFreshDevice() miniReelDevice {
+	return miniReelDevice{deviceID: miniReelPlaybackID(), installID: miniReelPlaybackID()}
+}
+
+func miniReelPlaybackID() string {
+	buf := make([]byte, 8)
+	if _, err := crand.Read(buf); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano()%9000000000000000+1000000000000000, 10)
+	}
+	return strconv.FormatUint(binary.BigEndian.Uint64(buf)%9000000000000000+1000000000000000, 10)
 }
 
 func miniReelSignRequest(query, body string, stamp int64) map[string]string {
@@ -1058,6 +1144,9 @@ func parseMP4Stsc(data []byte, box mp4Box) ([]mp4StscEntry, error) {
 	}
 	count := int(binary.BigEndian.Uint32(data[p : p+4]))
 	p += 4
+	if count > miniReelRangeMaxSamples {
+		return nil, errors.New("MP4 stsc table exceeds the sample limit")
+	}
 	entries := make([]mp4StscEntry, 0, count)
 	for i := 0; i < count; i++ {
 		if p+12 > box.End {
@@ -1079,6 +1168,9 @@ func parseMP4ChunkOffsets(data []byte, box mp4Box) ([]int, error) {
 	}
 	count := int(binary.BigEndian.Uint32(data[p : p+4]))
 	p += 4
+	if count > miniReelRangeMaxSamples {
+		return nil, errors.New("MP4 chunk table exceeds the sample limit")
+	}
 	offsets := make([]int, 0, count)
 	wide := box.Type == "co64"
 	for i := 0; i < count; i++ {
@@ -1111,6 +1203,9 @@ func parseMP4SampleSizes(data []byte, box mp4Box) ([]int, error) {
 	constant := int(binary.BigEndian.Uint32(data[p : p+4]))
 	count := int(binary.BigEndian.Uint32(data[p+4 : p+8]))
 	p += 8
+	if count > miniReelRangeMaxSamples {
+		return nil, errors.New("MP4 sample table exceeds the sample limit")
+	}
 	sizes := make([]int, count)
 	for i := range sizes {
 		if constant != 0 {
@@ -1133,6 +1228,9 @@ func parseMP4SencIVs(data []byte, box mp4Box, sampleCount int) ([][]byte, error)
 	}
 	flags := binary.BigEndian.Uint32(data[p:p+4]) & 0xffffff
 	count := int(binary.BigEndian.Uint32(data[p+4 : p+8]))
+	if count > miniReelRangeMaxSamples {
+		return nil, errors.New("MP4 senc table exceeds the sample limit")
+	}
 	if count != sampleCount {
 		return nil, fmt.Errorf("senc count %d does not match samples %d", count, sampleCount)
 	}
@@ -1194,14 +1292,98 @@ func renameEncryptedSampleEntry(data []byte, stbl mp4Box) error {
 		}
 		typ := string(data[p+4 : p+8])
 		if typ == "encv" {
-			copy(data[p+4:p+8], []byte("hvc1"))
+			format := encryptedVideoSampleEntryFormat(data, mp4Box{
+				Start: p, Size: size, Header: 8, Type: typ, Payload: p + 8, End: p + size,
+			})
+			if format == "" {
+				// Preserve the established HEVC fallback when frma is absent or
+				// malformed. Existing red-fruit media is HEVC, so this keeps the
+				// current playback path unchanged while allowing confirmed AVC.
+				format = "hvc1"
+			}
+			copy(data[p+4:p+8], []byte(format))
+			neutralizeSampleEntryProtection(data, mp4Box{
+				Start: p, Size: size, Header: 8, Type: typ, Payload: p + 8, End: p + size,
+			})
 		}
 		if typ == "enca" {
 			copy(data[p+4:p+8], []byte("mp4a"))
+			neutralizeSampleEntryProtection(data, mp4Box{
+				Start: p, Size: size, Header: 8, Type: typ, Payload: p + 8, End: p + size,
+			})
 		}
 		p += size
 	}
 	return nil
+}
+
+const visualSampleEntryHeaderSize = 78
+const audioSampleEntryHeaderSize = 28
+
+// neutralizeSampleEntryProtection keeps the MP4 layout and offsets intact
+// while removing protection metadata after sample bytes have been decrypted.
+// A free box remains in place of sinf because deleting bytes would invalidate
+// stco/co64 offsets and the Range sample index.
+func neutralizeSampleEntryProtection(data []byte, entry mp4Box) {
+	headerSize := 0
+	switch entry.Type {
+	case "encv":
+		headerSize = visualSampleEntryHeaderSize
+	case "enca":
+		headerSize = audioSampleEntryHeaderSize
+	default:
+		return
+	}
+	childrenStart := entry.Payload + headerSize
+	if childrenStart < entry.Payload || childrenStart > entry.End || entry.End > len(data) {
+		return
+	}
+	children, err := parseMP4Boxes(data, childrenStart, entry.End)
+	if err != nil {
+		// Keep the established codec fallback for malformed/truncated input.
+		return
+	}
+	for _, child := range children {
+		if child.Type != "sinf" || child.Start+8 > child.End || child.End > len(data) {
+			continue
+		}
+		copy(data[child.Start+4:child.Start+8], []byte("free"))
+		for i := child.Payload; i < child.End; i++ {
+			data[i] = 0
+		}
+	}
+}
+
+// encryptedVideoSampleEntryFormat returns the original codec stored in the
+// encrypted sample entry's sinf/frma boxes. A blank result deliberately means
+// "use the legacy HEVC fallback"; unknown codecs are not passed to players.
+func encryptedVideoSampleEntryFormat(data []byte, entry mp4Box) string {
+	if entry.Type != "encv" || entry.Payload < 0 || entry.Payload > entry.End || entry.End > len(data) {
+		return ""
+	}
+	childrenStart := entry.Payload + visualSampleEntryHeaderSize
+	if childrenStart < entry.Payload || childrenStart > entry.End {
+		return ""
+	}
+	children, err := parseMP4Boxes(data, childrenStart, entry.End)
+	if err != nil {
+		return ""
+	}
+	sinf, ok := firstMP4Box(children, "sinf")
+	if !ok {
+		return ""
+	}
+	frma, ok := findMP4Child(data, sinf, "frma")
+	if !ok || frma.Payload < 0 || frma.Payload+4 > frma.End || frma.Payload+4 > len(data) {
+		return ""
+	}
+	format := string(data[frma.Payload : frma.Payload+4])
+	switch format {
+	case "avc1", "hvc1", "hev1":
+		return format
+	default:
+		return ""
+	}
 }
 
 func nestedMiniReelValue(root map[string]any, path ...string) any {
@@ -1277,6 +1459,6 @@ func miniReelToString(value any) string {
 func miniReelApplyCORS(headers http.Header) {
 	headers.Set("Access-Control-Allow-Origin", "*")
 	headers.Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
-	headers.Set("Access-Control-Allow-Headers", "Content-Type, Range")
-	headers.Set("Access-Control-Expose-Headers", "Accept-Ranges, Content-Length, Content-Range")
+	headers.Set("Access-Control-Allow-Headers", "Content-Type, Range, If-Range")
+	headers.Set("Access-Control-Expose-Headers", "Accept-Ranges, Content-Length, Content-Range, ETag")
 }

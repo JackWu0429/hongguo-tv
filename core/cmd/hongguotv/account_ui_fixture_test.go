@@ -33,6 +33,8 @@ func TestAccountBrowserFixture(t *testing.T) {
 			case passportXOR("+8613800000004"):
 				w.Header().Set("Retry-After", "120")
 				w.WriteHeader(http.StatusTooManyRequests)
+			case passportXOR("+8613800000005"), passportXOR("+8526123 4567"):
+				ioJSON(w, `{"message":"error","data":{"error_code":1003,"description":"测试发码请求被拒绝"}}`)
 			default:
 				accountFixtureResponse(w, r.URL.Path, false)
 			}
