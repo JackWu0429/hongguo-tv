@@ -112,7 +112,7 @@
 @media (max-height: 720px) {
   .sidebar { padding-top: calc(10px + 1vh); padding-bottom: calc(8px + 1vh); }
   .brand { height: calc(36px + 1.5vh); font-size: 18px; }
-  .side-nav { gap: 3px; margin-top: calc(8px + 1vh); }
+  .side-nav { gap: 3px; margin-top: calc(8px + 1vh); padding-top: 8px; padding-bottom: 8px; }
   .side-item { min-height: calc(36px + 1vh); padding-left: 12px; padding-right: 12px; font-size: 18px; }
   .side-icon { flex-basis: 28px; width: 28px; height: 28px; }
   .sidebar-bottom { margin-top: 6px; padding-top: calc(6px + 1vh); }
@@ -125,7 +125,7 @@
 @media (max-height: 560px) {
   .sidebar { padding-top: 8px; padding-bottom: 8px; }
   .brand { height: 34px; font-size: 16px; }
-  .side-nav { gap: 2px; margin-top: 6px; }
+  .side-nav { gap: 2px; margin-top: 6px; padding-top: 8px; padding-bottom: 8px; }
   .side-item { min-height: 32px; font-size: 16px; }
   .side-icon { flex-basis: 24px; width: 24px; height: 24px; }
   .sidebar-bottom { margin-top: 4px; padding-top: 4px; }

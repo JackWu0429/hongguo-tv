@@ -830,6 +830,23 @@
     if (element) element.classList.add('is-focused');
   }
 
+  function revealSidebarFocus(element) {
+    var node = element && element.parentElement;
+    while (node) {
+      var style = window.getComputedStyle(node);
+      if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
+        var bounds = node.getBoundingClientRect();
+        var portTop = bounds.top + (node.clientTop || 0) + 6;
+        var portBottom = bounds.top + (node.clientTop || 0) + node.clientHeight - 6;
+        var rect = element.getBoundingClientRect();
+        if (rect.top < portTop) node.scrollTop = Math.max(0, node.scrollTop - (portTop - rect.top));
+        else if (rect.bottom > portBottom) node.scrollTop += rect.bottom - portBottom;
+      }
+      if (node.classList && node.classList.contains('sidebar')) break;
+      node = node.parentElement;
+    }
+  }
+
   function zoneOf(element) {
     if (!element) return '';
     if (element.classList.contains('end-recommendation-card') || element.id === 'end-recommendations-close') return 'endRecommendations';
@@ -919,6 +936,7 @@
     if (previous && previous.tagName === 'INPUT' && element.tagName !== 'INPUT' && window.HongguoTVInput) window.HongguoTVInput.finishEditing();
     element.focus();
     markFocus(element);
+    if (zoneOf(element) === 'sidebar') revealSidebarFocus(element);
     // Older WebViews may focus an action without scrolling its workspace.
     if ((pageMode() === 'account' || pageMode() === 'settings') && element.closest &&
         element.closest(pageMode() === 'settings' ? '#settings-page' : '#account-page')) {
