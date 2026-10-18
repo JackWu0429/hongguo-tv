@@ -11,5 +11,7 @@ assert.match(css, /\.search-page \{[^}]*top: 72px;[^}]*padding: 12px 34px 50px;/
   'search content should use the compact top inset');
 assert.match(css, /\.page-workspace \{[^}]*top: 72px;[^}]*padding: 12px 34px 50px;/,
   'workspace content should use the compact top inset');
+assert.match(css, /html\.native-playback \.main-surface\.has-search,\s*html\.native-playback \.main-surface\.has-workspace,\s*html\.native-playback \.main-surface\.has-placeholder \{ background: #111217; \}/,
+  'native playback frames must not show through non-playback pages');
 
 console.log('content page title and top spacing contract: PASS');
