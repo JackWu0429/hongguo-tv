@@ -967,7 +967,7 @@
     if (remembered && focusables().indexOf(remembered) >= 0) return remembered;
     if (pageMode() === 'search') return searchInput || document.querySelector('.search-submit');
     if (pageMode() === 'account') return firstVisible('.account-input') || firstVisible('.account-action');
-    if (pageMode() === 'settings') return selectedSidebarDisplay() || selectedLocale() || firstVisible('.app-update-action') || firstVisible('.auto-cinema-action') || firstVisible('.playback-mode-action') || activeSidebar();
+    if (pageMode() === 'settings') return selectedSidebarDisplay() || selectedLocale() || firstVisible('.auto-cinema-action') || firstVisible('.app-update-action') || firstVisible('.playback-mode-action') || activeSidebar();
     if (pageMode() === 'support') return firstVisible('.support-card');
     if (isLibraryPage()) return firstVisible('.library-card') || firstVisible('.history-filter.is-active') || firstVisible('[data-action="library-discover"]') || firstVisible('.library-toolbar-button');
     if (pageMode() === 'new') return firstVisible('.new-tab.is-active') || firstNewTab();
@@ -1398,30 +1398,30 @@
     if (zone === 'sidebarDisplay') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
       if (direction === 'up') return activeSidebar();
-      if (direction === 'down') return firstVisible('.locale-action[aria-pressed="true"]') || firstVisible('.locale-action') || firstVisible('.app-update-action') || firstVisible('.auto-cinema-action') || firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
+      if (direction === 'down') return firstVisible('.locale-action[aria-pressed="true"]') || firstVisible('.locale-action') || firstVisible('.auto-cinema-action') || firstVisible('.app-update-action') || firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
       return null;
     }
     if (zone === 'localeActions') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
       if (direction === 'up') return selectedSidebarDisplay() || activeSidebar();
-      if (direction === 'down') return firstVisible('.app-update-action') || firstVisible('.auto-cinema-action') || firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
+      if (direction === 'down') return firstVisible('.auto-cinema-action') || firstVisible('.app-update-action') || firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
       return null;
     }
     if (zone === 'appUpdates') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstVisible('.locale-action[aria-pressed="true"]') || firstVisible('.locale-action') || selectedSidebarDisplay() || activeSidebar();
-      if (direction === 'down') return firstVisible('.auto-cinema-action') || firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
+      if (direction === 'up') return firstVisible('.auto-cinema-action') || firstVisible('.locale-action[aria-pressed="true"]') || firstVisible('.locale-action') || selectedSidebarDisplay() || activeSidebar();
+      if (direction === 'down') return firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
       return null;
     }
     if (zone === 'autoCinema') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstVisible('.app-update-action') || firstVisible('.locale-action[aria-pressed="true"]') || selectedSidebarDisplay() || activeSidebar();
-      if (direction === 'down') return firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
+      if (direction === 'up') return firstVisible('.locale-action[aria-pressed="true"]') || firstVisible('.locale-action') || selectedSidebarDisplay() || activeSidebar();
+      if (direction === 'down') return firstVisible('.app-update-action') || firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
       return null;
     }
     if (zone === 'playbackModes') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstVisible('.auto-cinema-action') || firstVisible('.app-update-action') || firstVisible('.locale-action[aria-pressed="true"]') || firstVisible('.locale-action') || selectedSidebarDisplay() || activeSidebar();
+      if (direction === 'up') return firstVisible('.app-update-action') || firstVisible('.auto-cinema-action') || firstVisible('.locale-action[aria-pressed="true"]') || firstVisible('.locale-action') || selectedSidebarDisplay() || activeSidebar();
       return null;
     }
     if (zone === 'accountInputs' || zone === 'accountActions') {
@@ -2423,7 +2423,7 @@
     cancelPendingAutoCinema();
     if (!shouldEnter) return false;
     setCinema(true);
-    hideControls();
+    revealControls();
     return true;
   }
   function exitCinema(keepHidden) {
@@ -2468,8 +2468,12 @@
     else if (detailModalOpen) closeDetail();
     else if (discussionOpen) closeDiscussion();
     else if (pageMode() === 'account' && accountData && accountData.phase === 'mfa') { cancelAccountVerification(true); }
+    else if (shell.classList.contains('is-cinema')) {
+      exitCinema(false);
+      revealControls();
+      goFocus(activeSidebar());
+    }
     else if (isPlaybackPage() && zoneOf(document.activeElement) !== 'sidebar' && !shell.classList.contains('is-controls-hidden')) hideControls();
-    else if (shell.classList.contains('is-cinema')) { exitCinema(true); hideControls(); }
     else if (pageMode() === 'player') leavePlayer();
     else if (zoneOf(document.activeElement) !== 'sidebar') goFocus(activeSidebar());
     else return false;

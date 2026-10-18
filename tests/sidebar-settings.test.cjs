@@ -76,18 +76,19 @@ test('settings remote focus moves between display modes, updates and decoding wi
   const node = (id, classes = []) => ({ id, classList: { contains: c => classes.includes(c) } });
   const expanded = node('expanded', ['sidebar-display-action', 'account-action']);
   const icons = node('icons', ['sidebar-display-action', 'account-action']);
+  const locale = node('locale', ['locale-action', 'account-action']);
   const update = node('update', ['app-update-action', 'account-action']);
   const autoCinema = node('autoCinema', ['auto-cinema-action', 'account-action']);
   const decode = node('decode', ['playback-mode-action', 'account-action']);
   const sidebar = node('sidebar', ['side-item']);
-  const nodes = [expanded, icons, update, autoCinema, decode, sidebar];
-  const zones = { sidebarDisplay: nodes.slice(0, 2), appUpdates: [update], autoCinema: [autoCinema], playbackModes: [decode], sidebar: [sidebar] };
+  const nodes = [expanded, icons, locale, autoCinema, update, decode, sidebar];
+  const zones = { sidebarDisplay: [expanded, icons], localeActions: [locale], appUpdates: [update], autoCinema: [autoCinema], playbackModes: [decode], sidebar: [sidebar] };
   let updateVisible = true;
   const c = vm.createContext({
     scanModalOpen: () => false, supportModalOpen: false, confirmOpen: false,
     rankFilterOpen: false, playerOptionsOpen: false, detailModalOpen: false, discussionOpen: false,
     selectedSidebarDisplay: () => icons, activeSidebar: () => sidebar,
-    firstVisible: selector => selector.includes('app-update') ? updateVisible ? update : null : selector.includes('auto-cinema') ? autoCinema : selector.includes('playback-mode') ? decode : null,
+    firstVisible: selector => selector.includes('locale-action') ? locale : selector.includes('app-update') ? updateVisible ? update : null : selector.includes('auto-cinema') ? autoCinema : selector.includes('playback-mode') ? decode : null,
     moveWithinZone: (zone, current, direction) => zones[zone][zones[zone].indexOf(current) + (direction === 'left' ? -1 : 1)] || null
   });
   vm.runInContext(fn('zoneOf', 'goFocus') + fn('moveFrom', 'accountKeypadOpen'), c);
@@ -95,14 +96,15 @@ test('settings remote focus moves between display modes, updates and decoding wi
   assert.equal(c.moveFrom(expanded, 'right'), icons);
   assert.equal(c.moveFrom(icons, 'left'), expanded);
   assert.equal(c.moveFrom(expanded, 'left'), sidebar);
-  assert.equal(c.moveFrom(icons, 'down'), update);
-  assert.equal(c.moveFrom(update, 'up'), icons);
-  assert.equal(c.moveFrom(update, 'down'), autoCinema);
-  assert.equal(c.moveFrom(autoCinema, 'up'), update);
-  assert.equal(c.moveFrom(autoCinema, 'down'), decode);
-  assert.equal(c.moveFrom(decode, 'up'), autoCinema);
+  assert.equal(c.moveFrom(icons, 'down'), locale);
+  assert.equal(c.moveFrom(locale, 'down'), autoCinema);
+  assert.equal(c.moveFrom(autoCinema, 'up'), locale);
+  assert.equal(c.moveFrom(autoCinema, 'down'), update);
+  assert.equal(c.moveFrom(update, 'up'), autoCinema);
+  assert.equal(c.moveFrom(update, 'down'), decode);
+  assert.equal(c.moveFrom(decode, 'up'), update);
   assert.equal(c.moveFrom(icons, 'right'), null);
   updateVisible = false;
-  assert.equal(c.moveFrom(icons, 'down'), autoCinema);
+  assert.equal(c.moveFrom(autoCinema, 'down'), decode);
   assert.equal(c.moveFrom(decode, 'up'), autoCinema);
 });
