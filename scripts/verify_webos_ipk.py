@@ -91,8 +91,14 @@ def main():
         adapter = app_root + "/webos-adapter.js"
         if adapter not in names:
             fail("webOS adapter is missing from package")
-        if index.find('src="./webos-adapter.js"') < 0 or index.find('src="./webos-adapter.js"') > index.find('src="./compat.js"'):
-            fail("webOS adapter must load before shared UI scripts")
+        webos_tv = app_root + "/webOSTVjs-1.2.13/webOSTV.js"
+        if webos_tv not in names:
+            fail("official webOSTV.js library is missing from package")
+        webos_tv_license = app_root + "/webOSTVjs-1.2.13/LICENSE-2.0.txt"
+        if webos_tv_license not in names:
+            fail("webOSTV.js license is missing from package")
+        if index.find('src="./webOSTVjs-1.2.13/webOSTV.js"') < 0 or index.find('src="./webos-adapter.js"') < 0 or index.find('src="./webOSTVjs-1.2.13/webOSTV.js"') > index.find('src="./webos-adapter.js"') or index.find('src="./webos-adapter.js"') > index.find('src="./compat.js"'):
+            fail("webOSTV.js and webOS adapter must load before shared UI scripts")
         adapter_stream = package.extractfile(adapter)
         if adapter_stream is None:
             fail("could not read packaged webOS adapter")

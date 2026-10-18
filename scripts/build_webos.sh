@@ -16,6 +16,9 @@ mkdir -p "$app_stage" "$service_stage" "$out_dir"
 cp -R "$repo_dir/core/cmd/hongguotv/ui/." "$app_stage/"
 cp "$repo_dir/webos/appinfo.json" "$app_stage/appinfo.json"
 cp "$repo_dir/webos/app/webos-adapter.js" "$app_stage/webos-adapter.js"
+mkdir -p "$app_stage/webOSTVjs-1.2.13"
+cp "$repo_dir/webos/app/webOSTVjs-1.2.13/webOSTV.js" "$app_stage/webOSTVjs-1.2.13/webOSTV.js"
+cp "$repo_dir/webos/app/webOSTVjs-1.2.13/LICENSE-2.0.txt" "$app_stage/webOSTVjs-1.2.13/LICENSE-2.0.txt"
 cp "$repo_dir/desktop/resources/appicon.png" "$app_stage/icon.png"
 cp "$repo_dir/desktop/resources/appicon.png" "$app_stage/largeIcon.png"
 cp -R "$repo_dir/webos/service/." "$service_stage/"
@@ -30,7 +33,7 @@ sed -i.bak \
   -e 's#href="/#href="./#g' \
   "$index"
 rm -f "$index.bak"
-sed -i.bak 's#<script src="./compat.js"></script>#<script src="./webos-adapter.js"></script><script src="./compat.js"></script>#' "$index"
+sed -i.bak 's#<script src="./compat.js"></script>#<script src="./webOSTVjs-1.2.13/webOSTV.js"></script><script src="./webos-adapter.js"></script><script src="./compat.js"></script>#' "$index"
 rm -f "$index.bak"
 
 if [ "$check_only" -eq 1 ]; then
