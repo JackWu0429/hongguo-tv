@@ -1629,6 +1629,7 @@
       item.classList.toggle('is-selected', selected);
       item.setAttribute('aria-selected', selected ? 'true' : 'false');
     });
+    renderAccountMessages(accountData || {}, !!(accountData && accountData.app_code_available));
     return true;
   }
   function buildAccountCountryList() {
@@ -2996,7 +2997,7 @@
     var remaining = Math.max(0, Math.ceil((accountCountdownUntil - Date.now()) / 1000));
     var send = document.getElementById('account-send-code');
     send.disabled = accountBusy || remaining > 0;
-    send.textContent = remaining > 0 ? (codePhase && data.sms_state === 'sent' ? uiText('ui.resendIn', '{value} 秒后重发', { value: remaining }) : uiText('ui.retryIn', '{value} 秒后可重试', { value: remaining })) : codePhase ? uiText('ui.resend', '重新发送') : uiText('ui.getCode', '获取验证码');
+    send.textContent = remaining > 0 ? (codePhase && data.sms_state === 'sent' ? uiText('ui.resendIn', '{value} 秒后重发', { value: remaining }) : uiText('ui.retryIn', '{value} 秒后可重试', { value: remaining })) : codePhase ? canSubmitAppCode ? uiText('ui.retryGetCode', '重新获取验证码') : uiText('ui.resend', '重新发送') : uiText('ui.getCode', '获取验证码');
     document.getElementById('account-sync').disabled = !logged || accountBusy || data.sync && data.sync.state === 'syncing';
     var guestHistory = data.guest_history || {};
     document.getElementById('account-import-history').disabled = !logged || accountBusy || !(guestHistory.available > 0);
@@ -3033,10 +3034,17 @@
   }
   function renderAccountMessages(data, canSubmitAppCode) {
     document.getElementById('account-message').textContent = accountBusy ? uiText('ui.connectingAccount', '正在连接红果，请稍候…') : accountNotice ? (accountNoticeIsError ? accountFailureText(accountNotice) : accountNotice) : data.error ? accountFailureText(data.error) : '';
-    var help = document.getElementById('account-app-code-help');
     var showHelp = canSubmitAppCode && !data.logged_in && data.phase !== 'mfa';
+    var prehint = document.getElementById('account-app-code-prehint');
+    var showPrehint = accountPhoneCountryCode !== '+86' && !data.logged_in && data.phase !== 'mfa' && !showHelp;
+    prehint.classList.toggle('is-hidden', !showPrehint);
+    prehint.textContent = showPrehint ? uiText('ui.appCodePrehint', '境外号码若无法收取验证码，可尝试用手机红果 App 获取。') : '';
+    var help = document.getElementById('account-app-code-help');
     help.classList.toggle('is-hidden', !showHelp);
-    help.textContent = showHelp ? uiText('ui.appCodeFallback', '短信验证码发送未成功。可在手机红果 App 获取此手机号的验证码，再回到这里输入并登录。') : '';
+    document.getElementById('account-app-code-title').textContent = showHelp ? uiText('ui.appCodeFallbackTitle', '用红果短剧 App 获取验证码') : '';
+    document.getElementById('account-app-code-step-1').textContent = showHelp ? uiText('ui.appCodeFallbackStep1', '打开手机上的「红果短剧」App，进入登录页，选择相同区号，输入本页同一手机号并获取验证码。如需滑块验证，请在手机 App 内完成。') : '';
+    document.getElementById('account-app-code-step-2').textContent = showHelp ? uiText('ui.appCodeFallbackStep2', '收到短信后不要在手机 App 内填写验证码；回到本应用，在上方“验证码”框输入并点“登录”。') : '';
+    document.getElementById('account-app-code-step-3').textContent = showHelp ? uiText('ui.appCodeFallbackStep3', '验证码通常几分钟内有效；过期后在手机 App 重新获取。') : '';
     var feedback = document.getElementById('account-feedback');
     var target = document.getElementById(data.logged_in ? 'account-profile' : data.phase === 'mfa' ? 'account-mfa' : 'account-login-form');
     // Above the code field, the instructions stay visible when TV focus

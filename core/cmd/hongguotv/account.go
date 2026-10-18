@@ -326,9 +326,10 @@ func (m *accountManager) sendCode(ctx context.Context, phone string) error {
 	ctx = a.requestCtx
 	if err = a.client.registerDevice(ctx); err != nil {
 		m.mu.Lock()
-		if g == m.generation {
+		if g == m.generation && m.login == a && ctx.Err() == nil && m.disk.Profile == nil {
 			m.smsState = "rejected"
 			m.codeAfter = time.Time{}
+			m.appCodeAllowed = true
 		}
 		m.mu.Unlock()
 		m.endLogin(g, "phone", err)

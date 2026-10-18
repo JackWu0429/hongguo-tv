@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const ui = '../core/cmd/hongguotv/ui/';
 const source = fs.readFileSync(require.resolve(ui + 'app.js'), 'utf8');
 
-function runtime(locale) {
+function runtime(locale, countryCode = '+86') {
   const nodes = {};
   const document = {
     body: {}, documentElement: {}, addEventListener() {}, querySelectorAll() { return []; },
@@ -17,7 +17,7 @@ function runtime(locale) {
     }
   };
   document.activeElement = document.body;
-  const context = vm.createContext({ document, accountData: null, accountBusy: false, accountNotice: '', accountNoticeIsError: false,
+  const context = vm.createContext({ document, accountData: null, accountPhoneCountryCode: countryCode, accountBusy: false, accountNotice: '', accountNoticeIsError: false,
     accountRequestGeneration: 0, confirmOpen: false, pageMode() { return 'account'; },
     focusables() { return []; }, firstContentFocus() { return document.body; }, goFocus() {},
     uiText(key, fallback, params) { return context.HongguoI18n.t(key, params, fallback); },
@@ -44,7 +44,11 @@ for (const locale of ['zh-CN', 'zh-TW', 'ja-JP']) {
     assert.equal(await context.accountRequest('send-code', {}), false);
     assert.ok(nodes['account-message'].textContent.includes(reason));
     assert.equal(nodes['account-app-code-help'].hidden, false);
-    assert.equal(nodes['account-app-code-help'].textContent, context.HongguoI18n.t('ui.appCodeFallback'));
+    assert.equal(nodes['account-app-code-title'].textContent, context.HongguoI18n.t('ui.appCodeFallbackTitle'));
+    assert.equal(nodes['account-app-code-prehint'].hidden, true);
+    assert.equal(nodes['account-app-code-step-1'].textContent, context.HongguoI18n.t('ui.appCodeFallbackStep1'));
+    assert.equal(nodes['account-app-code-step-2'].textContent, context.HongguoI18n.t('ui.appCodeFallbackStep2'));
+    assert.equal(nodes['account-app-code-step-3'].textContent, context.HongguoI18n.t('ui.appCodeFallbackStep3'));
     assert.equal(nodes['account-feedback'].parentNode, nodes['account-login-form']);
     context.accountNotice = '';
     context.acceptAccountStatus(data);
@@ -73,7 +77,8 @@ test('changing locale immediately retranslates both messages without discarding 
   for (const locale of ['zh-TW', 'ja-JP', 'zh-CN']) {
     context.HongguoI18n.setLocale(locale);
     assert.equal(nodes['account-message'].textContent, context.HongguoI18n.t('ui.accountErrorDetail', { detail: reason }));
-    assert.equal(nodes['account-app-code-help'].textContent, context.HongguoI18n.t('ui.appCodeFallback'));
+    assert.equal(nodes['account-app-code-title'].textContent, context.HongguoI18n.t('ui.appCodeFallbackTitle'));
+    assert.equal(nodes['account-app-code-step-1'].textContent, context.HongguoI18n.t('ui.appCodeFallbackStep1'));
     assert.equal(nodes['account-app-code-help'].hidden, false);
   }
 });
@@ -87,4 +92,19 @@ test('status updates render text safely and keep normal notices separate from fa
   assert.equal(nodes['account-message'].textContent, 'notice');
   assert.equal(nodes['account-app-code-help'].hidden, false);
   assert.match(source, /renderAccountMessages\(data, canSubmitAppCode\)/);
+});
+
+test('overseas number shows a quiet prehint before failure; mainland and MFA do not', () => {
+  const overseas = runtime('zh-CN', '+852');
+  overseas.context.renderAccountMessages({ phase: 'phone' }, false);
+  assert.equal(overseas.nodes['account-app-code-prehint'].hidden, false);
+  assert.equal(overseas.nodes['account-app-code-prehint'].textContent, overseas.context.HongguoI18n.t('ui.appCodePrehint'));
+  assert.equal(overseas.nodes['account-app-code-help'].hidden, true);
+
+  const mainland = runtime('zh-CN', '+86');
+  mainland.context.renderAccountMessages({ phase: 'phone' }, false);
+  assert.equal(mainland.nodes['account-app-code-prehint'].hidden, true);
+  mainland.context.renderAccountMessages({ phase: 'mfa' }, true);
+  assert.equal(mainland.nodes['account-app-code-prehint'].hidden, true);
+  assert.equal(mainland.nodes['account-app-code-help'].hidden, true);
 });
