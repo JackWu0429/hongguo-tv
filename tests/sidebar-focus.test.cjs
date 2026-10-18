@@ -4,8 +4,25 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'), 'utf8');
+const appCss = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8');
+const compatCss = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/compat.css'), 'utf8');
 const helper = source.match(/  function revealSidebarFocus\(element\) \{[\s\S]*?\n  \}/);
 assert.ok(helper, 'sidebar focus visibility helper exists');
+
+test('short viewport compatibility rules preserve sidebar item and icon dimensions', () => {
+  assert.match(appCss, /\.side-item\s*\{[^}]*min-height:\s*54px;[^}]*font-size:\s*20px;/);
+  assert.match(appCss, /\.app-shell\.sidebar-icons \.side-icon\s*\{[^}]*width:\s*36px;[^}]*height:\s*36px;/);
+  const sidebarRules = compatCss.match(/[^{}]+\{[^{}]*\}/g) || [];
+  for (const rule of sidebarRules) {
+    const [selector, declarations] = rule.split('{');
+    if (/\.side-item(?:[.#\s:+>~]|$)/.test(selector)) {
+      assert.doesNotMatch(declarations, /\b(?:min-height|height|flex(?:-basis)?|font-size|padding(?:-[\w-]+)?)\s*:/);
+    }
+    if (/\.side-icon(?:[.#\s:+>~]|$)/.test(selector)) {
+      assert.doesNotMatch(declarations, /\b(?:width|height|flex(?:-basis)?|padding(?:-[\w-]+)?)\s*:/);
+    }
+  }
+});
 
 function container(name, top, height, overflowY, parentElement) {
   return {
