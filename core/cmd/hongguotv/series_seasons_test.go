@@ -28,8 +28,8 @@ func TestSeriesSeasonsContractIncludesUpcomingAndExactIDs(t *testing.T) {
 		t.Fatal("lost ID, official label or playable state", out.Items[0])
 	}
 	upcoming := out.Items[1]
-	if !upcoming.Upcoming || upcoming.Playable || upcoming.Vid != "" || !upcoming.Reserved || upcoming.ReservationID != "7691518344146455577" {
-		t.Fatal("trailer must remain reservable, never playable", upcoming)
+	if !upcoming.Upcoming || upcoming.Playable || upcoming.Vid != "" || !upcoming.Reserved || upcoming.ReservationID != "7691518344146455576" {
+		t.Fatal("reservation must use the season series_id, never the nested subscribe item ID", upcoming)
 	}
 	if out.Items[2].Playable || out.Items[2].Upcoming || out.Items[3].ReservationID != "" {
 		t.Fatal("unavailable rows must not invent reservation IDs")

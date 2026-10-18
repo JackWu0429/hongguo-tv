@@ -1,11 +1,13 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -38,29 +40,47 @@ func TestOfficialListQueriesAndCursors(t *testing.T) {
 		t.Fatalf("bad normalization: %+v", out)
 	}
 }
-func TestReservationWriteUsesItemIDAndConfirmedResponse(t *testing.T) {
+func TestReservationWriteUsesGzipNumericPayload(t *testing.T) {
 	for _, reserve := range []bool{true, false} {
 		c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != "POST" || r.URL.Path != "/reading/bookapi/search/uncover_subscribe/v" {
 				t.Error("wrong route")
 			}
-			var body map[string]any
-			json.NewDecoder(r.Body).Decode(&body)
-			op := float64(2)
-			if reserve {
-				op = 1
+			if r.Header.Get("Content-Encoding") != "gzip" {
+				t.Error("reservation body must be gzip encoded")
 			}
-			if body["item_id"] != "7692049770637954110" || body["item_type"] != float64(1) || body["op_type"] != op {
+			if r.Header.Get("X-SS-DP") != "8662" || r.Header.Get("Lc") != "101" || !regexp.MustCompile(`^[0-9]+-[0-9]+$`).MatchString(r.Header.Get("X-Reading-Request")) {
+				t.Error("missing reading request headers", r.Header)
+			}
+			reader, err := gzip.NewReader(r.Body)
+			if err != nil {
+				t.Error("invalid gzip body", err)
+				return
+			}
+			defer reader.Close()
+			var body map[string]any
+			decoder := json.NewDecoder(reader)
+			decoder.UseNumber()
+			if err := decoder.Decode(&body); err != nil {
+				t.Error("invalid reservation JSON", err)
+				return
+			}
+			op := json.Number("2")
+			if reserve {
+				op = json.Number("1")
+			}
+			itemID, _ := body["item_id"].(json.Number)
+			if itemID.String() != "7692049770637954110" || body["item_type"] != json.Number("1") || body["op_type"] != op {
 				t.Error("wrong body", body)
 			}
 			shark, _ := asMap(body["shark_param"])
 			if shark["enter_from"] != "BulletActivity" {
 				t.Error("missing shark metadata")
 			}
-			ioJSON(w, `{"code":100,"data":{}}`)
+			ioJSON(w, `{"code":0,"data":{}}`)
 		})
-		if err := c.SetReservation(context.Background(), "7692049770637954110", reserve); err == nil {
-			t.Error("unconfirmed write accepted")
+		if err := c.SetReservation(context.Background(), "7692049770637954110", reserve); err != nil {
+			t.Error("confirmed write rejected", err)
 		}
 		close()
 	}

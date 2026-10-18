@@ -453,12 +453,16 @@ func (c *passportClient) SetReservation(ctx context.Context, id string, reserve 
 	if !validID(id) || id == "0" {
 		return errors.New("预约项目无效")
 	}
+	itemID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return errors.New("预约项目无效")
+	}
 	op := 2
 	if reserve {
 		op = 1
 	}
-	body := map[string]any{"item_id": id, "item_type": int64(1), "op_type": op, "shark_param": map[string]any{"enter_from": "BulletActivity", "previous_page": "MainFragmentActivity", "page_list": "MainFragmentActivity,BulletActivity"}, "wish_list_all_del": 0}
-	_, e := c.cloudJSON(ctx, "/reading/bookapi/search/uncover_subscribe/v", http.MethodPost, nil, body)
+	body := map[string]any{"item_id": itemID, "item_type": int64(1), "op_type": op, "shark_param": map[string]any{"enter_from": "BulletActivity", "previous_page": "MainFragmentActivity", "page_list": "MainFragmentActivity,BulletActivity"}, "wish_list_all_del": 0}
+	_, e := c.cloudGzipJSON(ctx, "/reading/bookapi/search/uncover_subscribe/v", nil, body)
 	return e
 }
 
@@ -655,7 +659,7 @@ func (s *server) reservation(w http.ResponseWriter, r *http.Request) {
 	}
 	message := ""
 	if !confirmed {
-		message = "红果待上线预约列表暂未读到这条记录。请求已提交，但尚不能确认是否同步，请稍后刷新核对。"
+		message = "预约接口返回成功，但红果待上线列表尚未出现这部剧，暂不能确认是否生效"
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "data": map[string]any{"confirmed": confirmed, "message": message}})
 }

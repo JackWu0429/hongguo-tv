@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -70,6 +73,10 @@ func (c *passportClient) request(ctx context.Context, path, method string, param
 }
 
 func (c *passportClient) requestWithSignature(ctx context.Context, path, method string, params url.Values, body []byte, contentType string, mode passportSignatureMode) (map[string]any, error) {
+	return c.requestWithSignatureHeaders(ctx, path, method, params, body, contentType, mode, nil)
+}
+
+func (c *passportClient) requestWithSignatureHeaders(ctx context.Context, path, method string, params url.Values, body []byte, contentType string, mode passportSignatureMode, extraHeaders http.Header) (map[string]any, error) {
 	q := passportQuery(c.session)
 	for k, vs := range params {
 		q[k] = append([]string(nil), vs...)
@@ -113,6 +120,11 @@ func (c *passportClient) requestWithSignature(ctx context.Context, path, method 
 	}
 	if contentType != "" {
 		r.Header.Set("Content-Type", contentType)
+	}
+	for name, values := range extraHeaders {
+		for _, value := range values {
+			r.Header.Add(name, value)
+		}
 	}
 	if c.session.Token != "" {
 		r.Header.Set("X-Tt-Token", c.session.Token)
@@ -318,7 +330,36 @@ func (c *passportClient) cloudJSON(ctx context.Context, path, method string, q u
 		}
 		typ = "application/json; charset=utf-8"
 	}
-	p, err := c.request(ctx, path, method, q, body, typ)
+	return c.cloudJSONBody(ctx, path, method, q, body, typ, nil)
+}
+
+func (c *passportClient) cloudGzipJSON(ctx context.Context, path string, q url.Values, value any) (map[string]any, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var body bytes.Buffer
+	writer := gzip.NewWriter(&body)
+	if _, err := writer.Write(raw); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	headers := make(http.Header)
+	headers.Set("Content-Encoding", "gzip")
+	headers.Set("X-SS-DP", "8662")
+	headers.Set("Lc", "101")
+	var nonce [4]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return nil, errors.New("生成 reading 请求标识失败")
+	}
+	headers.Set("X-Reading-Request", strconv.FormatInt(time.Now().UnixMilli(), 10)+"-"+strconv.FormatUint(uint64(binary.LittleEndian.Uint32(nonce[:])), 10))
+	return c.cloudJSONBody(ctx, path, http.MethodPost, q, body.Bytes(), "application/json; charset=utf-8", headers)
+}
+
+func (c *passportClient) cloudJSONBody(ctx context.Context, path, method string, q url.Values, body []byte, contentType string, headers http.Header) (map[string]any, error) {
+	p, err := c.requestWithSignatureHeaders(ctx, path, method, q, body, contentType, passportSignatureFull, headers)
 	if err != nil {
 		return nil, err
 	}

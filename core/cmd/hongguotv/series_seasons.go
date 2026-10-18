@@ -80,10 +80,11 @@ func parseSeriesSeasons(p map[string]any) (SeriesSeasonsResult, error) {
 			if item.Upcoming {
 				item.Vid = ""
 				if subscribable {
-					// Use the exact reservation item, never a guessed series or trailer ID.
-					id := asString(subscribe["item_id"])
-					if validID(id) && id != "0" {
-						item.ReservationID = id
+					// subscribe_item.item_id indicates that reservation is open, but
+					// the reservation endpoint takes the season's series_id.
+					reservationItemID := asString(subscribe["item_id"])
+					if validID(reservationItemID) && reservationItemID != "0" && validID(d.SeriesID) && d.SeriesID != "0" {
+						item.ReservationID = d.SeriesID
 					}
 					item.Reserved = asBool(subscribe["is_subscribed"])
 				}
