@@ -84,6 +84,7 @@ gradle.taskGraph.whenReady { graph ->
 }
 
 dependencies {
+    implementation "androidx.tvprovider:tvprovider:1.0.0"
     implementation "androidx.media3:media3-exoplayer:1.8.0"
     implementation "androidx.media3:media3-exoplayer-hls:1.8.0"
     // LGPL native libraries are staged only in src/mpv/jniLibs by prepare_mpv.py.

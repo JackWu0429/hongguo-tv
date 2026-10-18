@@ -57,6 +57,8 @@ public class MainActivity extends Activity {
     private int routedVerticalKeys;
     private AnimatedVectorDrawable startupAnimation;
     private AppUpdater appUpdater;
+    private TvHomeChannelManager homeChannelManager;
+    private String pendingHomeProgram;
     private volatile String diagnosticDeviceJSON = "{}";
     private final Runnable restoreFullscreen = () -> {
         if (activityForeground && hasWindowFocus() && !isFinishing() && !isDestroyed() && !accountEditing && !searchEditing && !isKeyboardVisible()) {
@@ -77,6 +79,10 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
 
+        JSONObject initialHomeProgram = TvHomeChannelManager.parseLaunchIntent(getIntent());
+        pendingHomeProgram = initialHomeProgram == null ? null : initialHomeProgram.toString();
+        homeChannelManager = new TvHomeChannelManager(this);
+        homeChannelManager.ensureDefaultChannel(false);
         startCoreService();
         webView = new WebView(this) {
             @Override
@@ -117,6 +123,7 @@ public class MainActivity extends Activity {
         }, "HongguoTVDiagnostics");
         webView.addJavascriptInterface(new PlaybackPreferences(this), "HongguoTVPreferences");
         webView.addJavascriptInterface(new InputBridge(), "HongguoTVInput");
+        webView.addJavascriptInterface(new HomeChannelBridge(), "HongguoTVHome");
         appUpdater = new AppUpdater(this, new AppUpdater.Host() {
             public boolean trusted() { return pageReady; }
             public boolean foreground() { return activityForeground; }
@@ -152,6 +159,7 @@ public class MainActivity extends Activity {
                     pageReady = true;
                     webView.requestFocus();
                     appUpdater.start();
+                    homeChannelManager.ensureDefaultChannel(true);
                 }
                 view.evaluateJavascript("window.HongguoTV && window.HongguoTV." +
                         (activityForeground ? "resumeFromBackground()" : "pauseForBackground()"), null);
@@ -321,6 +329,48 @@ public class MainActivity extends Activity {
         Intent intent = new Intent(this, CoreService.class);
         if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent);
         else startService(intent);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        JSONObject launch = TvHomeChannelManager.parseLaunchIntent(intent);
+        if (launch == null) return;
+        synchronized (this) { pendingHomeProgram = launch.toString(); }
+        if (pageReady) dispatchPendingHomeProgram();
+    }
+
+    private String takePendingHomeProgram() {
+        synchronized (this) {
+            String launch = pendingHomeProgram;
+            pendingHomeProgram = null;
+            return launch;
+        }
+    }
+
+    private void dispatchPendingHomeProgram() {
+        if (!pageReady || destroyed || webView == null) return;
+        String launch = takePendingHomeProgram();
+        if (launch != null) webView.evaluateJavascript("!!(window.HongguoTV && window.HongguoTV.openHomeProgram(" + launch + "))", result -> {
+            if (!"true".equals(result)) {
+                synchronized (MainActivity.this) {
+                    if (pendingHomeProgram == null && !destroyed) pendingHomeProgram = launch;
+                }
+            }
+        });
+    }
+
+    public final class HomeChannelBridge {
+        @JavascriptInterface
+        public String consumeHomeProgram() {
+            return destroyed ? "" : takePendingHomeProgram();
+        }
+
+        @JavascriptInterface
+        public void syncRecommendations(String json) {
+            if (!destroyed && homeChannelManager != null) homeChannelManager.syncRecommendations(json);
+        }
     }
 
     @Override
@@ -504,6 +554,10 @@ public class MainActivity extends Activity {
         accountEditing = false;
         searchEditing = false;
         if (appUpdater != null) appUpdater.destroy();
+        if (homeChannelManager != null) {
+            homeChannelManager.destroy();
+            homeChannelManager = null;
+        }
         if (startupAnimation != null) startupAnimation.stop();
         if (startupThread != null) startupThread.interrupt();
         View decor = getWindow().getDecorView();

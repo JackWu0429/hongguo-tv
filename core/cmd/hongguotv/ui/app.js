@@ -487,7 +487,7 @@
   var feedPager = createListPager('/api/v1/lists/recommend', null, '.hero-feed-focus', '', function (items, append) {
     if (!append) renderFeed(items);
     else if (feedIndex < 0 && items.length) renderFeed(items);
-    else { feedItems = feedItems.concat(items); updateFeedCounter(); }
+    else { feedItems = feedItems.concat(items); updateFeedCounter(); syncHomeChannel(feedItems); }
   });
   var discussionPager = HongguoPagination.create({
     key: function (item) { return item.comment_id; },
@@ -2476,7 +2476,17 @@
     return !applicationInBackground && !applicationHidden() && !isPlaybackPage() && !supportModalOpen && !detailModalOpen && !(typeof actorWorksOpen !== 'undefined' && actorWorksOpen) && !discussionOpen && !confirmOpen && !playerOptionsOpen && !accountBusy && !accountKeypadOpen() && !(current && /INPUT|TEXTAREA/.test(current.tagName));
   }
   // Old native IME callbacks are irrelevant to the app-owned numeric keypad.
-  window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, desktopFullscreenChanged: desktopFullscreenChanged, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {} };
+  function openHomeProgram(program) {
+    if (typeof program === 'string') {
+      try { program = JSON.parse(program); } catch (error) { return false; }
+    }
+    var seriesID = String(program && program.series_id || '').trim();
+    if (!/^[0-9]{1,32}$/.test(seriesID) || seriesID === '0') return false;
+    var title = String(program && program.title || '').trim();
+    startPlayer({ series_id: seriesID, title: title.slice(0, 120), intro: '', cover: '' }, null);
+    return true;
+  }
+  window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, desktopFullscreenChanged: desktopFullscreenChanged, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {}, openHomeProgram: openHomeProgram };
 
   function isLibraryPage() { return ['history', 'favorites', 'likes'].indexOf(pageMode()) >= 0; }
   function libraryEntry(id) { return libraryData.entries.filter(function (entry) { return entry.drama.series_id === id; })[0] || null; }
@@ -4099,8 +4109,18 @@
       });
   }
 
+  function syncHomeChannel(items) {
+    var bridge = typeof window !== 'undefined' ? window.HongguoTVHome : null;
+    if (recommendationChannel() !== '16' || !bridge || typeof bridge.syncRecommendations !== 'function') return;
+    var programs = (items || []).slice(0, 20).map(function (item) {
+      return { series_id: item.series_id, title: item.title || '', intro: item.intro || '', cover: item.cover || '', cover_fallback: item.cover_fallback || '' };
+    });
+    try { bridge.syncRecommendations(JSON.stringify(programs)); } catch (error) { /* Browser previews have no native TV provider. */ }
+  }
+
   function renderFeed(items) {
     feedItems = (items || []).filter(function (item) { return item && item.series_id; });
+    syncHomeChannel(feedItems);
     feedIndex = feedItems.length ? 0 : -1;
     updateFeedCounter();
     if (!feedItems.length) {
@@ -6544,5 +6564,12 @@
   libraryReady = loadLibrary();
   pollAccount();
   accountPollTimer = setInterval(function () { if (!applicationHidden()) pollAccount(); }, 8000);
-    loadCatalog(uiText('nav.recommend', '推荐'));
+    var initialHomeProgram = null;
+    try {
+      if (window.HongguoTVHome && window.HongguoTVHome.consumeHomeProgram) {
+        var pendingHomeProgram = window.HongguoTVHome.consumeHomeProgram();
+        if (pendingHomeProgram) initialHomeProgram = JSON.parse(pendingHomeProgram);
+      }
+    } catch (error) { initialHomeProgram = null; }
+    if (!initialHomeProgram || !window.HongguoTV.openHomeProgram(initialHomeProgram)) loadCatalog(uiText('nav.recommend', '推荐'));
 }());
