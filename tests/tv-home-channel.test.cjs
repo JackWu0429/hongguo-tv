@@ -9,12 +9,13 @@ test('TV home deep links validate identity and start the selected series', () =>
   const start = app.indexOf('  function openHomeProgram(');
   const end = app.indexOf('\n  window.HongguoTV =', start);
   const context = vm.createContext({ accountStatusInitialized: true, pendingAccountHomeProgram: null,
-    startPlayer: item => { context.started = item; }, pollAccount() {}, window: {} });
+    startPlayer: (item, focus, options) => { context.started = item; context.startOptions = options; }, pollAccount() {}, window: {} });
   vm.runInContext(app.slice(start, end), context);
 
   assert.equal(context.openHomeProgram({ series_id: '7690163276214176792', title: '测试剧' }), true);
   assert.equal(context.started.series_id, '7690163276214176792');
   assert.equal(context.started.title, '测试剧');
+  assert.equal(context.startOptions.cardLaunch, true);
   assert.equal(context.openHomeProgram({ series_id: '0' }), false);
   assert.equal(context.openHomeProgram({ series_id: '123/456' }), false);
 });
@@ -27,7 +28,7 @@ test('Channel deep link waits for first account state before starting playback',
     accountStatusInitialized: false,
     pendingAccountHomeProgram: null,
     pollAccount() { calls.push('poll'); },
-    startPlayer(item) { calls.push(item); },
+    startPlayer(item, focus, options) { calls.push({ item, options }); },
     window: {}
   });
   vm.runInContext(app.slice(start, end), context);
@@ -35,11 +36,28 @@ test('Channel deep link waits for first account state before starting playback',
   assert.equal(context.openHomeProgram({ series_id: '123', title: 'Channel 剧集' }), true);
   assert.deepEqual(calls, ['poll']);
   assert.equal(context.pendingAccountHomeProgram.series_id, '123');
+  assert.equal(context.pendingAccountHomeProgram.cardLaunch, true);
 
   context.accountStatusInitialized = true;
   context.startPendingAccountHomeProgram();
-  assert.deepEqual(JSON.parse(JSON.stringify(calls)), ['poll', { series_id: '123', title: 'Channel 剧集', intro: '', cover: '' }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), ['poll', {
+    item: { series_id: '123', title: 'Channel 剧集', intro: '', cover: '' }, options: { cardLaunch: true }
+  }]);
   assert.equal(context.pendingAccountHomeProgram, null);
+});
+
+test('Channel card launches enter auto cinema while recommendation playback and episode changes do not', () => {
+  const start = app.indexOf('  function shouldAutoCinemaForLaunch(');
+  const end = app.indexOf('\n  function startPlayer(', start);
+  const context = vm.createContext({
+    isAutoCinemaCardLaunch: target => target === 'catalog-card'
+  });
+  vm.runInContext(app.slice(start, end), context);
+
+  assert.equal(context.shouldAutoCinemaForLaunch('recommend', null, { cardLaunch: true }), true);
+  assert.equal(context.shouldAutoCinemaForLaunch('recommend', 'catalog-card', null), false);
+  assert.equal(context.shouldAutoCinemaForLaunch('player', null, { cardLaunch: true }), false);
+  assert.equal(context.shouldAutoCinemaForLaunch('search', 'catalog-card', null), true);
 });
 
 test('only the main recommendation feed is synced, with a bounded safe projection', () => {

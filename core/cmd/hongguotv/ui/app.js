@@ -2553,18 +2553,18 @@
     if (!/^[0-9]{1,32}$/.test(seriesID) || seriesID === '0') return false;
     var title = String(program && program.title || '').trim();
     if (!accountStatusInitialized) {
-      pendingAccountHomeProgram = { series_id: seriesID, title: title.slice(0, 120) };
+      pendingAccountHomeProgram = { series_id: seriesID, title: title.slice(0, 120), cardLaunch: true };
       pollAccount();
       return true;
     }
-    startPlayer({ series_id: seriesID, title: title.slice(0, 120), intro: '', cover: '' }, null);
+    startPlayer({ series_id: seriesID, title: title.slice(0, 120), intro: '', cover: '' }, null, { cardLaunch: true });
     return true;
   }
   function startPendingAccountHomeProgram() {
     if (!accountStatusInitialized || !pendingAccountHomeProgram) return;
     var program = pendingAccountHomeProgram;
     pendingAccountHomeProgram = null;
-    startPlayer({ series_id: program.series_id, title: program.title, intro: '', cover: '' }, null);
+    startPlayer({ series_id: program.series_id, title: program.title, intro: '', cover: '' }, null, { cardLaunch: !!program.cardLaunch });
   }
   window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, desktopFullscreenChanged: desktopFullscreenChanged, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {}, openHomeProgram: openHomeProgram };
 
@@ -4289,9 +4289,13 @@
     return !!target.closest('.catalog-card, .search-result-card, .library-card, .rank-row, .radar-official-row, .radar-growth-row, .new-card, .calendar-row, .reservation-row, .follow-card, .actor-work-card');
   }
 
-  function startPlayer(item, returnFocus) {
+  function shouldAutoCinemaForLaunch(currentPage, returnFocus, startOptions) {
+    return currentPage !== 'player' && (!!(startOptions && startOptions.cardLaunch) || currentPage !== 'recommend' && isAutoCinemaCardLaunch(returnFocus));
+  }
+
+  function startPlayer(item, returnFocus, startOptions) {
     if (!item || !item.series_id) return;
-    var launchFromCard = pageMode() !== 'recommend' && pageMode() !== 'player' && isAutoCinemaCardLaunch(returnFocus);
+    var launchFromCard = shouldAutoCinemaForLaunch(pageMode(), returnFocus, startOptions);
     if (typeof notificationHidePopup === 'function') notificationHidePopup();
     var recommendation = rememberRecommendation();
     allPagers.forEach(function (pager) { pager.cancel(); });
