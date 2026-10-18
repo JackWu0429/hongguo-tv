@@ -285,6 +285,8 @@
   var accountPage = document.getElementById('account-page');
   var settingsPage = document.getElementById('settings-page');
   var accountData = null;
+  var accountStatusInitialized = false;
+  var pendingAccountHomeProgram = null;
   var accountBusy = false;
   var accountNotice = '';
   var accountNoticeIsError = false;
@@ -2550,8 +2552,19 @@
     var seriesID = String(program && program.series_id || '').trim();
     if (!/^[0-9]{1,32}$/.test(seriesID) || seriesID === '0') return false;
     var title = String(program && program.title || '').trim();
+    if (!accountStatusInitialized) {
+      pendingAccountHomeProgram = { series_id: seriesID, title: title.slice(0, 120) };
+      pollAccount();
+      return true;
+    }
     startPlayer({ series_id: seriesID, title: title.slice(0, 120), intro: '', cover: '' }, null);
     return true;
+  }
+  function startPendingAccountHomeProgram() {
+    if (!accountStatusInitialized || !pendingAccountHomeProgram) return;
+    var program = pendingAccountHomeProgram;
+    pendingAccountHomeProgram = null;
+    startPlayer({ series_id: program.series_id, title: program.title, intro: '', cover: '' }, null);
   }
   window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, desktopFullscreenChanged: desktopFullscreenChanged, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {}, openHomeProgram: openHomeProgram };
 
@@ -2903,9 +2916,11 @@
 
   function acceptAccountStatus(data) {
     var previous = accountData;
+    var wasInitialized = accountStatusInitialized;
     var owner = data.profile && data.profile.uid || '';
     var previousOwner = previous && previous.profile && previous.profile.uid || '';
     accountData = data;
+    accountStatusInitialized = true;
     if (data.country_code) setAccountPhoneCountry(data.country_code, false);
     updateFollowNotificationAccess();
     if (smsVerification) smsVerification.setSession(!data.logged_in && data.phase === 'mfa' && data.mfa_expires_at ? { key: String(data.mfa_expires_at) + ':' + (data.sms_number || '') + ':' + (data.sms_content || ''), expiresAt: data.mfa_expires_at } : null);
@@ -2949,6 +2964,7 @@
       libraryQueue.catch(function () {}).then(loadLibrary);
     }
     renderAccount();
+    if (!wasInitialized) startPendingAccountHomeProgram();
   }
   function renderAccount() {
     var data = accountData || { phase: 'phone', logged_in: false, sync: { state: 'local' } };
