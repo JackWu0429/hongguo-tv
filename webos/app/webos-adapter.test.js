@@ -10,6 +10,7 @@ var lunaCalls = [];
 var listeners = {};
 var documentListeners = {};
 var fetchCalls = [];
+var lunaOptions = [];
 var healthPayload = { ok: true, ready: true, port: 7655 };
 var healthFails = false;
 var window = {
@@ -30,6 +31,7 @@ var window = {
   addEventListener: function (name, callback) { listeners[name] = callback; },
   webOS: { service: { request: function (uri, options) {
     lunaCalls.push(uri);
+    lunaOptions.push(options);
     setTimeout(function () { options.onSuccess({ returnValue: true, ok: true, ready: true }); }, 0);
   } } }
 };
@@ -61,7 +63,8 @@ async function run() {
   xhr.send();
   await new Promise(function (resolve) { setTimeout(resolve, 5); });
   assert.strictEqual(xhr.sent, true, 'XHR send waits for the service ping and then runs');
-  assert(lunaCalls.indexOf('luna://com.aston314.hongguo.webos.service/ping') >= 0);
+  assert(lunaCalls.indexOf('luna://com.aston314.hongguo.webos.service') >= 0);
+  assert(lunaOptions.some(function (options) { return options.method === 'ping'; }), 'webOS service calls use the compatible method option');
 
   await window.fetch('/api/v1/lists/recommend');
   assert.strictEqual(fetchCalls[0].input, 'http://127.0.0.1:7655/api/v1/health', 'health is checked after Luna ping');
@@ -70,7 +73,7 @@ async function run() {
 
   var lunaRequest = window.webOS.service.request;
   window.webOS.service.request = function (uri, options) {
-    if (/\/ping$/.test(uri)) setTimeout(function () { options.onSuccess({ returnValue: false, code: 'EADDRINUSE', stage: 'http_bind', message: 'port is occupied' }); }, 0);
+    if (options.method === 'ping') setTimeout(function () { options.onSuccess({ returnValue: false, code: 'EADDRINUSE', stage: 'http_bind', message: 'port is occupied' }); }, 0);
     else lunaRequest(uri, options);
   };
   documentListeners.visibilitychange();
@@ -96,10 +99,10 @@ async function run() {
   document.hidden = false;
   documentListeners.visibilitychange();
   await new Promise(function (resolve) { setTimeout(resolve, 5); });
-  assert(lunaCalls.filter(function (uri) { return /\/ping$/.test(uri); }).length >= 2);
+  assert(lunaOptions.filter(function (options) { return options.method === 'ping'; }).length >= 2);
   listeners.pagehide();
   await new Promise(function (resolve) { setTimeout(resolve, 5); });
-  assert(lunaCalls.indexOf('luna://com.aston314.hongguo.webos.service/shutdown') >= 0);
+  assert(lunaOptions.some(function (options) { return options.method === 'shutdown'; }));
   console.log('webOS adapter routing, health checks, and error diagnostics: PASS');
 }
 

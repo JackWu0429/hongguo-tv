@@ -56,6 +56,15 @@
   };
 
   var serviceWake = null;
+  var serviceRequests = [];
+  function retainServiceRequest(request) {
+    if (request && serviceRequests.indexOf(request) < 0) serviceRequests.push(request);
+    return request;
+  }
+  function releaseServiceRequest(request) {
+    var index = serviceRequests.indexOf(request);
+    if (index >= 0) serviceRequests.splice(index, 1);
+  }
   var serviceDiagnostic = { stage: 'not_checked', code: 'NOT_CHECKED', message: '本机服务尚未检查', port: 7655 };
   function diagnosticError(stage, code, message) {
     var error = new Error(String(message || code || '本机服务连接失败'));
@@ -81,19 +90,24 @@
   function requestService(method, complete) {
     var finished = false;
     var timer;
+    var requestHandle = null;
     function done(response, failure) {
       if (finished) return;
       finished = true;
       if (timer) window.clearTimeout(timer);
+      releaseServiceRequest(requestHandle);
       complete(response, failure || null);
     }
     try {
       if (window.webOS && window.webOS.service && window.webOS.service.request) {
-        window.webOS.service.request(SERVICE_URI + '/' + method, {
+        // The base URI + method option is the documented form and works on
+        // older webOSTV.js versions where the extended /method URI times out.
+        requestHandle = retainServiceRequest(window.webOS.service.request(SERVICE_URI, {
+          method: method,
           parameters: {},
           onSuccess: done,
           onFailure: function (error) { done(null, error || { errorCode: 'LUNA_REQUEST_FAILED' }); }
-        });
+        }));
         timer = window.setTimeout(function () { done(null, { errorCode: 'LUNA_TIMEOUT', errorText: 'Luna 命令响应超时' }); }, 5000);
         return;
       }
