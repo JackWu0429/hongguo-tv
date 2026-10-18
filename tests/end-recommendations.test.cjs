@@ -115,7 +115,7 @@ function keysFixture(){
   const document={activeElement:rows[0],getElementById:id=>id==='end-recommendations-track'?{children:rows}:close};
   const panel=create({isCurrent:()=>true,canPresent:()=>true,show(){},hide(){document.activeElement={id:'hero-feed-focus'}},play:item=>plays.push(item)});
   panel.offer({item:{series_id:'self'}},related);
-  const c=vm.createContext({document,endRecommendations:panel,endRecommendationIndex:0,
+  const c=vm.createContext({document,endRecommendations:panel,endRecommendationIndex:0,autoCinemaCandidate:false,
     goFocus(node){document.activeElement=node;const index=rows.indexOf(node);if(index>=0)c.endRecommendationIndex=index}});
   vm.runInContext(source.match(/  var keyNames = \{[\s\S]*?\n  \};/)[0]+slice('normalizedKey','showNotice')+slice('handleEndRecommendationKey','canContinuePlayback'),c);
   function press(key){let prevented=0,stopped=0;c.handleKey({...key,preventDefault(){prevented++},stopPropagation(){stopped++}});assert.equal(prevented,1);assert.equal(stopped,1)}
@@ -144,17 +144,17 @@ test('Back and native requestBack close the sheet before fullscreen or player na
   assert.equal(f.c.handleBack(),true);assert.equal(f.panel.isOpen(),false);
 });
 
-async function completion({mode='player',episode=2,successor=null,relatedRows=related,incomplete=false,late=false}={}){
+async function completion({mode='player',episode=2,successor=null,relatedRows=related,incomplete=false,late=false,followPrompt=false}={}){
   const calls=[],playback={item:{series_id:'self',episode_count:2},episode,owner:1,generation:1,completed:true,started:true};
   const c=vm.createContext({Promise,Object,Array,encodeURIComponent,activePlayback:playback,feedGeneration:1,accountEpoch:1,
-    continuationGeneration:0,applicationInBackground:false,seasonSwitchRequest:null,feedItems:[playback.item,{}],feedIndex:0,
+    continuationGeneration:0,applicationInBackground:false,seasonSwitchRequest:null,confirmAfterClose:null,feedItems:[playback.item,{}],feedIndex:0,
     isPlaybackPage:()=>true,pageMode:()=>mode,applicationHidden:()=>false,
     getDetail:async()=>{if(late)c.activePlayback=null;return {vid_list:incomplete?['111']:['111','222'],episode_count:incomplete?8:2,related:relatedRows}},
     setPlayerStatus(){},episodeLoadingText(){return 'loading'},revealControls(){},showNotice(){},
     playFeedItem:(index,ep)=>calls.push(['play',index,ep]),refreshDetailAfterSeason(){},
     fetch:async()=>({ok:true,json:async()=>({ok:true,data:{next:null,current_season:1}})}),
     fetchData:async()=>({items:[{series_id:'self',season_index:1},...(successor?[successor]:[])]}),
-    offerNextSeasonReservation:()=>calls.push(['reservation']),offerEndRecommendations:(p,d)=>calls.push(['related',p,d.related])});
+    offerNextSeasonReservation:()=>{calls.push(['reservation']);return true},offerFollowAtEnd:(p,d,after)=>{if(!followPrompt)return false;calls.push(['follow',p,d]);c.confirmAfterClose=after;return true},offerEndRecommendations:(p,d)=>calls.push(['related',p,d.related])});
   vm.runInContext(slice('canContinuePlayback','offerNextSeasonReservation'),c);
   c.continueAfterEpisode(playback);for(let i=0;i<6;i++)await tick();return {calls,c,playback};
 }
@@ -166,7 +166,23 @@ test('ordinary episode continuation and a playable next season keep autoplay wit
 test('terminal playback offers the current detail data, after any next-season reservation prompt',async()=>{
   const end=await completion();assert.equal(end.calls[0][0],'related');assert.equal(end.calls[0][1],end.playback);assert.equal(end.calls[0][2],related);
   const reserve=await completion({successor:{series_id:'next',season_index:2,upcoming:true,reservation_id:'book'}});
+  assert.deepEqual(reserve.calls.map(c=>c[0]),['reservation']);
+  assert.equal(typeof reserve.c.confirmAfterClose, 'function');
+  reserve.c.confirmAfterClose();
   assert.deepEqual(reserve.calls.map(c=>c[0]),['reservation','related']);
+});
+test('terminal card playback sequences reservation, follow and recommendations after each prompt closes',async()=>{
+  const end=await completion({followPrompt:true});
+  assert.deepEqual(end.calls.map(c=>c[0]),['follow']);
+  end.c.confirmAfterClose();
+  assert.deepEqual(end.calls.map(c=>c[0]),['follow','related']);
+
+  const reserve=await completion({successor:{series_id:'next',season_index:2,upcoming:true,reservation_id:'book'},followPrompt:true});
+  assert.deepEqual(reserve.calls.map(c=>c[0]),['reservation']);
+  reserve.c.confirmAfterClose();
+  assert.deepEqual(reserve.calls.map(c=>c[0]),['reservation','follow']);
+  reserve.c.confirmAfterClose();
+  assert.deepEqual(reserve.calls.map(c=>c[0]),['reservation','follow','related']);
 });
 test('recommendation feed, incomplete season data and stale completion callbacks do not offer a row',async()=>{
   const recommend=await completion({mode:'recommend'});assert.equal(recommend.calls.filter(c=>c[0]==='related').length,0);

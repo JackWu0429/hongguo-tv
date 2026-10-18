@@ -12,10 +12,10 @@ function fixture(options) {
   panel.querySelector=selector=>{assert.equal(selector,'.player-spinner');return spinner};
   const nodes={'hero':hero,'player-status':panel,'player-status-title':title,'player-status-text':text,'player-retry':retry,'player-failure-diagnostics':diagnostics};
   const frames=[];
-  const context={document:{getElementById:id=>nodes[id]},activePlayback:null,featuredItem:{title:'新剧名称'},reveals:0,focused:null,zoneOf:()=> 'feed'};
+  const context={document:{getElementById:id=>nodes[id]},activePlayback:null,autoCinemaCandidate:false,featuredItem:{title:'新剧名称'},reveals:0,focused:null,zoneOf:()=> 'feed'};
   if(options&&options.frameScheduler)context.requestAnimationFrame=callback=>{frames.push(callback)};
   const c=vm.createContext(context);
-  vm.runInContext('function clearLastPlaybackFrame(){}function revealControls(){reveals++}function goFocus(node){focused=node}'+functions,c);
+  vm.runInContext('function clearLastPlaybackFrame(){}function cancelPendingAutoCinema(){autoCinemaCandidate=false}function revealControls(){reveals++}function goFocus(node){focused=node}'+functions,c);
   return {c,hero,title,text,spinner,retry,diagnostics,panel,frames,paint(){const pending=frames.splice(0);pending.forEach(callback=>callback())}};
 }
 test('first start shows only the spinner until the real target episode resolves, without a title or loading panel',()=>{

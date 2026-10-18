@@ -52,6 +52,7 @@
     appUpdates: '.app-update-action',
     localeActions: '.locale-action',
     sidebarDisplay: '.sidebar-display-action',
+    autoCinema: '.auto-cinema-action',
     playbackModes: '.playback-mode-action',
     support: '.support-card, .support-close',
     rankModal: '.rank-filter-option, .rank-filter-close, .rank-filter-apply',
@@ -142,9 +143,18 @@
     if (state) state.textContent = uiText('settings.currentLanguage', '当前：{language}', { language: current === 'zh-TW' ? uiText('settings.languageChineseTraditional', '繁體中文') : current === 'ja-JP' ? uiText('settings.languageJapanese', '日本語') : uiText('settings.languageChineseSimplified', '简体中文') });
   }
   var androidShell = /HongguoTV-Android/.test(navigator.userAgent);
+  var webosShell = !!window.HongguoWebOS;
   // Explicit Wails configuration or ?platform=desktop; TV browser previews
-  // retain the Android interaction model.
+  // retain the Android interaction model but do not expose native settings.
   var desktopShell = !!window.HongguoDesktop;
+  var autoCinemaPlatform = desktopShell ? 'desktop' : androidShell ? 'android' : webosShell ? 'webos' : 'desktop';
+  var autoCinemaEnabled = autoCinemaPlatform === 'android' || autoCinemaPlatform === 'webos';
+  var autoCinemaCandidate = false;
+  var autoCinemaSession = null;
+  var autoCinemaGeneration = 0;
+  var autoCinemaPreferences = null;
+  var autoCinemaSettingCard = document.getElementById('auto-cinema-settings');
+  var autoCinemaToggle = document.getElementById('auto-cinema-toggle');
   function applicationHidden() { return desktopShell ? !!window.HongguoDesktop.background : !!document.hidden; }
   document.documentElement.classList.toggle('desktop-shell', desktopShell);
   var numericKeypad;
@@ -311,6 +321,7 @@
   var confirmOpen = false;
   var confirmReturnFocus = null;
   var confirmOperation = null;
+  var confirmAfterClose = null;
   var confirmationGeneration = 0;
   var activePlayback = null;
   var detailCache = {};
@@ -873,6 +884,7 @@
     if (element.classList.contains('app-update-action')) return 'appUpdates';
     if (element.classList.contains('locale-action')) return 'localeActions';
     if (element.classList.contains('sidebar-display-action')) return 'sidebarDisplay';
+    if (element.classList.contains('auto-cinema-action')) return 'autoCinema';
     if (element.classList.contains('playback-mode-action')) return 'playbackModes';
     if (element.classList.contains('account-action')) return 'accountActions';
     if (element.classList.contains('confirm-button')) return 'confirmation';
@@ -937,7 +949,7 @@
     if (remembered && focusables().indexOf(remembered) >= 0) return remembered;
     if (pageMode() === 'search') return searchInput || document.querySelector('.search-submit');
     if (pageMode() === 'account') return firstVisible('.account-input') || firstVisible('.account-action');
-    if (pageMode() === 'settings') return selectedSidebarDisplay() || firstVisible('.app-update-action') || firstVisible('.playback-mode-action') || activeSidebar();
+    if (pageMode() === 'settings') return selectedSidebarDisplay() || selectedLocale() || firstVisible('.app-update-action') || firstVisible('.auto-cinema-action') || firstVisible('.playback-mode-action') || activeSidebar();
     if (pageMode() === 'support') return firstVisible('.support-card');
     if (isLibraryPage()) return firstVisible('.library-card') || firstVisible('.history-filter.is-active') || firstVisible('[data-action="library-discover"]') || firstVisible('.library-toolbar-button');
     if (pageMode() === 'new') return firstVisible('.new-tab.is-active') || firstNewTab();
@@ -1368,24 +1380,30 @@
     if (zone === 'sidebarDisplay') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
       if (direction === 'up') return activeSidebar();
-      if (direction === 'down') return firstVisible('.locale-action[aria-pressed="true"]') || firstVisible('.locale-action') || firstVisible('.app-update-action') || firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
+      if (direction === 'down') return firstVisible('.locale-action[aria-pressed="true"]') || firstVisible('.locale-action') || firstVisible('.app-update-action') || firstVisible('.auto-cinema-action') || firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
       return null;
     }
     if (zone === 'localeActions') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
       if (direction === 'up') return selectedSidebarDisplay() || activeSidebar();
-      if (direction === 'down') return firstVisible('.app-update-action') || firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
+      if (direction === 'down') return firstVisible('.app-update-action') || firstVisible('.auto-cinema-action') || firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
       return null;
     }
     if (zone === 'appUpdates') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
       if (direction === 'up') return firstVisible('.locale-action[aria-pressed="true"]') || firstVisible('.locale-action') || selectedSidebarDisplay() || activeSidebar();
+      if (direction === 'down') return firstVisible('.auto-cinema-action') || firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
+      return null;
+    }
+    if (zone === 'autoCinema') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'up') return firstVisible('.app-update-action') || firstVisible('.locale-action[aria-pressed="true"]') || selectedSidebarDisplay() || activeSidebar();
       if (direction === 'down') return firstVisible('.playback-mode-action[aria-pressed="true"]') || firstVisible('.playback-mode-action');
       return null;
     }
     if (zone === 'playbackModes') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstVisible('.app-update-action') || firstVisible('.locale-action[aria-pressed="true"]') || firstVisible('.locale-action') || selectedSidebarDisplay() || activeSidebar();
+      if (direction === 'up') return firstVisible('.auto-cinema-action') || firstVisible('.app-update-action') || firstVisible('.locale-action[aria-pressed="true"]') || firstVisible('.locale-action') || selectedSidebarDisplay() || activeSidebar();
       return null;
     }
     if (zone === 'accountInputs' || zone === 'accountActions') {
@@ -1953,6 +1971,7 @@
   function setPlayerStatus(message, failed) {
     var panel = document.getElementById('player-status');
     var hero = document.getElementById('hero');
+    if (failed && autoCinemaCandidate) cancelPendingAutoCinema();
     if (failed && activePlayback && activePlayback.presentation) activePlayback.presentation.failed = true;
     var preparing = hero.classList.contains('is-preparing-video') || activePlayback && (activePlayback.continuationPending || !activePlayback.started);
     var transition = !!(message && !failed && preparing);
@@ -2366,6 +2385,29 @@
     setTimeout(syncNativePlayerBounds, 0);
     setTimeout(syncNativePlayerBounds, 120);
   }
+  function cancelPendingAutoCinema() {
+    autoCinemaCandidate = false;
+    autoCinemaSession = null;
+    autoCinemaGeneration = 0;
+  }
+  function finishAutoCinema(playback) {
+    if (!autoCinemaCandidate || autoCinemaSession !== playback) return false;
+    var focusedOnPlayer = document.activeElement === document.getElementById('hero-feed-focus');
+    var shouldEnter = window.HongguoAutoCinema.shouldEnter({
+      platform: autoCinemaPlatform,
+      enabled: autoCinemaEnabled,
+      page: pageMode(),
+      initialCardLaunch: true,
+      firstFrame: true,
+      focusedOnPlayer: focusedOnPlayer,
+      userExited: false
+    });
+    cancelPendingAutoCinema();
+    if (!shouldEnter) return false;
+    setCinema(true);
+    hideControls();
+    return true;
+  }
   function exitCinema(keepHidden) {
     fullscreenExitKeepsHidden = !!keepHidden;
     setCinema(false);
@@ -2373,6 +2415,7 @@
     else if (document.fullscreenElement && document.exitFullscreen) Promise.resolve(document.exitFullscreen()).catch(function () {});
   }
   function toggleCinema() {
+    cancelPendingAutoCinema();
     if (shell.classList.contains('is-cinema')) exitCinema();
     else {
       setCinema(true);
@@ -2391,6 +2434,7 @@
     fullscreenExitKeepsHidden = false;
   }
   function handleBack() {
+    if (autoCinemaCandidate) cancelPendingAutoCinema();
     if (endRecommendations && endRecommendations.close(true)) return true;
     if (searchScanOpen) { closeSearchScan(true); return true; }
     if (typeof danmakuScanOpen !== 'undefined' && danmakuScanOpen) { closeDanmakuScan(true); return true; }
@@ -2460,6 +2504,7 @@
     flushNotificationPopup();
   }
   function resetPlayerUI() {
+    cancelPendingAutoCinema();
     resetEndRecommendations();
     episodePrefetch.cancel(); cancelPlaybackPreparation();
     if (document.getElementById('hero-video').paused) releasePlaybackAudio();
@@ -2809,7 +2854,10 @@
     document.getElementById('confirm-cancel').textContent = uiText('common.cancel', '取消');
     var target = confirmReturnFocus;
     confirmReturnFocus = null;
+    var afterClose = confirmAfterClose;
+    confirmAfterClose = null;
     goFocus(target && focusables().indexOf(target) >= 0 ? target : firstContentFocus());
+    if (afterClose) afterClose();
     flushEndRecommendations();
   }
   function confirmClearLibrary() {
@@ -3318,6 +3366,49 @@
     endRecommendations.offer(playback, detail.related);
     return true;
   }
+  function offerFollowAtEnd(playback, detail, after) {
+    if (!playback || !detail || !canContinuePlayback(playback) || pageMode() !== 'player' ||
+        playback.owner !== accountEpoch || followState(playback.item) !== 'ongoing' || followIsActive(playback.item)) return false;
+    if (!accountData || !accountData.logged_in || confirmOpen) return false;
+    ++confirmationGeneration;
+    var generation = confirmationGeneration;
+    var epoch = accountEpoch;
+    var title = playback.item.title || uiText('app.name', '红果短剧');
+    confirmReturnFocus = document.getElementById('hero-feed-focus');
+    confirmAfterClose = after || null;
+    confirmOpen = true;
+    document.getElementById('confirm-title').textContent = uiText('content.followOnEndTitle', '追更这部短剧？');
+    document.getElementById('confirm-copy').textContent = uiText('content.followOnEndCopy', '《{title}》仍在更新。追更后可在“我的 → 追更”中查看更新。', { title: title });
+    var accept = document.getElementById('confirm-accept');
+    accept.textContent = uiText('ui.follow', '追更');
+    accept.classList.add('confirm-reserve'); accept.classList.remove('confirm-danger');
+    document.getElementById('confirm-cancel').textContent = uiText('content.followOnEndLater', '暂不追更');
+    document.getElementById('confirm-modal').classList.remove('is-hidden');
+    document.getElementById('confirm-modal').setAttribute('aria-hidden', 'false');
+    confirmOperation = function () {
+      if (epoch !== accountEpoch || playback.owner !== accountEpoch || activePlayback !== playback || !isPlaybackPage()) {
+        document.getElementById('confirm-copy').textContent = uiText('content.followOnEndStateChanged', '追更未确认成功：播放或账号状态已变化，请重试。');
+        return Promise.resolve(false);
+      }
+      return fetchData('/api/v1/follow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ series_id: playback.item.series_id, enabled: true }) }).then(function () {
+        if (epoch !== accountEpoch || generation !== confirmationGeneration) return false;
+        playback.item.following_update = true; playback.item.followed = true;
+        if (featuredItem && featuredItem.series_id === playback.item.series_id) { featuredItem.following_update = true; featuredItem.followed = true; }
+        if (currentDetail && currentDetail.series_id === playback.item.series_id) { currentDetail.following_update = true; currentDetail.followed = true; updateDetailActions(); }
+        followPager.loaded = false;
+        if (pageMode() === 'follows') followPager.reset({});
+        showNotice(uiText('ui.followAdded', '已加入追更'));
+        return true;
+      }).catch(function (error) {
+        if (epoch === accountEpoch && generation === confirmationGeneration && confirmOpen) {
+          document.getElementById('confirm-copy').textContent = uiText('content.followOnEndFailed', '追更未完成：{error}。可以重试，或选择暂不追更。', { error: localizedError(error, 'common.operationFailed', '操作未完成，请重试。') });
+        }
+        return false;
+      });
+    };
+    goFocus(document.getElementById('confirm-cancel'));
+    return true;
+  }
   function cancelEndRecommendationAutoplay() { if (typeof endRecommendations !== 'undefined' && endRecommendations) endRecommendations.cancelAutoplay(); }
   function renderEndRecommendationCountdown(seconds) {
     var badge = document.getElementById('end-recommendation-countdown');
@@ -3512,12 +3603,22 @@
             // seasons. Never skip a reservable season to a later playable one.
             if (successor && successor.upcoming) {
               setPlayerStatus(''); revealControls();
-              if (successor.reservation_id) offerNextSeasonReservation(playback, successor, epoch);
-              else showNotice(uiText('content.nextSeasonOffline', '本季已播放完，下一季待上线，尚未开放预约'));
-              offerEndRecommendations(playback, detail);
+              var reservationPrompt = successor.reservation_id && offerNextSeasonReservation(playback, successor, epoch);
+              if (!successor.reservation_id) showNotice(uiText('content.nextSeasonOffline', '本季已播放完，下一季待上线，尚未开放预约'));
+              var followThenRecommendations = function () {
+                var followPrompt = offerFollowAtEnd(playback, detail, function () { offerEndRecommendations(playback, detail); });
+                if (!followPrompt) offerEndRecommendations(playback, detail);
+              };
+              if (reservationPrompt) confirmAfterClose = followThenRecommendations;
+              else followThenRecommendations();
               return;
             }
-            if (successor && !successor.playable) { setPlayerStatus(''); revealControls(); showNotice(uiText('content.nextSeasonUnavailable', '下一季暂不可播放')); offerEndRecommendations(playback, detail); return; }
+            if (successor && !successor.playable) {
+              setPlayerStatus(''); revealControls(); showNotice(uiText('content.nextSeasonUnavailable', '下一季暂不可播放'));
+              var followingPrompt = offerFollowAtEnd(playback, detail, function () { offerEndRecommendations(playback, detail); });
+              if (!followingPrompt) offerEndRecommendations(playback, detail);
+              return;
+            }
             var next = successor || (!current ? result.next : null);
             if (next) {
               if (!next.series_id || next.series_id === playback.item.series_id || !next.vid || !(season > 0) || next.season_index !== season + 1 || !(next.episode_count > 0)) throw new Error(uiText('content.nextSeasonInvalid', '下一季数据无效'));
@@ -3528,7 +3629,12 @@
             } else {
               setPlayerStatus(''); revealControls();
               if (pageMode() === 'recommend' && feedItems.length > 1) playFeedItem(feedIndex + 1);
-              else if (!offerEndRecommendations(playback, detail)) showNotice(uiText('content.seriesFinished', '本剧已播放完，暂无可播放的下一季'));
+              else {
+                var recommendations = false;
+                var followPrompt = offerFollowAtEnd(playback, detail, function () { offerEndRecommendations(playback, detail); });
+                if (!followPrompt) recommendations = offerEndRecommendations(playback, detail);
+                if (!followPrompt && !recommendations) showNotice(uiText('content.seriesFinished', '本剧已播放完，暂无可播放的下一季'));
+              }
             }
           });
 
@@ -3541,14 +3647,14 @@
   }
 
   function offerNextSeasonReservation(playback, item, epoch) {
-    if (!canContinuePlayback(playback) || confirmOpen) return;
+    if (!canContinuePlayback(playback) || confirmOpen) return false;
     // A freshly confirmed reservation may not be reflected in the successor
     // object yet. Reapply the short-lived account-scoped state before deciding
     // whether a prompt is needed.
     applyReservationOverride(item);
     var label = item.label || uiText('content.episodeNumber', '第{episode}集', { episode: item.season_index }) .replace(/集$/, '季');
-    if (item.reserved) { showNotice(uiText('content.nextSeasonReserved', '您已预约{label}，敬请期待', { label: label })); return; }
-    if (!accountData || !accountData.logged_in) { showNotice(uiText('content.nextSeasonLogin', '本季已播放完，{label}待上线。登录后可在“选集 → 系列剧”预约', { label: label })); return; }
+    if (item.reserved) { showNotice(uiText('content.nextSeasonReserved', '您已预约{label}，敬请期待', { label: label })); return false; }
+    if (!accountData || !accountData.logged_in) { showNotice(uiText('content.nextSeasonLogin', '本季已播放完，{label}待上线。登录后可在“选集 → 系列剧”预约', { label: label })); return false; }
     ++confirmationGeneration; var generation = confirmationGeneration;
     confirmReturnFocus = document.activeElement; confirmOpen = true;
     document.getElementById('confirm-title').textContent = uiText('content.reserveNextTitle', '预约下一季？');
@@ -3584,6 +3690,7 @@
       });
     };
     goFocus(document.getElementById('confirm-cancel'));
+    return true;
   }
 
   function refreshDetailAfterSeason(previousID, next) {
@@ -3830,7 +3937,11 @@
     var presentation = playback && playback.presentation;
     if (!playbackVideoReady(playback, presentation, video)) return;
     clearRangeStallTimer();
-    if (!hero.classList.contains('is-preparing-video')) { releasePresentedAudio(playback, presentation, video); return; }
+    if (!hero.classList.contains('is-preparing-video')) {
+      releasePresentedAudio(playback, presentation, video);
+      finishAutoCinema(playback);
+      return;
+    }
     if (presentation.pending) return;
     // Reveal the video underneath the opaque cover before removing that
     // cover. A canplay event alone must never expose an empty video surface.
@@ -3846,6 +3957,7 @@
       hero.classList.remove('is-preparing-video', 'is-starting-video', 'is-episode-transition', 'is-range-transition', 'is-range-source-reset');
       setPlayerStatus('');
       releasePresentedAudio(playback, presentation, video);
+      finishAutoCinema(playback);
     });
   }
   function markPlaybackStarted(playback) {
@@ -3981,6 +4093,7 @@
     var keepRangeFrame = sameSeries && playbackMode === 'range' && !!video.getAttribute('src');
     if (keepRangeFrame) captureLastPlaybackFrame(item); else clearLastPlaybackFrame();
     var generation = ++feedGeneration;
+    if (autoCinemaCandidate && autoCinemaGeneration && generation !== autoCinemaGeneration) cancelPendingAutoCinema();
     holdPlaybackAudio(generation);
     clearTimeout(controlsTimer);
     hero.classList.add('is-feed', 'is-preparing-video');
@@ -4038,6 +4151,7 @@
           mode: '', rangeFallback: '', rangeFallbackAttempted: false,
           recoveryAttempts: recovery && recovery.recoveryAttempts || 0,
           timing: { episode: episode, automatic_next: fastContinuation, started_at: switchStartedAt, ready_at: 0, prefetch_ms: null, prepared_before_switch: false, reported: false } };
+        if (autoCinemaCandidate && generation === autoCinemaGeneration) autoCinemaSession = activePlayback;
         setFeatured(playing);
         updateDetailProgress();
         setPlayerStatus(episodeLoadingText(episode));
@@ -4132,8 +4246,14 @@
     playFeedItem(0);
   }
 
+  function isAutoCinemaCardLaunch(target) {
+    if (!target || typeof target.closest !== 'function') return false;
+    return !!target.closest('.catalog-card, .search-result-card, .library-card, .rank-row, .radar-official-row, .radar-growth-row, .new-card, .calendar-row, .reservation-row, .follow-card, .actor-work-card');
+  }
+
   function startPlayer(item, returnFocus) {
     if (!item || !item.series_id) return;
+    var launchFromCard = pageMode() !== 'recommend' && pageMode() !== 'player' && isAutoCinemaCardLaunch(returnFocus);
     if (typeof notificationHidePopup === 'function') notificationHidePopup();
     var recommendation = rememberRecommendation();
     allPagers.forEach(function (pager) { pager.cancel(); });
@@ -4153,7 +4273,10 @@
     document.getElementById('hero').classList.add('is-feed');
     feedItems = [item];
     feedIndex = 0;
+    cancelPendingAutoCinema();
+    autoCinemaCandidate = autoCinemaEnabled && launchFromCard;
     playFeedItem(0, item.__explicitEpisode ? item.start_episode : undefined, item.__explicitEpisode ? 0 : undefined);
+    if (autoCinemaCandidate) autoCinemaGeneration = feedGeneration;
     if (recommendation) settleRecommendationSave(recommendation, libraryQueue);
     goFocus(document.getElementById('hero-feed-focus'));
   }
@@ -6549,6 +6672,23 @@
   });
   document.querySelectorAll('.playback-mode-action').forEach(function (button) {
     button.addEventListener('click', function () { playbackSettings.choose(button.getAttribute('data-mode')); });
+  });
+  autoCinemaPreferences = window.HongguoAutoCinema.create({
+    platform: autoCinemaPlatform,
+    bridge: window.HongguoTVPreferences,
+    storage: sidebarStorage,
+    render: function (data) {
+      autoCinemaSettingCard.classList.toggle('is-hidden', !data.supported);
+      autoCinemaEnabled = data.enabled;
+      autoCinemaToggle.setAttribute('aria-pressed', data.enabled ? 'true' : 'false');
+      autoCinemaToggle.classList.toggle('account-primary', data.enabled);
+      autoCinemaToggle.textContent = uiText(data.enabled ? 'settings.autoCinemaEnabled' : 'settings.autoCinemaDisabled', data.enabled ? '已开启' : '已关闭');
+      document.getElementById('auto-cinema-state').textContent = data.message ? uiText('settings.saveFailed', '设置未能保存，请重试。') : data.supported ? uiText('settings.autoCinemaState', '仅应用于安卓与 webOS 的单剧卡片播放。') : '';
+    }
+  });
+  autoCinemaToggle.addEventListener('click', function () {
+    cancelPendingAutoCinema();
+    if (!autoCinemaPreferences.choose(autoCinemaPreferences.enabled() ? 'disabled' : 'enabled')) showNotice(uiText('settings.saveFailed', '设置未能保存，请重试。'));
   });
   var licenses = document.getElementById('app-open-licenses');
   if (window.HongguoNativePlayer && window.HongguoNativePlayer.showLicenses) {

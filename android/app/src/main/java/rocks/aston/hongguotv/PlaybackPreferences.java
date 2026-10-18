@@ -52,4 +52,19 @@ final class PlaybackPreferences {
             throw new IllegalStateException("locale was not saved");
         }
     }
+
+    @JavascriptInterface
+    public String readAutoCinema() {
+        return preferences.getString("autoCinema", "enabled");
+    }
+
+    @JavascriptInterface
+    public void writeAutoCinema(String value) {
+        if (!"enabled".equals(value) && !"disabled".equals(value)) {
+            throw new IllegalArgumentException("invalid auto cinema preference");
+        }
+        if (!preferences.edit().putString("autoCinema", value).commit()) {
+            throw new IllegalStateException("auto cinema preference was not saved");
+        }
+    }
 }

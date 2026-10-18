@@ -31,6 +31,7 @@ var index = read(path.join(root, 'core', 'cmd', 'hongguotv', 'ui', 'index.html')
 var scripts = [];
 index.replace(/(?:src|href)=["']([^"']+)["']/g, function (_, value) { if (/\.(?:js|css)$/.test(value)) scripts.push(value.replace(/^\//, '')); return value; });
 if (scripts.length < 10) fail('shared UI asset list unexpectedly small');
+if (scripts.indexOf('auto-cinema.js') < 0) fail('auto cinema preference module is not loaded by the shared UI');
 if (!fs.existsSync(path.join(root, 'webos', 'app', 'webos-adapter.js'))) fail('webOS adapter missing');
 if (!fs.existsSync(path.join(root, 'webos', 'app', 'webOSTVjs-1.2.13', 'webOSTV.js'))) fail('official webOSTV.js library missing');
 var adapter = read(path.join(root, 'webos', 'app', 'webos-adapter.js'));

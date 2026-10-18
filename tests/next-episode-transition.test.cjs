@@ -33,6 +33,7 @@ function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,d
   vm.runInContext("var desktopShell=false;" + source.match(/  function applicationHidden[^\n]+/)[0], c);
   vm.runInContext(`
     var accountEpoch=2,feedGeneration=1,continuationGeneration=0,seasonSwitchRequest=null;
+    var autoCinemaCandidate=false,autoCinemaGeneration=0,autoCinemaSession=null;
     var rangeTransitionTimer=null;
     var rangePlaybackEnabled=function(){return engine==='range'};
     var detailModalOpen=false,qualityPrevious=null,applicationInBackground=false;
@@ -48,6 +49,7 @@ function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,d
     function basicDrama(x){return x}function firstVid(x){return x.vid_list[0]}
     function getDetail(x){return ${detailGate ? 'detailGate.promise.then(function () { return x; })' : 'Promise.resolve(x)'}}function libraryEntry(){return null}function resumeEpisode(){return 1}
     function closePlayerOptions(){}function closeDiscussion(){}function resetDanmaku(){}function cancelPlaybackPreparation(){}
+    function cancelPendingAutoCinema(){autoCinemaCandidate=false;autoCinemaGeneration=0;autoCinemaSession=null}function finishAutoCinema(){}
     function clearRangeTransitionHint(){}function waitForPlaybackPrefetch(handoff){return handoff ? handoff.promise : Promise.resolve(null)}function recoverPlaybackAfterError(){return false}
     function updateFeedCounter(){}function setFeatured(){}function updateSeriesRows(){}function updatePlaybackControls(){}
     function updateSavedButtons(){}function updateDetailProgress(){}function renderLibrary(){}

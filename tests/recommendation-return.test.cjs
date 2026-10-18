@@ -53,6 +53,7 @@ function fixture({ failSave = false, writeGate = null, sourceGate = null } = {})
     var shell={dataset:{mode:'recommend'},classList:document.getElementById('shell').classList}, mainSurface=document.getElementById('main-surface');
     var searchPage=document.getElementById('search-page'),pagePlaceholder=document.getElementById('placeholder'),libraryPage=document.getElementById('library-page'),accountPage=document.getElementById('account-page'),supportPage=document.getElementById('support-page');
     var searchScanOpen=false,smsVerification=null,supportModalOpen=false,detailModalOpen=false,engagement={clear:function(){}};
+    var autoCinemaEnabled=false,autoCinemaCandidate=false,autoCinemaGeneration=0,autoCinemaSession=null;
     var feedItems=Array.from({length:5},function(_,i){return {series_id:'r'+i,title:'Drama '+i,vid:'r'+i+'-1',episode_count:3,vid_list:['r'+i+'-1','r'+i+'-2','r'+i+'-3']}}),feedIndex=1,feedGeneration=1,continuationGeneration=0;
     var recommendationSession=null,accountEpoch=1,accountData={logged_in:true},activePlayback={item:feedItems[1],episode:2,position:12,vid:'r1-2',owner:1,generation:1,started:true,lastWrite:0,completed:false};
     var playbackRequest=null,playbackInfoRequest=null,playbackPrefetchHandoff=null,controlsTimer=null,playbackQuality='',playbackQualities=[],playbackPreferences={quality:'720P'},applicationInBackground=false;
@@ -74,6 +75,7 @@ function fixture({ failSave = false, writeGate = null, sourceGate = null } = {})
     function setPlayerStatus(){}function showRecommendationPlaceholder(){}function episodeLoadingText(){return 'loading'}function revealControls(){}function showNotice(x){calls.push({kind:'notice',text:x})}
     function playMedia(v){v.paused=false;calls.push({kind:'play',src:v.src});return Promise.resolve()}
     function accountKeypadOpen(){return false}function hideWorkspacePages(){}function goFocus(x){document.activeElement=x}function firstContentFocus(){return pageMode()==='recommend'?activeChannel():document.getElementById('hero-feed-focus')}
+    function cancelPendingAutoCinema(){autoCinemaCandidate=false;autoCinemaSession=null;autoCinemaGeneration=0}
     function resetPlayerUI(){cancelPlaybackPreparation()}function renderAccount(){}function pollAccount(){}function queueTailCheck(){}
     var feedPager=HongguoPagination.create({request:function(params,signal){return fetchData('/api/v1/lists/recommend?'+new URLSearchParams(params),{signal:signal})},render:function(items,append){if(append)feedItems=feedItems.concat(items);else renderFeed(items)}});
     feedPager.local(feedItems,feedItems.length);feedPager.params={channel:'16'};var allPagers=[feedPager,searchPager];

@@ -295,6 +295,12 @@
           <div class="app-update-actions"><button class="app-update-action account-action" id="app-check-update" data-focus="app-check-update" data-i18n="settings.checkUpdates">检查更新</button><button class="app-update-action account-action is-hidden" id="desktop-download-update" data-focus="desktop-download-update" data-i18n="ui.downloadZip">下载更新 ZIP</button><button class="app-update-action account-action is-hidden" id="desktop-open-update-folder" data-focus="desktop-open-update-folder" data-i18n="settings.openFolder">打开所在文件夹</button><button class="app-update-action account-action is-hidden" id="app-open-licenses" data-focus="app-open-licenses" data-i18n="settings.licenses">开源许可</button></div>
           <pre id="desktop-update-notes" class="desktop-update-notes is-hidden"></pre>
         </div>
+        <div class="settings-card app-update-card is-hidden" id="auto-cinema-settings">
+          <h2 data-i18n="settings.autoCinema">播放后自动全屏</h2>
+          <p data-i18n="settings.autoCinemaDescription">从卡片打开单剧并开始播放后，自动进入影院模式。推荐页不受影响。</p>
+          <div class="app-update-actions"><button class="auto-cinema-action account-action" id="auto-cinema-toggle" data-focus="auto-cinema-toggle" aria-pressed="true" data-i18n="settings.autoCinemaEnabled">已开启</button></div>
+          <p id="auto-cinema-state" role="status" aria-live="polite"></p>
+        </div>
         <div class="settings-card app-update-card is-hidden" id="mpv-playback-settings">
           <h2 data-i18n="settings.playback">播放解码</h2>
           <p data-i18n="settings.playbackDescription">自动解码优先尝试硬件加速；画面异常时可选软件解码。设置在下次播放或切集时生效。</p>
@@ -346,7 +352,6 @@
           <button class="round-action" data-action="like" data-focus="hero-like" aria-label="点赞" data-i18n-aria-label="nav.likes" aria-pressed="false"><svg aria-hidden="true" focusable="false"><use href="#icon-like" xlink:href="#icon-like"></use></svg><strong class="action-count" id="hero-like-count">—</strong></button>
           <button class="round-action" data-action="favorite" data-focus="hero-favorite" aria-label="收藏" data-i18n-aria-label="nav.favorites" aria-pressed="false"><svg aria-hidden="true" focusable="false"><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><strong class="action-count" id="hero-favorite-count">—</strong></button>
           <button class="round-action" data-action="comment" data-focus="hero-comment" aria-label="评论" data-i18n-aria-label="modal.reviews"><svg aria-hidden="true" focusable="false"><use href="#icon-comment" xlink:href="#icon-comment"></use></svg><strong class="action-count" id="hero-comment-count">—</strong></button>
-          <button class="round-action" data-action="follow" data-focus="hero-follow" aria-label="追更" data-i18n-aria-label="nav.follow" aria-pressed="false"><svg aria-hidden="true" focusable="false"><use href="#icon-bell" xlink:href="#icon-bell"></use></svg><small data-i18n="nav.follow">追更</small></button>
         </div>
 
         <div class="bottom-controls" data-focus-zone="controls" aria-label="播放控制" data-i18n-aria-label="hero.playbackControls">
@@ -433,6 +438,7 @@
   <script src="/playback-recovery.js"></script>
   <script src="/native-player.js"></script>
   <script src="/playback-settings.js"></script>
+  <script src="/auto-cinema.js"></script>
   <script src="/sidebar-settings.js"></script>
   <script src="/desktop.js"></script>
   <script src="/app.js"></script>
