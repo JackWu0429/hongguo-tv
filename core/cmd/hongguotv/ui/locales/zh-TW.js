@@ -967,6 +967,7 @@
   "ui.seasonNotReservable": "這季尚未開放預約。",
   "ui.loginBeforeReserve": "請先關閉面板，在左側“我的”登入帳號後再預約。",
   "ui.reservationSuccess": "預約成功。",
+  "ui.reservationPending": "預約請求已送出，紅果預約清單尚未確認。請稍後到「我的預約 → 待上線」重新整理核對。",
   "ui.reservationCanceledPeriod": "已取消預約。",
   "ui.reservationFailed": "預約未確認成功：{error}",
   "ui.seasonUnavailable": "這季暫時不可播放。",

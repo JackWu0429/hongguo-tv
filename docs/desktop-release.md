@@ -1,6 +1,6 @@
-红果短剧桌面版 0.2.88（macOS / Windows）
+红果短剧桌面版 0.2.89（macOS / Windows）
 
-- 版本号与 Android、webOS 发行线同步。共享账号核心修正了预约请求协议和下一季预约使用的剧集 ID；桌面版没有专属 UI 变化。
+- 版本号与 Android、webOS 发行线同步。预约写入后不再同步轮询列表；界面会区分“请求已提交”和“预约列表已确认”，减少等待并避免把未确认状态显示为成功。
 
 macOS 通用 ZIP 支持 Intel / Apple Silicon，最低 macOS 11；Windows x64 需要 Microsoft Edge WebView2 Runtime。
 通过设置检查更新并下载 ZIP，退出后手动替换完整程序。账号及本地记录保存在独立用户目录。

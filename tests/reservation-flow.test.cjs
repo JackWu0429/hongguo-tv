@@ -5,13 +5,34 @@ const vm = require('node:vm');
 require('./helpers/app-text.cjs');
 
 const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'), 'utf8');
-test('reservation success is gated on cloud readback, not a local optimistic write', () => {
+test('reservation separates an accepted write from cloud list confirmation', () => {
   assert.equal(source.includes('hongguo-tv-reservation-mode'), false);
   assert.match(source, /function writeReservation\(item, reserved, signal\)/);
-  assert.match(source, /if \(!result\.confirmed\) throw new Error/);
+  assert.match(source, /if \(!result\.accepted\) throw new Error/);
+  assert.match(source, /function reservationPendingMessage\(\)/);
+  assert.equal((source.match(/if \(!result\.confirmed\)/g) || []).length, 3);
+  assert.match(source, /uiText\('ui\.reservationPending'/);
   assert.match(source, /showNotice\(uiText\('content\.reserved'/);
   assert.match(source, /uiText\('content\.nextSeasonReserved'/);
   assert.match(source, /seriesMessage\(reserved \? uiText\('ui\.reservationSuccess'/);
+});
+
+test('an accepted but unconfirmed reservation remains pending', async () => {
+  const context = vm.createContext({
+    Promise,
+    fetchData: async () => ({ accepted: true, confirmed: false }),
+    uiText: (_, fallback) => fallback
+  });
+  let calls = 0;
+  context.fetchData = async () => { calls++; return { accepted: true, confirmed: false }; };
+  const start = source.indexOf('  function writeReservation(');
+  const end = source.indexOf('  function applyReservationOverride(', start);
+  vm.runInContext(source.slice(start, end), context);
+  const result = await context.writeReservation({ reservation_id: 'season-2' }, true);
+  assert.equal(result.accepted, true);
+  assert.equal(result.confirmed, false);
+  assert.equal(calls, 1, 'an accepted write must not trigger a list readback loop');
+  assert.match(context.reservationPendingMessage(), /尚未确认/);
 });
 
 test('reservation confirmation bridges eventual consistency without becoming permanent', () => {
@@ -43,6 +64,7 @@ test('reservation confirmation bridges eventual consistency without becoming per
 
 function reservationConfirmationFixture({ fail = false } = {}) {
   const calls = [];
+  let remembered = 0;
   const nodes = {};
   function node(id) {
     return nodes[id] || (nodes[id] = {
@@ -73,29 +95,31 @@ function reservationConfirmationFixture({ fail = false } = {}) {
     updateReservationCounts() {},
     updateSeasonReservation() {},
     updateSeriesRows() {},
-    rememberReservationOverride() {},
+    rememberReservationOverride() { remembered++; },
     applyReservationOverride(item) { return item; },
     showNotice(message) { calls.push(['notice', message]); },
+    reservationPendingMessage: () => '预约请求已提交，尚未确认',
     goFocus() {},
     writeReservation: async (target, reserved) => {
       calls.push(['request', '/api/v1/reservation', { item_id: target.reservation_id, reserved }]);
       if (fail) throw new Error('测试预约失败');
-      return { confirmed: true };
+      return { accepted: true, confirmed: false };
     }
   });
   const start = source.indexOf('  function offerNextSeasonReservation(');
   const end = source.indexOf('  function refreshDetailAfterSeason(', start);
   vm.runInContext(source.slice(start, end), context);
   context.offerNextSeasonReservation(playback, item, 7);
-  return { context, calls, item, playback, copy: node('confirm-copy') };
+  return { context, calls, item, playback, copy: node('confirm-copy'), remembered: () => remembered };
 }
 
-test('next-season reservation only reports success after the reservation endpoint confirms it', async () => {
+test('an accepted next-season request stays pending until the cloud list shows it', async () => {
   const f = reservationConfirmationFixture();
   assert.equal(await f.context.confirmOperation(), true);
   assert.deepEqual(f.calls[0], ['request', '/api/v1/reservation', { item_id: 'season-2', reserved: true }]);
-  assert.equal(f.item.reserved, true);
-  assert.deepEqual(f.calls.slice(1), [['notice', '已预约第2季']]);
+  assert.equal(f.item.reserved, undefined);
+  assert.equal(f.remembered(), 0);
+  assert.deepEqual(f.calls.slice(1), [['notice', '预约请求已提交，尚未确认']]);
 });
 
 test('an already reserved next season reports the state without opening a second prompt', () => {

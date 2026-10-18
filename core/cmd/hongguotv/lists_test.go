@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 )
 
 func listFixtureClient(handler http.HandlerFunc) (*passportClient, func()) {
@@ -140,69 +139,6 @@ func TestReservationPaginationCarriesServerSession(t *testing.T) {
 	}
 }
 
-func TestSetReservationAndConfirmUsesCloudList(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		resultAt   int
-		wantResult bool
-		wantReads  int
-	}{
-		{name: "eventually visible after reserve", resultAt: 3, wantResult: true, wantReads: 3},
-		{name: "accepted write that never appears is unconfirmed", resultAt: 0, wantResult: false, wantReads: 4},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			reads := 0
-			c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method == http.MethodPost {
-					if r.URL.Path != "/reading/bookapi/search/uncover_subscribe/v" {
-						t.Errorf("wrong write path: %s", r.URL.Path)
-					}
-					ioJSON(w, `{"code":0,"data":{}}`)
-					return
-				}
-				reads++
-				q := r.URL.Query()
-				if q.Get("tab_type") != "13" || q.Get("subscribe_order_type") != "0" || q.Get("swipe_type") != "0" || q.Get("is_online") != "false" || q.Get("offset") != "0" || q.Get("subscribe_offset") != "0" || q.Get("session_id") != "" {
-					t.Errorf("wrong cloud readback query: %v", q)
-				}
-				confirmedState := tc.resultAt > 0 && reads >= tc.resultAt
-				if confirmedState {
-					ioJSON(w, `{"code":0,"data":{"subscribe_items":[{"item_id":"7692049770637954110","name":"待上线剧","is_online":false}]}}`)
-					return
-				}
-				ioJSON(w, `{"code":0,"data":{"subscribe_items":[]}}`)
-			})
-			defer close()
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			confirmed, err := c.SetReservationAndConfirm(ctx, "7692049770637954110", true)
-			if err != nil || confirmed != tc.wantResult {
-				t.Fatalf("confirmed=%v err=%v", confirmed, err)
-			}
-			if reads != tc.wantReads {
-				t.Fatalf("expected %d cloud confirmation reads, got %d", tc.wantReads, reads)
-			}
-		})
-	}
-}
-
-func TestSetReservationAndConfirmKeepsCancelWriteBehavior(t *testing.T) {
-	reads, writes := 0, 0
-	c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			writes++
-			ioJSON(w, `{"code":0,"data":{}}`)
-			return
-		}
-		reads++
-		ioJSON(w, `{"code":0,"data":{"subscribe_items":[]}}`)
-	})
-	defer close()
-	confirmed, err := c.SetReservationAndConfirm(context.Background(), "7692049770637954110", false)
-	if err != nil || !confirmed || writes != 1 || reads != 0 {
-		t.Fatalf("confirmed=%v err=%v writes=%d reads=%d", confirmed, err, writes, reads)
-	}
-}
 func TestSearchGroupingAndPagination(t *testing.T) {
 	p := map[string]any{}
 	d := json.NewDecoder(strings.NewReader(`{"data":{"search_tabs":[{"tab_type":1,"data":[]},{"tab_type":11,"has_more":true,"next_offset":"100","search_id":"search-s","passback":"p","data":[{"video_data":[{"series_id":7690163276214176792,"title":"第十三季","episode_cnt":209}]},{"lynx_data":"{\"items\":[{\"video_data\":[{\"series_id\":\"7690163276214176793\",\"title\":\"第二季\",\"episode_cnt\":50}]}]}"}]}]}}`))
@@ -257,6 +193,39 @@ func TestListsArePrivateAndReservationsRequireLogin(t *testing.T) {
 		t.Error("old account generation accepted")
 	}
 }
+
+func TestReservationHandlerReturnsAcceptedWithoutReadback(t *testing.T) {
+	calls := 0
+	m := fixtureAccount(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Method != http.MethodPost || r.URL.Path != "/reading/bookapi/search/uncover_subscribe/v" {
+			t.Errorf("unexpected request after reservation write: %s %s", r.Method, r.URL.Path)
+		}
+		ioJSON(w, `{"code":0,"data":{}}`)
+	})
+	m.disk.Profile = &accountProfile{UID: "7391234567890123456"}
+	s := &server{accounts: m}
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/reservation", strings.NewReader(`{"item_id":"7692049770637954110","reserved":true}`))
+	w := httptest.NewRecorder()
+	s.reservation(w, r)
+	if w.Code != http.StatusAccepted || calls != 1 {
+		t.Fatalf("status=%d upstream requests=%d body=%s", w.Code, calls, w.Body.String())
+	}
+	var payload struct {
+		OK   bool `json:"ok"`
+		Data struct {
+			Accepted  bool `json:"accepted"`
+			Confirmed bool `json:"confirmed"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.OK || !payload.Data.Accepted || payload.Data.Confirmed {
+		t.Fatalf("unexpected pending result: %+v", payload)
+	}
+}
+
 func TestRankJSONSelectorsAndActors(t *testing.T) {
 	c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()

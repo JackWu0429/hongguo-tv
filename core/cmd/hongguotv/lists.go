@@ -466,53 +466,6 @@ func (c *passportClient) SetReservation(ctx context.Context, id string, reserve 
 	return e
 }
 
-func (c *passportClient) SetReservationAndConfirm(ctx context.Context, id string, reserve bool) (bool, error) {
-	if err := c.SetReservation(ctx, id, reserve); err != nil {
-		return false, err
-	}
-	if !reserve {
-		return true, nil
-	}
-	verifyCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
-	defer cancel()
-	delays := []time.Duration{0, 250 * time.Millisecond, 600 * time.Millisecond, time.Second}
-	for _, delay := range delays {
-		if delay > 0 {
-			timer := time.NewTimer(delay)
-			select {
-			case <-verifyCtx.Done():
-				timer.Stop()
-				if ctx.Err() != nil {
-					return false, ctx.Err()
-				}
-				return false, nil
-			case <-timer.C:
-			}
-		}
-		page, err := c.SubscriptionList(verifyCtx, url.Values{"mode": {"upcoming"}, "offset": {"0"}}, false)
-		if err != nil {
-			if ctx.Err() != nil {
-				return false, ctx.Err()
-			}
-			if verifyCtx.Err() != nil {
-				return false, nil
-			}
-			continue
-		}
-		found := false
-		for _, item := range page.Items {
-			if item.ReservationID == id {
-				found = true
-				break
-			}
-		}
-		if found == reserve {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 func (c *passportClient) SearchList(ctx context.Context, q url.Values) (ListResult, error) {
 	query := strings.TrimSpace(q.Get("q"))
 	if query == "" || len([]rune(query)) > 80 {
@@ -648,7 +601,7 @@ func (s *server) reservation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 401, e.Error())
 		return
 	}
-	confirmed, e := c.SetReservationAndConfirm(r.Context(), body.ItemID, *body.Reserved)
+	e = c.SetReservation(r.Context(), body.ItemID, *body.Reserved)
 	if !s.accounts.sameGeneration(g) {
 		writeError(w, 409, errAccountChanged.Error())
 		return
@@ -657,9 +610,5 @@ func (s *server) reservation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 502, e.Error())
 		return
 	}
-	message := ""
-	if !confirmed {
-		message = "预约接口返回成功，但红果待上线列表尚未出现这部剧，暂不能确认是否生效"
-	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "data": map[string]any{"confirmed": confirmed, "message": message}})
+	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "data": map[string]any{"accepted": true, "confirmed": false}})
 }

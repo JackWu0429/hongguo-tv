@@ -970,6 +970,7 @@
     ,'ui.seasonNotReservable': '这季尚未开放预约。'
     ,'ui.loginBeforeReserve': '请先关闭面板，在左侧“我的”登录账号后再预约。'
     ,'ui.reservationSuccess': '预约成功。'
+    ,'ui.reservationPending': '预约请求已提交，红果预约列表尚未确认。请稍后到“我的预约 → 待上线”刷新核对。'
     ,'ui.reservationCanceledPeriod': '已取消预约。'
     ,'ui.reservationFailed': '预约未确认成功：{error}'
     ,'ui.seasonUnavailable': '这季暂时不可播放。'

@@ -967,6 +967,7 @@
   "ui.seasonNotReservable": "このシーズンはまだ予約できません。",
   "ui.loginBeforeReserve": "パネルを閉じ、左側のマイページでHongguoアカウントにログインしてから予約してください。",
   "ui.reservationSuccess": "予約しました。",
+  "ui.reservationPending": "予約リクエストを送信しました。Hongguoの予約一覧ではまだ確認できません。しばらくしてから「マイ予約 → 公開待ち」を更新して確認してください。",
   "ui.reservationCanceledPeriod": "予約をキャンセルしました。",
   "ui.reservationFailed": "予約を確認できませんでした：{error}",
   "ui.seasonUnavailable": "このシーズンは現在再生できません。",

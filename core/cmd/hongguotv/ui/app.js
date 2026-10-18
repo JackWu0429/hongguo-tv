@@ -3715,11 +3715,12 @@
         document.getElementById('confirm-copy').textContent = uiText('content.reserveStateChanged', '预约未确认成功：播放状态已变化，请重新打开预约提示后重试。');
         return Promise.resolve(false);
       }
-      return writeReservation(item, true).then(function () {
+      return writeReservation(item, true).then(function (result) {
         if (epoch !== accountEpoch) {
           document.getElementById('confirm-copy').textContent = uiText('content.reserveAccountChanged', '预约未确认成功：账号状态已变化，请重新打开预约提示后重试。');
           return false;
         }
+        if (!result.confirmed) { showNotice(reservationPendingMessage()); return true; }
         item.reserved = true; rememberReservationOverride(item, true); reservationPager.loaded = false; calendarPager.loaded = false;
         // Keep a known count stable while the upstream subscription list
         // catches up. If no count is known, the next response adds the one
@@ -5252,9 +5253,12 @@
     var options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: item.reservation_id, reserved: reserved }) };
     if (signal) options.signal = signal;
     return fetchData('/api/v1/reservation', options).then(function (result) {
-      if (!result.confirmed) throw new Error(apiError(result, 200, 'ui.reservationListUnconfirmed', '红果预约列表暂未确认这条记录，请稍后刷新核对'));
+      if (!result.accepted) throw new Error(apiError(result, 200, 'common.operationFailed', '红果未接受预约请求'));
       return result;
     });
+  }
+  function reservationPendingMessage() {
+    return uiText('ui.reservationPending', '预约请求已提交，但红果列表尚未确认。请稍后到“我的预约 → 待上线”刷新核对。');
   }
   function applyReservationOverride(item) {
     var id = item && item.reservation_id;
@@ -5335,8 +5339,9 @@
     var originPage = pageMode(); var hadFocus = document.activeElement === button;
     button.disabled = true; button.textContent = reserve ? uiText('ui.reservationInProgress', '正在预约…') : uiText('ui.reservationCanceling', '正在取消…');
     writeReservation(item, reserve)
-      .then(function () {
+      .then(function (result) {
         if (epoch !== accountEpoch) return;
+        if (!result.confirmed) { showNotice(reservationPendingMessage()); return; }
         item.reserved = reserve;
         rememberReservationOverride(item, reserve);
         if (reservationCounts.upcoming !== null && item.upcoming) { reservationCounts.upcoming = Math.max(0, reservationCounts.upcoming + (reserve ? 1 : -1)); updateReservationCounts({}); }
@@ -5817,8 +5822,9 @@
     var generation = seriesGeneration; var epoch = accountEpoch; var reserved = !item.reserved;
     var request = new AbortController(); seriesReservationRequest = request; seriesReservationID = item.reservation_id;
     updateSeriesRows(); seriesMessage('');
-    writeReservation(item, reserved, request.signal).then(function () {
+    writeReservation(item, reserved, request.signal).then(function (result) {
       if (epoch !== accountEpoch || generation !== seriesGeneration || !detailModalOpen) return;
+      if (!result.confirmed) { seriesMessage(reservationPendingMessage()); return; }
       item.reserved = reserved; rememberReservationOverride(item, reserved); updateSeasonReservation(item.reservation_id, reserved);
       reservationPager.loaded = false; calendarPager.loaded = false;
       if (reservationCounts.upcoming !== null) { reservationCounts.upcoming = Math.max(0, reservationCounts.upcoming + (reserved ? 1 : -1)); updateReservationCounts({}); }
