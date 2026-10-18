@@ -1796,10 +1796,10 @@
     return handled;
   }
 
-  function switchPlayerEpisode(step) {
+  function switchPlayerEpisode(step, fromWheel) {
     var playerMode = pageMode() === 'player';
     var fullscreenRecommendation = pageMode() === 'recommend' && shell.classList.contains('is-cinema');
-    if ((!playerMode && !fullscreenRecommendation) || zoneOf(document.activeElement) !== 'feed' ||
+    if ((!playerMode && !fullscreenRecommendation) || (!fromWheel && zoneOf(document.activeElement) !== 'feed') ||
       detailModalOpen || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || playerOptionsOpen || confirmOpen || discussionOpen) return false;
     step = Number(step);
     if (step !== -1 && step !== 1) return false;
@@ -6348,6 +6348,16 @@
   });
   document.getElementById('hero-feed-focus').addEventListener('click', toggleVideo);
   installRecommendationGestures();
+  if (desktopShell && window.HongguoEpisodeWheel) {
+    window.HongguoEpisodeWheel.attach(document.getElementById('hero'), {
+      isEnabled: function () {
+        return pageMode() === 'player' && !detailModalOpen && !playerOptionsOpen && !confirmOpen &&
+          !discussionOpen && !scanModalOpen() && !supportModalOpen && !accountCountryModalOpen &&
+          !accountKeypadOpen() && !rankFilterOpen && !detailCastOpen && !actorWorksOpen;
+      },
+      onStep: function (step) { switchPlayerEpisode(step, true); }
+    });
+  }
   document.getElementById('player-options-close').addEventListener('click', function () { closePlayerOptions(); });
   document.getElementById('player-diagnostics-close').addEventListener('click', function () { closePlayerOptions(); });
   document.getElementById('player-diagnostics-refresh').addEventListener('click', refreshPlaybackDiagnostics);
