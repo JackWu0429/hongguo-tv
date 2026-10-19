@@ -71,7 +71,7 @@ type desktopUpdater struct {
 
 func newDesktopUpdater(code int, dataDir, downloads, platform string) *desktopUpdater {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &desktopUpdater{currentCode: code, platform: platform, downloads: downloads, stateFile: filepath.Join(dataDir, "desktop-update-v2-check.json"), ctx: ctx, cancel: cancel,
+	u := &desktopUpdater{currentCode: code, platform: platform, downloads: downloads, stateFile: filepath.Join(dataDir, "desktop-update-v2-check.json"), ctx: ctx, cancel: cancel,
 		client: &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, DialContext: (&net.Dialer{Timeout: 20 * time.Second}).DialContext, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 30 * time.Second}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 8 {
 				return errors.New("too many redirects")
@@ -81,16 +81,28 @@ func newDesktopUpdater(code int, dataDir, downloads, platform string) *desktopUp
 			}
 			return nil
 		}}, status: updateStatus{Supported: true, Desktop: true, State: "idle", CurrentVersion: desktopVersion, Message: "每天自动检查一次；播放时不打扰。下载后请自行解压替换。"}}
+	if platform != "macos-universal" && platform != "windows-amd64" {
+		u.status.Supported = false
+		u.status.State = "unsupported"
+		u.status.Message = ""
+	}
+	return u
 }
 func desktopPlatform() string {
 	if runtime.GOOS == "darwin" {
 		return "macos-universal"
 	}
-	return "windows-amd64"
+	if runtime.GOOS == "windows" {
+		return "windows-amd64"
+	}
+	return runtime.GOOS + "-" + runtime.GOARCH
 }
 func (u *desktopUpdater) snapshot() updateStatus { u.mu.Lock(); defer u.mu.Unlock(); return u.status }
 func (u *desktopUpdater) close()                 { u.cancel() }
 func (u *desktopUpdater) automatic() {
+	if !u.snapshot().Supported {
+		return
+	}
 	var saved struct {
 		LastCheck int64            `json:"last_check"`
 		Manifest  *desktopManifest `json:"manifest"`
@@ -107,7 +119,7 @@ func (u *desktopUpdater) automatic() {
 }
 func (u *desktopUpdater) check() {
 	u.mu.Lock()
-	if u.busy {
+	if !u.status.Supported || u.busy {
 		u.mu.Unlock()
 		return
 	}
@@ -235,7 +247,7 @@ func (u *desktopUpdater) fail(message string, keepTarget bool) {
 }
 func (u *desktopUpdater) download() {
 	u.mu.Lock()
-	if u.busy || u.target == nil || u.target.Code <= u.currentCode {
+	if !u.status.Supported || u.busy || u.target == nil || u.target.Code <= u.currentCode {
 		u.mu.Unlock()
 		return
 	}

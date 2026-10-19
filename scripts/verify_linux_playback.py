@@ -3,6 +3,7 @@
 import array
 import json
 import math
+import os
 import sys
 import wave
 from pathlib import Path
@@ -12,10 +13,19 @@ from PIL import Image, ImageChops, ImageStat
 root = Path(sys.argv[1])
 report = json.loads((root / "playback.json").read_text())
 evidence = {"ok": bool(report.get("ok")), "pictures": {}, "audio": {}, "limits": [
-    "Ubuntu 24.04 x86_64 / Xvfb / software graphics and decoding",
+    os.environ.get("HONGGUO_PROBE_ENVIRONMENT", "Ubuntu 24.04 x86_64 / Xvfb / software graphics and decoding"),
     "PulseAudio null sink validates PCM, not physical speaker output",
-    "Does not validate physical GPUs, other distributions, or packaged installers",
+    "Does not validate physical GPUs, other untested distributions, or desktop installation integration",
 ]}
+if os.environ.get("HONGGUO_PROBE_REQUIRE_AUTOPLAY") == "1":
+    evidence["autoplay"] = report.get("requireAutoplay") is True and report.get("pausedBeforeUserGesture") is False and not report.get("initialUserPlay")
+    if not evidence["autoplay"]:
+        evidence["ok"] = False
+if os.environ.get("HONGGUO_PROBE_APPIMAGE") == "1":
+    evidence["appimage"] = report.get("appimage") is True
+    evidence["linux_updater_disabled"] = report.get("updaterSupported") is False
+    if not evidence["appimage"] or not evidence["linux_updater_disabled"]:
+        evidence["ok"] = False
 for stage in ("first-a", "first-b", "after-seek", "second-a", "second-b"):
     try:
         sample = json.loads((root / (stage + ".json")).read_text())["sample"]

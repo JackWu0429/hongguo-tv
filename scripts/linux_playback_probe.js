@@ -105,8 +105,11 @@
       }, 100000);
       await sleep(700);
       report.pausedBeforeUserGesture = video.paused;
+      var requirements = await send('heartbeat', {});
+      report.requireAutoplay = requirements.requireAutoplay === true;
       report.nativeWindowState = JSON.parse(await window.go.main.desktopApp.GetWindowState());
       if (video.paused) {
+        if (report.requireAutoplay) throw new Error('Linux package did not start playback automatically');
         document.getElementById('hero-feed-focus').focus();
         report.initialUserPlay = await send('activate', {});
       }

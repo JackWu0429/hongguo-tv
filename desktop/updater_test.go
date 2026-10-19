@@ -18,6 +18,22 @@ import (
 
 type updateTransport func(*http.Request) (*http.Response, error)
 
+func TestLinuxUpdaterNeverUsesWindowsChannel(t *testing.T) {
+	u := newDesktopUpdater(0, t.TempDir(), t.TempDir(), "linux-amd64")
+	defer u.close()
+	u.client.Transport = updateTransport(func(*http.Request) (*http.Response, error) {
+		t.Error("unsupported Linux updater made a network request")
+		return nil, io.EOF
+	})
+	u.automatic()
+	u.check()
+	u.download()
+	status := u.snapshot()
+	if status.Supported || status.State != "unsupported" || status.File != "" || u.busy {
+		t.Fatalf("unexpected Linux updater state: %+v", status)
+	}
+}
+
 func (f updateTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 func response(r *http.Request, status int, data []byte) *http.Response {
 	return &http.Response{StatusCode: status, Body: io.NopCloser(bytes.NewReader(data)), Header: make(http.Header), ContentLength: int64(len(data)), Request: r}

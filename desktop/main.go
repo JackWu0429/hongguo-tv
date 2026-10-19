@@ -38,6 +38,7 @@ type desktopApp struct {
 
 func (a *desktopApp) startup(ctx context.Context) {
 	a.ctx = ctx
+	configureDesktopMedia()
 	a.core.start()
 	go a.updater.automatic()
 }
@@ -76,6 +77,8 @@ func (a *desktopApp) OpenUpdateFolder() {
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
 		cmd = exec.Command("explorer.exe", directory)
+	} else if runtime.GOOS == "linux" {
+		cmd = exec.Command("xdg-open", directory)
 	} else {
 		cmd = exec.Command("/usr/bin/open", directory)
 	}
@@ -119,6 +122,9 @@ func (a *desktopApp) beforeClose(ctx context.Context) bool {
 }
 
 func main() {
+	if runDesktopDiagnosticMode() {
+		return
+	}
 	dataDir, err := desktopDataDir()
 	if err != nil {
 		log.Fatal(err)
@@ -132,7 +138,17 @@ func main() {
 		log.Fatal(err)
 	}
 	app := &desktopApp{core: newCoreHost(), updater: newDesktopUpdater(code, dataDir, downloads, desktopPlatform())}
-	err = wails.Run(&options.App{
+	err = wails.Run(desktopOptions(app, dataDir))
+	if err != nil {
+		app.core.stop()
+		log.Fatal(err)
+	}
+}
+
+func desktopOptions(app *desktopApp, dataDir string) *options.App {
+	// On Linux, queue configuration before the WebView's initial navigation.
+	configureDesktopMedia()
+	return &options.App{
 		Title: "红果短剧", Width: 1280, Height: 800, MinWidth: 960, MinHeight: 540,
 		BackgroundColour: options.NewRGB(12, 13, 18),
 		// No Assets filesystem: the core's embedded index is the actual page.
@@ -147,10 +163,6 @@ func main() {
 				wruntime.WindowUnminimise(app.ctx)
 			}
 		}},
-	})
-	if err != nil {
-		app.core.stop()
-		log.Fatal(err)
 	}
 }
 
