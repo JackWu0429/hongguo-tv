@@ -9,6 +9,25 @@ permissions:
   contents: read
 
 jobs:
+  desktop-compatibility:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache-dependency-path: desktop/go.sum
+      - run: node frontend/build.mjs
+      - run: go test -tags production ./...
+
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
