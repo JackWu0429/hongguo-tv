@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +25,10 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+type linuxProbeBridge struct{ dispatch func(string) string }
+
+func (b *linuxProbeBridge) Dispatch(message string) string { return b.dispatch(message) }
 
 func TestLinuxPlaybackProbe(t *testing.T) {
 	output := os.Getenv("HONGGUO_PROBE_OUTPUT")
@@ -41,6 +47,7 @@ func TestLinuxPlaybackProbe(t *testing.T) {
 	app.core.dataDir = data
 	var mu sync.Mutex
 	var result map[string]interface{}
+	var heartbeat map[string]interface{}
 	var quit sync.Once
 	finished := make(chan struct{})
 	finish := func(ctx context.Context) {
@@ -49,7 +56,10 @@ func TestLinuxPlaybackProbe(t *testing.T) {
 	mediaPath := regexp.MustCompile(`^/minireel-proxy/media/[a-zA-Z0-9_-]+\.mp4$`)
 	stageName := regexp.MustCompile(`^(first-a|first-b|after-seek|second-a|second-b|failure)$`)
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/__linux_probe/capture" && r.URL.Path != "/__linux_probe/report" {
+		if r.URL.Path != "/__linux_probe/capture" && r.URL.Path != "/__linux_probe/report" && r.URL.Path != "/__linux_probe/heartbeat" {
+			if !desktopRequestAllowed(r) {
+				t.Logf("shell request rejected: method=%s path=%s host=%s origin=%s", r.Method, r.URL.Path, r.Host, r.Header.Get("Origin"))
+			}
 			app.core.proxy(w, r)
 			return
 		}
@@ -63,6 +73,13 @@ func TestLinuxPlaybackProbe(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/__linux_probe/heartbeat" {
+			mu.Lock()
+			heartbeat = payload
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
 		if r.URL.Path == "/__linux_probe/report" {
 			mu.Lock()
 			result = payload
@@ -103,29 +120,56 @@ func TestLinuxPlaybackProbe(t *testing.T) {
 		_ = os.WriteFile(filepath.Join(output, stage+".json"), encoded, 0600)
 		_ = json.NewEncoder(w).Encode(capture)
 	})
+	bridge := &linuxProbeBridge{dispatch: func(message string) string {
+		var request struct {
+			Kind    string          `json:"kind"`
+			Payload json.RawMessage `json:"payload"`
+		}
+		if json.Unmarshal([]byte(message), &request) != nil || (request.Kind != "heartbeat" && request.Kind != "capture" && request.Kind != "report") {
+			return `{"error":"invalid diagnostic message"}`
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest("POST", "http://wails.localhost/__linux_probe/"+request.Kind, strings.NewReader(string(request.Payload))))
+		return response.Body.String()
+	}}
 	err = wails.Run(&options.App{
 		Title: "Hongguo Linux playback validation", Width: 1280, Height: 800,
 		WindowStartState: options.Fullscreen,
 		BackgroundColour: options.NewRGB(12, 13, 18),
-		AssetServer:      &assetserver.Options{Handler: handler}, Bind: []interface{}{app},
+		AssetServer:      &assetserver.Options{Handler: handler}, Bind: []interface{}{app, bridge},
 		OnStartup: func(ctx context.Context) {
 			app.ctx = ctx
 			app.core.start()
 			// Do not invoke the macOS/Windows updater in a Linux experiment.
 			go func() {
-				select {
-				case <-finished:
-				case <-time.After(5 * time.Minute):
-					mu.Lock()
-					result = map[string]interface{}{"ok": false, "failure": "native window or JavaScript probe timed out"}
-					encoded, _ := json.MarshalIndent(result, "", "  ")
-					_ = os.WriteFile(filepath.Join(output, "playback.json"), encoded, 0600)
-					mu.Unlock()
-					finish(ctx)
+				ticker := time.NewTicker(2 * time.Second)
+				defer ticker.Stop()
+				timeout := time.NewTimer(5 * time.Minute)
+				defer timeout.Stop()
+				for {
+					select {
+					case <-finished:
+						return
+					case <-ticker.C:
+						wruntime.WindowExecJS(ctx, string(script))
+					case <-timeout.C:
+						mu.Lock()
+						app.core.mu.RLock()
+						result = map[string]interface{}{"ok": false, "failure": "native window or JavaScript probe timed out", "heartbeat": heartbeat, "core_ready": app.core.baseURL != "", "core_failure": app.core.failure}
+						app.core.mu.RUnlock()
+						encoded, _ := json.MarshalIndent(result, "", "  ")
+						_ = os.WriteFile(filepath.Join(output, "playback.json"), encoded, 0600)
+						mu.Unlock()
+						captureCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+						_ = exec.CommandContext(captureCtx, "import", "-window", "root", filepath.Join(output, "failure.png")).Run()
+						cancel()
+						finish(ctx)
+						return
+					}
 				}
 			}()
 		},
-		OnDomReady: func(ctx context.Context) { wruntime.WindowExecJS(ctx, string(script)) },
+		OnDomReady: func(ctx context.Context) { t.Log("native document ready"); wruntime.WindowExecJS(ctx, string(script)) },
 		OnShutdown: app.shutdown,
 	})
 	if err != nil {

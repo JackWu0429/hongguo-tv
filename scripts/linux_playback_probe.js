@@ -1,7 +1,17 @@
 (function () {
   'use strict';
   // Executed only by the opt-in native Linux test after each navigation.
-  if (!window.HongguoTV || window.__linuxPlaybackProbe) return;
+  function send(kind, payload) {
+    return window.go.main.linuxProbeBridge.Dispatch(JSON.stringify({ kind: kind, payload: payload })).then(JSON.parse);
+  }
+  if (!window.HongguoTV) {
+    if (window.go && window.go.main && window.go.main.linuxProbeBridge) {
+      send('heartbeat', { appReady: false, readyState: document.readyState, path: location.pathname,
+        text: document.body ? document.body.innerText.slice(0, 800) : '' });
+    }
+    return;
+  }
+  if (window.__linuxPlaybackProbe) return;
   window.__linuxPlaybackProbe = true;
   var report = { ok: false, engine: 'Wails 2 / WebKitGTK', userAgent: navigator.userAgent,
     series_id: '7696023326375808024', steps: [], events: [], requests: [] };
@@ -74,11 +84,7 @@
   async function capture(stage) {
     var data = sample(); data.stage = stage;
     try { data.media_path = new URL(video.currentSrc || video.src).pathname; } catch (ignored) {}
-    var response = await originalFetch('/__linux_probe/capture', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
-    });
-    if (!response.ok) throw new Error('native capture failed: ' + response.status);
-    var captured = await response.json();
+    var captured = await send('capture', data);
     report.steps.push(captured);
     return data;
   }
@@ -122,8 +128,6 @@
       report.last = sample();
       try { await capture('failure'); } catch (ignored) {}
     }
-    await originalFetch('/__linux_probe/report', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(report)
-    });
+    await send('report', report);
   }());
 }());
