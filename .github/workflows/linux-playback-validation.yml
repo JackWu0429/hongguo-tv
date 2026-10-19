@@ -13,11 +13,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 18
     env:
-      HONGGUO_PROBE_OUTPUT: ${{ runner.temp }}/linux-playback-evidence
-      HONGGUO_CORE_PATH: ${{ runner.temp }}/hongguo-tv-core
+      HONGGUO_PROBE_OUTPUT: ${{ github.workspace }}/tmp/linux-playback-evidence
+      HONGGUO_CORE_PATH: ${{ github.workspace }}/tmp/linux-playback-core
       HONGGUO_PROBE_JS: ${{ github.workspace }}/scripts/linux_playback_probe.js
-      XDG_CACHE_HOME: ${{ runner.temp }}/linux-playback-cache
-      XDG_CONFIG_HOME: ${{ runner.temp }}/linux-playback-config
+      XDG_CACHE_HOME: ${{ github.workspace }}/tmp/linux-playback-cache
+      XDG_CONFIG_HOME: ${{ github.workspace }}/tmp/linux-playback-config
       LIBGL_ALWAYS_SOFTWARE: '1'
       # Exercise the software HEVC decoder, without relying on runner GPU drivers.
       GST_PLUGIN_FEATURE_RANK: avdec_h265:300,avdec_h264:300
