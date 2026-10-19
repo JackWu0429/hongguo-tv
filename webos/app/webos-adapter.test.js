@@ -11,6 +11,7 @@ var listeners = {};
 var documentListeners = {};
 var fetchCalls = [];
 var lunaOptions = [];
+var failNextPingWithTimeout = false;
 var healthPayload = { ok: true, ready: true, port: 7655 };
 var healthFails = false;
 var window = {
@@ -32,7 +33,13 @@ var window = {
   webOS: { service: { request: function (uri, options) {
     lunaCalls.push(uri);
     lunaOptions.push(options);
+    if (options.method === 'ping' && failNextPingWithTimeout) {
+      failNextPingWithTimeout = false;
+      setTimeout(function () { options.onFailure({ errorCode: 'LUNA_TIMEOUT', errorText: 'Luna 命令响应超时' }); }, 0);
+      return {};
+    }
     setTimeout(function () { options.onSuccess({ returnValue: true, ok: true, ready: true }); }, 0);
+    return {};
   } } }
 };
 window.HTMLMediaElement.prototype = {};
@@ -70,6 +77,12 @@ async function run() {
   assert.strictEqual(fetchCalls[0].input, 'http://127.0.0.1:7655/api/v1/health', 'health is checked after Luna ping');
   assert.strictEqual(fetchCalls[1].input, 'http://127.0.0.1:7655/api/v1/lists/recommend');
   assert.strictEqual(window.HongguoWebOS.getDiagnostic().code, 'READY');
+
+  failNextPingWithTimeout = true;
+  documentListeners.visibilitychange();
+  await window.HongguoWebOS.wakeService();
+  assert.strictEqual(window.HongguoWebOS.getDiagnostic().code, 'READY', 'a timed-out cold-start ping is retried once before the service is marked unavailable');
+  assert.strictEqual(lunaOptions.filter(function (options) { return options.method === 'ping'; }).length, 3, 'the delayed service is reached by the bounded retry');
 
   var lunaRequest = window.webOS.service.request;
   window.webOS.service.request = function (uri, options) {

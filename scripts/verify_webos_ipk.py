@@ -2,6 +2,7 @@
 """Verify the app and JavaScript Service entry points inside a webOS IPK."""
 
 import json
+import re
 import sys
 import tarfile
 from io import BytesIO
@@ -105,6 +106,11 @@ def main():
         adapter = adapter_stream.read().decode("utf-8")
         if "getDiagnostic" not in adapter or "/api/v1/health" not in adapter or "HEALTH_NOT_READY" not in adapter:
             fail("packaged adapter must verify HTTP readiness and expose diagnostics")
+        version_pattern = r"appVersion\s*:\s*['\"]" + re.escape(str(appinfo.get("version", ""))) + r"['\"]"
+        if re.search(version_pattern, adapter) is None:
+            fail("packaged adapter app version must match appinfo.json")
+        if 'id="core-connection-modal"' not in index or 'id="core-connection-retry"' not in index or 'id="core-connection-close"' not in index:
+            fail("packaged UI must include the connection diagnostic modal and actions")
     services = packageinfo.get("services", [])
     if "com.aston314.hongguo.webos.service" not in services:
         fail("package does not register the HTTP service")

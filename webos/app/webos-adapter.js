@@ -6,6 +6,8 @@
   // service boundary instead of changing product code for this platform.
   var SERVICE_BASE = 'http://127.0.0.1:7655';
   var SERVICE_URI = 'luna://com.aston314.hongguo.webos.service';
+  var LUNA_REQUEST_TIMEOUT_MS = 8000;
+  var LUNA_TIMEOUT_RETRIES = 1;
   var rawFetch = window.fetch;
   var xhrPrototype = window.XMLHttpRequest && window.XMLHttpRequest.prototype;
   var rawXHROpen = xhrPrototype && xhrPrototype.open;
@@ -37,6 +39,7 @@
   window.HongguoWebOS = {
     platform: 'webos',
     serviceBase: SERVICE_BASE,
+    appVersion: '',
     experimental: true,
     playbackVerified: false,
     capabilities: ['web-ui', 'luna-service', 'html5-video', 'local-media-proxy-boundary']
@@ -108,7 +111,7 @@
           onSuccess: done,
           onFailure: function (error) { done(null, error || { errorCode: 'LUNA_REQUEST_FAILED' }); }
         }));
-        timer = window.setTimeout(function () { done(null, { errorCode: 'LUNA_TIMEOUT', errorText: 'Luna 命令响应超时' }); }, 5000);
+        timer = window.setTimeout(function () { done(null, { errorCode: 'LUNA_TIMEOUT', errorText: 'Luna 命令响应超时' }); }, LUNA_REQUEST_TIMEOUT_MS);
         return;
       }
       if (window.PalmServiceBridge) {
@@ -120,7 +123,7 @@
           } catch (ignoredJSON) { done(null, { errorCode: 'LUNA_INVALID_RESPONSE', errorText: 'Luna 返回了无效响应' }); }
         };
         bridge.call(SERVICE_URI + '/' + method, '{}');
-        timer = window.setTimeout(function () { done(null, { errorCode: 'LUNA_TIMEOUT', errorText: 'Luna 命令响应超时' }); }, 5000);
+        timer = window.setTimeout(function () { done(null, { errorCode: 'LUNA_TIMEOUT', errorText: 'Luna 命令响应超时' }); }, LUNA_REQUEST_TIMEOUT_MS);
         return;
       }
     } catch (error) { done(null, { errorCode: 'LUNA_REQUEST_EXCEPTION', errorText: error && error.message || String(error) }); return; }
@@ -130,15 +133,24 @@
   function wakeService() {
     if (serviceWake) return serviceWake;
     serviceWake = new Promise(function (resolve, reject) {
-      requestService('ping', function (response, failure) {
-        if (failure || !response || response.returnValue !== true || response.ready !== true) {
-          var code = failure && (failure.error || failure.errorCode || failure.code) || response && (response.error || response.code) || 'LUNA_NOT_READY';
-          var message = failure && (failure.message || failure.errorText) || response && (response.message || response.errorText) || 'Luna ping 未返回 ready=true';
-          reject(diagnosticError(response && response.stage || 'luna_ping', String(code), String(message)));
-          return;
-        }
-        checkHealth().then(resolve, reject);
-      });
+      var attempt = 0;
+      function ping() {
+        attempt += 1;
+        requestService('ping', function (response, failure) {
+          if (failure || !response || response.returnValue !== true || response.ready !== true) {
+            var code = failure && (failure.error || failure.errorCode || failure.code) || response && (response.error || response.code) || 'LUNA_NOT_READY';
+            var message = failure && (failure.message || failure.errorText) || response && (response.message || response.errorText) || 'Luna ping 未返回 ready=true';
+            if (String(code) === 'LUNA_TIMEOUT' && attempt <= LUNA_TIMEOUT_RETRIES) {
+              window.setTimeout(ping, 300);
+              return;
+            }
+            reject(diagnosticError(response && response.stage || 'luna_ping', String(code), String(message)));
+            return;
+          }
+          checkHealth().then(resolve, reject);
+        });
+      }
+      ping();
     });
     serviceWake.then(function () {
       window.setTimeout(function () { serviceWake = null; }, 1000);

@@ -28,6 +28,7 @@ if (servicePackage.name !== service.services[0].name || servicePackage.main !== 
 if (servicePackage.version !== app.version) fail('service package version must match app version');
 if (!fs.existsSync(path.join(root, 'webos', 'service', servicePackage.main))) fail('service entry point is missing');
 var index = read(path.join(root, 'core', 'cmd', 'hongguotv', 'ui', 'index.html'));
+['core-connection-modal', 'core-connection-scroll', 'core-connection-retry', 'core-connection-close'].forEach(function (id) { if (index.indexOf('id="' + id + '"') < 0) fail('shared UI missing connection diagnostic element ' + id); });
 var scripts = [];
 index.replace(/(?:src|href)=["']([^"']+)["']/g, function (_, value) { if (/\.(?:js|css)$/.test(value)) scripts.push(value.replace(/^\//, '')); return value; });
 if (scripts.length < 10) fail('shared UI asset list unexpectedly small');
@@ -35,6 +36,7 @@ if (scripts.indexOf('auto-cinema.js') < 0) fail('auto cinema preference module i
 if (!fs.existsSync(path.join(root, 'webos', 'app', 'webos-adapter.js'))) fail('webOS adapter missing');
 if (!fs.existsSync(path.join(root, 'webos', 'app', 'webOSTVjs-1.2.13', 'webOSTV.js'))) fail('official webOSTV.js library missing');
 var adapter = read(path.join(root, 'webos', 'app', 'webos-adapter.js'));
+if (adapter.indexOf("appVersion: ''") < 0) fail('webOS adapter is missing the build version placeholder');
 if (adapter.indexOf('playbackVerified: false') < 0 || adapter.indexOf('isAvailable: function () { return false; }') < 0) fail('adapter must keep native playback disabled');
 if (adapter.indexOf('PalmServiceBridge') < 0 || adapter.indexOf('wakeService') < 0 || adapter.indexOf('XMLHttpRequest') < 0 || adapter.indexOf('method: method') < 0 || adapter.indexOf('/api/v1/health') < 0 || adapter.indexOf('getDiagnostic') < 0) fail('adapter must expose compatible Luna and HTTP health diagnostics before fetch and XHR calls');
 var serviceJs = read(path.join(root, 'webos', 'service', 'service.js'));
