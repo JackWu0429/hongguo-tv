@@ -428,6 +428,11 @@
     try { return Promise.resolve(video.play()); } catch (error) { return Promise.reject(error); }
   }
 
+  function stageNativePlaybackStartPosition(position) {
+    var adapter = typeof window !== 'undefined' ? window.HongguoNativePlaybackAdapter : null;
+    if (adapter && typeof adapter.setStartPosition === 'function') adapter.setStartPosition(position);
+  }
+
   function fetchData(url, options) {
     return fetch(url, options).then(function (response) {
       return response.json().then(function (payload) {
@@ -2348,7 +2353,7 @@
       playbackPreferences.quality = value; savePlaybackPreferences();
       if (playbackRequest) playbackRequest.position = position;
       bindPlaybackPresentation(playback, data.path);
-      video.src = data.path; video.load(); updatePlaybackControls(); closePlayerOptions();
+      video.src = data.path; stageNativePlaybackStartPosition(position); video.load(); updatePlaybackControls(); closePlayerOptions();
       setPlayerStatus(episodeLoadingText(playback.episode));
       if (previous.playing && !applicationHidden() && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus(''); revealControls(); });
     }).catch(function (error) {
@@ -4204,6 +4209,7 @@
       playback.timing.ready_at = Date.now();
       bindPlaybackPresentation(playback, values[1].path);
       video.src = values[1].path;
+      stageNativePlaybackStartPosition(position);
       video.classList.add('has-source');
       video.load();
       setPlayerStatus(episodeLoadingText(playback.episode));
@@ -4371,6 +4377,7 @@
           activePlayback.rangeFallback = data.range_fallback || '';
           bindPlaybackPresentation(activePlayback, data.path);
           video.src = data.path;
+          stageNativePlaybackStartPosition(activePlayback.position);
           playbackQuality = data.quality || '';
           playbackQualities = data.qualities || [];
           if (playbackPreferences.quality && playbackQuality !== playbackPreferences.quality) showNotice(uiText('content.qualityMissing', '本集没有 {quality}，使用 {fallback}', { quality: playbackPreferences.quality, fallback: playbackQuality || uiText('ui.autoQuality', '自动清晰度') }));
@@ -6828,7 +6835,9 @@
   media.addEventListener('loadedmetadata', function () {
     if (!activePlayback || activePlayback.generation !== feedGeneration) return;
     var position = activePlayback.position;
-    if (position > 0 && Number.isFinite(media.duration)) media.currentTime = Math.min(position, Math.max(0, media.duration - .25));
+    var adapter = typeof window !== 'undefined' ? window.HongguoNativePlaybackAdapter : null;
+    var nativeStartPosition = adapter && typeof adapter.isNative === 'function' && adapter.isNative();
+    if (!nativeStartPosition && position > 0 && Number.isFinite(media.duration)) media.currentTime = Math.min(position, Math.max(0, media.duration - .25));
     media.playbackRate = playbackPreferences.speed;
     updatePlaybackControls();
   });

@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/native-player.js'), 'utf8');
+const appSource = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'), 'utf8');
 const mpvBridgeSource = fs.readFileSync(require.resolve('../android/app/src/mpv/java/rocks/aston/hongguotv/MpvPlayerBridge.java'), 'utf8');
 const mpvTransitionSource = fs.readFileSync(require.resolve('../android/app/src/mpv/java/rocks/aston/hongguotv/MpvTransitionState.java'), 'utf8');
 
@@ -97,6 +98,16 @@ test('WebView media error switches to Media3 once and keeps the playback positio
   assert.equal(f.bridge.lastId, nativeId);
 });
 
+test('Media3 fallback uses the staged resume position before WebView playback advances', () => {
+  const f = fixture(), video = f.document.getElementById('hero-video');
+  video.src = '/media/history.mp4';
+  f.context.window.HongguoNativePlaybackAdapter.setStartPosition(42.5);
+  video.load();
+  video.play();
+  f.listeners.error[0]({ type: 'error' });
+  assert.equal(f.bridge.lastPayload.start_position, 42.5);
+});
+
 test('native playback failure restores the visible WebView video layer', () => {
   const f = fixture();
   const proxy = f.document.getElementById('hero-video');
@@ -146,6 +157,33 @@ test('MPV edition sends sources only to MPV and resumes without recreating befor
   assert.equal(f.bridge.resumes, 1);
   assert.equal(f.bridge.lastPayload.start_position, 12.5);
   assert.equal(f.bridge.lastPayload.source, 'http://127.0.0.1/media/test.mp4');
+});
+
+test('native playback preserves a staged history position across source load', async () => {
+  const f = fixture('mpv'), video = f.document.getElementById('hero-video');
+  video.src = '/media/history.mp4';
+  f.context.window.HongguoNativePlaybackAdapter.setStartPosition(12.5);
+  video.load();
+  await video.play();
+  assert.equal(f.bridge.lastPayload.start_position, 12.5);
+});
+
+test('explicit zero position clears a previously staged native resume position', async () => {
+  const f = fixture('mpv'), video = f.document.getElementById('hero-video');
+  video.src = '/media/history.mp4';
+  f.context.window.HongguoNativePlaybackAdapter.setStartPosition(12.5);
+  video.load();
+  video.src = '/media/selected.mp4';
+  f.context.window.HongguoNativePlaybackAdapter.setStartPosition(0);
+  video.load();
+  await video.play();
+  assert.equal(f.bridge.lastPayload.start_position, 0);
+});
+
+test('app stages playback position on source changes and leaves native initial seek to the bridge', () => {
+  assert.equal((appSource.match(/stageNativePlaybackStartPosition\(/g) || []).length - 1, 3);
+  assert.match(appSource, /nativeStartPosition[\s\S]*!nativeStartPosition && position > 0/);
+  assert.match(appSource, /function stageNativePlaybackStartPosition\(position\)[\s\S]*adapter\.setStartPosition\(position\)/);
 });
 
 test('MPV source replacement ignores old frame, progress and ended callbacks', async () => {

@@ -28,7 +28,7 @@
   var listeners = {};
   var sequence = 0;
   var loadId = 'hongguo-' + (++sequence);
-  var state = { source: '', currentTime: 0, duration: NaN, paused: true, ended: false, seeking: false,
+  var state = { source: '', currentTime: 0, startPosition: 0, duration: NaN, paused: true, ended: false, seeking: false,
     readyState: 0, videoWidth: 0, videoHeight: 0, seekPending: false, playbackRate: 1, volume: 1, muted: true, started: false };
   if (fixedNative) { usingNative = true; document.documentElement.classList.add('native-playback'); }
 
@@ -82,6 +82,7 @@
     clearFallbackTimer();
     var source = state.source || domVideo.currentSrc || domVideo.src;
     var position = Number(domVideo.currentTime);
+    if ((!isFinite(position) || position <= 0) && state.startPosition > 0) position = state.startPosition;
     if (!isFinite(position) || position < 0) position = 0;
     var paused = !!domVideo.paused;
     state.source = source || state.source;
@@ -141,7 +142,7 @@
     }
     nativeAttempted = false;
     state.source = next;
-    state.currentTime = 0; state.duration = NaN; state.paused = true; state.ended = false;
+    state.currentTime = 0; state.startPosition = 0; state.duration = NaN; state.paused = true; state.ended = false;
     state.seeking = false; state.readyState = 0; state.videoWidth = 0; state.videoHeight = 0;
     state.seekPending = false; state.started = false;
     // The MPV edition never loads media into WebView, including between episodes.
@@ -174,7 +175,7 @@
       loadId = 'hongguo-' + (++sequence);
       nativeRequested = false;
       proxy.error = null;
-      state.currentTime = 0; state.duration = NaN; state.paused = true; state.ended = false; state.seeking = false;
+      state.currentTime = state.startPosition; state.duration = NaN; state.paused = true; state.ended = false; state.seeking = false;
       state.readyState = 0; state.videoWidth = 0; state.videoHeight = 0; state.seekPending = false; state.started = false;
       try { bridge.begin(loadId); } catch (ignored) {}
       dispatch('emptied');
@@ -289,6 +290,12 @@
     enabled: true,
     engine: fixedNative ? 'mpv' : 'webview_media3',
     video: function () { return proxy; },
+    isNative: isNative,
+    setStartPosition: function (seconds) {
+      var value = Number(seconds);
+      state.startPosition = isFinite(value) && value > 0 ? Math.min(value, 86400) : 0;
+      if (isNative()) state.currentTime = state.startPosition;
+    },
     syncBounds: syncBounds,
     enableNative: function () { return startNativeFallback(true); }
   };

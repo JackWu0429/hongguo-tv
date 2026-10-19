@@ -50,6 +50,7 @@ function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,d
     function basicDrama(x){return x}function firstVid(x){return x.vid_list[0]}
     function getDetail(x){return ${detailGate ? 'detailGate.promise.then(function () { return x; })' : 'Promise.resolve(x)'}}function libraryEntry(){return null}function resumeEpisode(){return 1}
     function closePlayerOptions(){}function closeDiscussion(){}function resetDanmaku(){}function cancelPlaybackPreparation(){}
+    function stageNativePlaybackStartPosition(){}
     function cancelPendingAutoCinema(){autoCinemaCandidate=false;autoCinemaGeneration=0;autoCinemaSession=null}function finishAutoCinema(){}
     function clearRangeTransitionHint(){}function waitForPlaybackPrefetch(handoff){return handoff ? handoff.promise : Promise.resolve(null)}function recoverPlaybackAfterError(){return false}
     function updateFeedCounter(){}function setFeatured(){}function updateSeriesRows(){}function updatePlaybackControls(){}
