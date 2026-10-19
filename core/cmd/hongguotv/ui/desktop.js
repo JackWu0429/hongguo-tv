@@ -150,15 +150,18 @@
     return { refresh: refresh };
   }
   function createUpdateBridge(win, config) {
-    var status = { supported: config.platform !== 'preview', desktop: true, state: 'idle', current_version: config.version,
-      message: t('ui.updateDaily', '每天自动检查一次；下载 ZIP 后请自行解压替换。') };
+    var linux = config.platform === 'linux';
+    var status = { supported: config.platform !== 'preview' && !linux, desktop: true, state: linux ? 'unsupported' : 'idle', current_version: config.version,
+      message: linux ? t('ui.linuxManualUpdate', 'Linux 实验版请下载新版 AppImage 后手动替换。') : t('ui.updateDaily', '每天自动检查一次；下载 ZIP 后请自行解压替换。') };
     var pending = false, allowed = false;
     function app() { return win.go && win.go.main && win.go.main.desktopApp; }
     function poll() {
       if (pending || !app()) return;
       pending = true;
       Promise.resolve(app().GetUpdateStatus()).then(function (value) {
-        var next = JSON.parse(value); next.prompt_allowed = allowed; status = next;
+        var next = JSON.parse(value); next.prompt_allowed = allowed;
+        if (linux && !next.supported) next.message = t('ui.linuxManualUpdate', 'Linux 实验版请下载新版 AppImage 后手动替换。');
+        status = next;
       }).catch(function () { status.message = t('ui.updateUnavailable', '更新状态暂时不可用，请稍后重试。'); }).then(function () { pending = false; });
     }
     function invoke(method) {

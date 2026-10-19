@@ -469,6 +469,7 @@
   "content.browserUpdateOnly": "〜してください Android 正式版中確認更新",
   "content.updateUnavailable": "更新機能は現在利用できません",
   "content.updateDaily": "毎日自動で確認します。ZIPをダウンロードしたら解凍して置き換えてください。",
+  "ui.linuxManualUpdate": "Linux 実験版は、新しい AppImage をダウンロードして手動で置き換えてください。",
   "content.updateOperationFailed": "更新操作を完了できません。もう一度お試しください。",
   "content.playbackSettingsHelp": "自動デコードではハードウェアアクセラレーションを優先します。映像に問題がある場合はソフトウェアデコードを選択できます。次の再生または話数切り替えから有効になります。",
   "content.updateStateDefault": "起動後は毎日自動確認します。再生中は邪魔しません。",

@@ -632,6 +632,7 @@
   "ui.codeLabel": "簡訊驗證碼",
   "ui.desktopInputHelp": "直接輸入或粘貼手機號碼和驗證碼；按 Tab 切換，按 Enter 提交。",
   "ui.updateDaily": "每天自動檢查一次；下載 ZIP 後請自行解壓替換。",
+  "ui.linuxManualUpdate": "Linux 實驗版請下載新版 AppImage 後手動替換。",
   "ui.updateUnavailable": "更新狀態暫時不可用，請稍後重試。",
   "ui.updateFailed": "更新操作未能完成，請重試。",
   "ui.retry": "重試",

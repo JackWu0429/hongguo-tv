@@ -635,6 +635,7 @@
     'ui.codeLabel': '短信验证码',
     'ui.desktopInputHelp': '直接输入或粘贴手机号和验证码；按 Tab 切换，按 Enter 提交。',
     'ui.updateDaily': '每天自动检查一次；下载 ZIP 后请自行解压替换。',
+    'ui.linuxManualUpdate': 'Linux 实验版请下载新版 AppImage 后手动替换。',
     'ui.updateUnavailable': '更新状态暂时不可用，请稍后重试。',
     'ui.updateFailed': '更新操作未能完成，请重试。',
     'ui.retry': '重试',
