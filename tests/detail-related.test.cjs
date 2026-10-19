@@ -130,5 +130,5 @@ test('actor works dialog is a top-level overlay above the detail dialog', () => 
     } else ancestors.push(tag);
   }
   assert.match(fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8'), /\.actor-works-modal\s*\{[^}]*z-index:\s*31/);
-  assert.match(source, /function closeActorWorks\(restore\)[\s\S]*?actorWorksReturnFocus && document\.contains\(actorWorksReturnFocus\)[\s\S]*?if \(restore !== false\) goFocus\(target\)/);
+  assert.match(source, /function closeActorWorks\(restore\)[\s\S]*?actorWorksReturnFocus && document\.contains\(actorWorksReturnFocus\)[\s\S]*?if \(restore !== false\) \{\s*if \(!restoreSearchSuggestionFocus\(\)\) goFocus\(target\)/);
 });

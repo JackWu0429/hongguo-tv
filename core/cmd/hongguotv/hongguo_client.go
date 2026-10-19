@@ -129,6 +129,19 @@ type SearchResult struct {
 	Items []Drama `json:"items"`
 }
 
+type SearchSuggestion struct {
+	Kind    string `json:"kind"`
+	Key     string `json:"key"`
+	Name    string `json:"name"`
+	ActorID string `json:"actor_id,omitempty"`
+	Meta    string `json:"meta,omitempty"`
+	Drama   *Drama `json:"drama,omitempty"`
+}
+
+type SearchSuggestionsResult struct {
+	Items []SearchSuggestion `json:"items"`
+}
+
 // ActorWorksResult is returned by the public actor search page. Actor IDs are
 // kept as strings because Hongguo uses 19-digit identifiers.
 type ActorWorksResult struct {
@@ -714,6 +727,83 @@ func (c *hongguoClient) Search(ctx context.Context, query string) (SearchResult,
 		result.Items = append(result.Items, drama)
 	}
 	return result, nil
+}
+
+func (c *hongguoClient) SearchSuggestions(ctx context.Context, query string) (SearchSuggestionsResult, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return SearchSuggestionsResult{Items: []SearchSuggestion{}}, nil
+	}
+	if len([]rune(query)) > 100 {
+		return SearchSuggestionsResult{}, errors.New("搜索关键词过长")
+	}
+	params := url.Values{"app_id": {"8662"}, "query": {query}, "count": {"10"}}
+	body, err := c.getBytes(ctx, c.webBase+"/incent_resource/suggestion?"+params.Encode(), "application/json")
+	if err != nil {
+		return SearchSuggestionsResult{}, err
+	}
+	var payload struct {
+		Suggestions []map[string]any `json:"suggest_list"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&payload); err != nil {
+		return SearchSuggestionsResult{}, fmt.Errorf("解析搜索建议失败: %w", err)
+	}
+	result := SearchSuggestionsResult{Items: make([]SearchSuggestion, 0, len(payload.Suggestions))}
+	for _, row := range payload.Suggestions {
+		name := firstNonEmpty(row["name"])
+		if name == "" {
+			words := asStringSlice(row["display_words"])
+			if len(words) > 0 {
+				name = words[0]
+			}
+		}
+		if name == "" {
+			continue
+		}
+		kind := asString(row["word_type"])
+		if kind == "" {
+			kind = "common_query"
+		}
+		suggestion := SearchSuggestion{Kind: kind, Key: asString(row["keyword"]), Name: name}
+		if kind == "short_play_actor" {
+			suggestion.ActorID = suggestion.Key
+		}
+		if videoData, ok := asMap(row["video_data"]); ok && len(videoData) > 0 {
+			if drama, valid := normalizeDrama(videoData); valid {
+				suggestion.Drama = &drama
+				suggestion.Meta = suggestionMeta(videoData)
+			}
+		}
+		result.Items = append(result.Items, suggestion)
+	}
+	return result, nil
+}
+
+func suggestionMeta(videoData map[string]any) string {
+	parts := make([]string, 0, 2)
+	if categories, ok := videoData["category_list"].([]any); ok {
+		for _, category := range categories {
+			if object, ok := asMap(category); ok {
+				if name := asString(object["name"]); name != "" {
+					parts = append(parts, name)
+				}
+			}
+			if len(parts) >= 3 {
+				break
+			}
+		}
+	}
+	if hot, ok := asMap(videoData["hot_score_data"]); ok {
+		if text := asString(hot["text"]); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	if count := asInt(videoData["episode_cnt"]); count > 0 {
+		parts = append(parts, fmt.Sprintf("全%d集", count))
+	}
+	return strings.Join(parts, " · ")
 }
 
 // ActorWorks uses the public character page used by the web client. The page

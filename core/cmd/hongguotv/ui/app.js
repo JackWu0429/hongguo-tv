@@ -14,6 +14,7 @@
     controls: '.playback-buttons .control-button, #player-retry, #player-failure-diagnostics',
     timeline: '#control-progress',
     searchInput: '#search-input',
+    searchSuggestions: '.search-suggestion',
     searchActions: '.search-action',
     searchHistory: '.search-history-action',
     searchScan: '.search-scan-action',
@@ -245,6 +246,7 @@
   var searchInput = document.getElementById('search-input');
   var searchPage = document.getElementById('search-page');
   var searchResults = document.getElementById('search-results');
+  var searchSuggestions = document.getElementById('search-suggestions');
   document.querySelector('.search-submit').classList.toggle('is-hidden', androidShell);
 
   var filterRows = [];
@@ -285,6 +287,13 @@
   var reservationMode = 'online';
   var reservationCounts = { online: null, upcoming: null };
   var activeSearchQuery = '';
+  var searchSuggestionTimer = null;
+  var searchSuggestionRequest = null;
+  var searchSuggestionGeneration = 0;
+  var searchSuggestionOpen = false;
+  var searchSuggestionItems = [];
+  var searchSuggestionReturnKey = '';
+  var searchSuggestionDismissedQuery = '';
   var tailTimer = null;
   var playerReturnPage = null;
   var playerReturnFocus = null;
@@ -867,6 +876,7 @@
     if (element.classList.contains('end-recommendation-card') || element.id === 'end-recommendations-close') return 'endRecommendations';
     if (element.classList.contains('search-scan-action')) return 'searchScan';
     if (element.classList.contains('search-history-action')) return 'searchHistory';
+    if (element.classList.contains('search-suggestion')) return 'searchSuggestions';
     if (element.classList.contains('account-keypad-key')) return 'accountKeypad';
     if (element.classList.contains('account-country-button')) return 'accountCountry';
     if (element.classList.contains('account-country-item') || element.classList.contains('account-country-close')) return 'accountCountryItems';
@@ -1297,9 +1307,15 @@
     }
     if (zone === 'searchInput') {
       if (direction === 'up') return activeSidebar();
-      // Left/right edit text; Down reaches scan on Android and Search on desktop.
-      if (direction === 'down') return firstSearchAction();
+      // Left/right edit text; Down first enters live suggestions when present.
+      if (direction === 'down') return searchSuggestionOpen ? firstVisible('.search-suggestion') : firstSearchAction();
       if (direction === 'right') return firstSearchAction();
+      return null;
+    }
+    if (zone === 'searchSuggestions') {
+      if (direction === 'up') return moveWithinZone(zone, current, direction) || searchInput;
+      if (direction === 'down') return moveWithinZone(zone, current, direction);
+      if (direction === 'left') return activeSidebar();
       return null;
     }
     if (zone === 'searchActions') {
@@ -2486,6 +2502,7 @@
     if (coreConnectionModalOpen) { closeCoreConnectionModal(true); return true; }
     if (autoCinemaCandidate) cancelPendingAutoCinema();
     if (endRecommendations && endRecommendations.close(true)) return true;
+    if (searchSuggestionOpen) { closeSearchSuggestions(true); return true; }
     if (searchScanOpen) { closeSearchScan(true); return true; }
     if (typeof danmakuScanOpen !== 'undefined' && danmakuScanOpen) { closeDanmakuScan(true); return true; }
     if (accountCountryModalOpen) { closeAccountCountryModal(false); return true; }
@@ -4580,6 +4597,149 @@
     return list;
   }
 
+  function searchSuggestionType(kind) {
+    var labels = {
+      short_play_name: uiText('search.suggestionDrama', '短剧'),
+      short_play_actor: uiText('search.suggestionActor', '演员'),
+      short_play_role: uiText('search.suggestionRole', '角色'),
+      album: uiText('search.suggestionAlbum', '专辑'),
+      title: uiText('search.suggestionTitle', '标题'),
+      common_query: uiText('search.suggestionKeyword', '热词')
+    };
+    return labels[kind] || labels.common_query;
+  }
+
+  function closeSearchSuggestions(restoreInput) {
+    clearTimeout(searchSuggestionTimer);
+    searchSuggestionTimer = null;
+    if (searchSuggestionRequest && searchSuggestionRequest.abort) searchSuggestionRequest.abort();
+    searchSuggestionRequest = null;
+    ++searchSuggestionGeneration;
+    searchSuggestionOpen = false;
+    if (searchSuggestions) {
+      searchSuggestions.classList.add('is-hidden');
+      searchSuggestions.setAttribute('aria-hidden', 'true');
+    }
+    if (searchInput) searchInput.setAttribute('aria-expanded', 'false');
+    if (restoreInput && searchInput) {
+      searchSuggestionDismissedQuery = searchInput.value.trim();
+      searchSuggestionReturnKey = '';
+      goFocus(searchInput);
+    }
+  }
+
+  function renderSearchSuggestions(items) {
+    if (!searchSuggestions) return;
+    var activeElement = document.activeElement;
+    var previousKey = activeElement && activeElement.dataset && activeElement.dataset.suggestionKey;
+    var restoreSuggestionFocus = !!(previousKey && activeElement.closest && activeElement.closest('#search-suggestions'));
+    searchSuggestionItems = (items || []).slice(0, 10);
+    searchSuggestions.innerHTML = '';
+    searchSuggestionItems.forEach(function (item, index) {
+      var button = document.createElement('button');
+      button.type = 'button'; button.className = 'search-suggestion'; button.tabIndex = 0;
+      button.dataset.focus = 'search-suggestion-' + index;
+      button.dataset.suggestionKey = item.key || item.name;
+      button.setAttribute('role', 'option'); button.setAttribute('aria-selected', 'false');
+      button.setAttribute('aria-label', uiText('search.suggestionLabel', '搜索{value}', { value: item.name }));
+      button.addEventListener('focus', function () {
+        try { button.scrollIntoView({ block: 'nearest' }); } catch (ignore) { button.scrollIntoView(false); }
+      });
+      var image = null;
+      if (item.drama && item.drama.cover) {
+        image = document.createElement('img'); image.className = 'search-suggestion-image'; image.alt = ''; image.loading = 'lazy'; setCover(image, item.drama);
+      } else {
+        image = document.createElement('span'); image.className = 'search-suggestion-icon'; image.textContent = item.kind === 'short_play_actor' ? '人' : item.kind === 'short_play_role' ? '角' : '⌕';
+        image.setAttribute('aria-hidden', 'true');
+      }
+      var copy = document.createElement('span'); copy.className = 'search-suggestion-copy';
+      var name = document.createElement('span'); name.className = 'search-suggestion-name'; name.textContent = item.name;
+      var meta = document.createElement('span'); meta.className = 'search-suggestion-meta';
+      meta.textContent = item.meta || (item.kind === 'short_play_actor' ? uiText('search.suggestionActorMeta', '演员作品') : uiText('search.suggestionSearchMeta', '按此关键词搜索'));
+      var kind = document.createElement('span'); kind.className = 'search-suggestion-kind'; kind.textContent = searchSuggestionType(item.kind);
+      copy.appendChild(name); copy.appendChild(meta); button.appendChild(image); button.appendChild(copy); button.appendChild(kind);
+      button.__suggestion = item;
+      button.addEventListener('click', function () { activateSearchSuggestion(item, button); });
+      searchSuggestions.appendChild(button);
+    });
+    if (!searchSuggestions.children.length) {
+      closeSearchSuggestions(false);
+      return;
+    }
+    searchSuggestionOpen = true;
+    searchSuggestions.classList.remove('is-hidden'); searchSuggestions.setAttribute('aria-hidden', 'false');
+    searchInput.setAttribute('aria-expanded', 'true');
+    if (previousKey) {
+      var same = null;
+      Array.prototype.forEach.call(searchSuggestions.querySelectorAll('.search-suggestion'), function (button) {
+        if (button.dataset.suggestionKey === previousKey) same = button;
+      });
+      if (same && restoreSuggestionFocus) goFocus(same);
+    }
+  }
+
+  function restoreSearchSuggestionFocus() {
+    if (!searchSuggestionReturnKey || !searchInput || !searchSuggestions || !searchSuggestionItems.length || pageMode() !== 'search') return false;
+    if (!searchSuggestions.querySelector('.search-suggestion')) renderSearchSuggestions(searchSuggestionItems);
+    else {
+      searchSuggestionOpen = true;
+      searchSuggestions.classList.remove('is-hidden'); searchSuggestions.setAttribute('aria-hidden', 'false');
+      searchInput.setAttribute('aria-expanded', 'true');
+    }
+    var target = null;
+    Array.prototype.forEach.call(searchSuggestions.querySelectorAll('.search-suggestion'), function (button) {
+      if (button.dataset.suggestionKey === searchSuggestionReturnKey) target = button;
+    });
+    if (target) { goFocus(target); return true; }
+    return false;
+  }
+
+  function loadSearchSuggestions(query) {
+    query = String(query || '').trim();
+    if (!query) { closeSearchSuggestions(false); return; }
+    if (searchSuggestionRequest && searchSuggestionRequest.abort) searchSuggestionRequest.abort();
+    var generation = ++searchSuggestionGeneration;
+    searchSuggestionRequest = typeof AbortController === 'function' ? new AbortController() : null;
+    var options = searchSuggestionRequest ? { signal: searchSuggestionRequest.signal } : {};
+    fetchData('/api/v1/search/suggestions?q=' + encodeURIComponent(query), options).then(function (data) {
+      if (generation !== searchSuggestionGeneration || !searchInput || searchInput.value.trim() !== query || pageMode() !== 'search') return;
+      renderSearchSuggestions(data.items || []);
+    }).catch(function (error) {
+      if (generation !== searchSuggestionGeneration || error.name === 'AbortError') return;
+      closeSearchSuggestions(false);
+    }).then(function () { if (generation === searchSuggestionGeneration) searchSuggestionRequest = null; });
+  }
+
+  function scheduleSearchSuggestions() {
+    if (!searchInput || pageMode() !== 'search') return;
+    searchSuggestionReturnKey = '';
+    clearTimeout(searchSuggestionTimer);
+    var query = searchInput.value.trim();
+    if (!query) { closeSearchSuggestions(false); return; }
+    if (query === searchSuggestionDismissedQuery) { closeSearchSuggestions(false); return; }
+    searchSuggestionDismissedQuery = '';
+    searchSuggestionTimer = setTimeout(function () { loadSearchSuggestions(query); }, 240);
+  }
+
+  function activateSearchSuggestion(item, button) {
+    if (!item) return;
+    searchSuggestionReturnKey = button && button.dataset.suggestionKey || item.key || item.name;
+    var returnFocus = searchInput;
+    closeSearchSuggestions(false);
+    if (item.kind === 'short_play_actor' && item.actor_id) {
+      openActorWorks({ actor_id: item.actor_id, title: item.name }, false, returnFocus);
+      return;
+    }
+    if (item.drama && item.drama.series_id) {
+      openDetail(item.drama, undefined, returnFocus);
+      return;
+    }
+    searchInput.value = item.name || searchInput.value;
+    searchSuggestionReturnKey = '';
+    goFocus(searchInput);
+    submitSearch();
+  }
+
   function lastSearchFilter() {
     var rows = document.querySelectorAll('.filter-row[data-filter-group]');
     var panel = document.getElementById('filter-panel');
@@ -5027,7 +5187,7 @@
   function openActorWorks(item, preserveReturnFocus) {
     if (!item || !item.actor_id) return;
     if (actorWorksRequest && actorWorksRequest.abort) actorWorksRequest.abort();
-    if (!preserveReturnFocus) actorWorksReturnFocus = document.activeElement;
+    if (!preserveReturnFocus) actorWorksReturnFocus = arguments.length > 2 && arguments[2] ? arguments[2] : document.activeElement;
     actorWorksItem = item;
     actorWorksOpen = true;
     var generation = ++actorWorksGeneration;
@@ -5060,7 +5220,10 @@
     var target = actorWorksReturnFocus && document.contains(actorWorksReturnFocus) ? actorWorksReturnFocus : firstRankRow();
     actorWorksReturnFocus = null;
     actorWorksItem = null;
-    if (restore !== false) goFocus(target);
+    if (restore !== false) {
+      if (!restoreSearchSuggestionFocus()) goFocus(target);
+      searchSuggestionReturnKey = '';
+    }
   }
 
   function retryActorWorks() {
@@ -5569,6 +5732,7 @@
   }
 
   function submitSearch() {
+    closeSearchSuggestions(false);
     var query = window.HongguoSearchHistory.normalize(searchInput ? searchInput.value : '');
     if (!query) { showNotice(uiText('content.searchLength', '请输入不超过100字的剧名或关键词')); goFocus(searchInput); return; }
     searchInput.value = query;
@@ -6085,12 +6249,12 @@
     });
   }
 
-  function openDetail(item, initialTab) {
+  function openDetail(item, initialTab, returnFocus) {
     if (!item || !item.series_id) return;
     if (actorWorksOpen) closeActorWorks(false);
     if (detailCastOpen) closeDetailCast(false);
     closePlayerOptions(false); clearTimeout(controlsTimer); revealControls();
-    detailReturnFocus = document.activeElement;
+    detailReturnFocus = returnFocus || document.activeElement;
     detailModalOpen = true;
     detailSeriesID = item.series_id;
     seriesRootID = item.series_id;
@@ -6120,7 +6284,8 @@
     detailModal.setAttribute('aria-hidden', 'true');
     var target = detailReturnFocus && document.contains(detailReturnFocus) ? detailReturnFocus : firstCatalog() || activeChannel();
     detailReturnFocus = null;
-    goFocus(target);
+    if (!restoreSearchSuggestionFocus()) goFocus(target);
+    searchSuggestionReturnKey = '';
     scheduleControlsHide();
   }
 
@@ -6366,6 +6531,11 @@
     item.addEventListener('click', function () { renderReservations(item.dataset.reservationMode); });
   });
   if (searchInput) {
+    searchInput.addEventListener('input', function () {
+      searchSuggestionDismissedQuery = '';
+      scheduleSearchSuggestions();
+    });
+    searchInput.addEventListener('focus', function () { if (searchInput.value.trim()) scheduleSearchSuggestions(); });
     searchInput.addEventListener('keydown', function (event) {
       if (normalizedKey(event) === 'Enter') {
         submitSearch();

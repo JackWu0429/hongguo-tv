@@ -34,6 +34,25 @@ func TestSearchBrowserFixture(t *testing.T) {
 	})
 	mux.HandleFunc("/api/v1/number-input", s.numberInput)
 	mux.HandleFunc("/api/v1/search-history", s.searchHistory)
+	mux.HandleFunc("/api/v1/search/suggestions", func(w http.ResponseWriter, r *http.Request) {
+		query := strings.TrimSpace(r.URL.Query().Get("q"))
+		items := []SearchSuggestion{}
+		if query != "" {
+			items = append(items,
+				SearchSuggestion{Kind: "short_play_name", Key: "7690163276214176792", Name: query + " · 真实短剧样例", Meta: "都市 · 全24集", Drama: &Drama{SeriesID: "7690163276214176792", Title: query + " · 真实短剧样例", Cover: "https://p3-reading-sign.fqnovelpic.com/novel-pic/fixture-cover~tplv-tt-cs0:400:572.jpg", EpisodeCount: 24}},
+				SearchSuggestion{Kind: "short_play_actor", Key: "7690163276214176793", Name: query + " · 演员样例", ActorID: "7690163276214176793", Meta: "演员作品"},
+				SearchSuggestion{Kind: "common_query", Key: query, Name: query, Meta: "按此关键词搜索"},
+			)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": SearchSuggestionsResult{Items: items}})
+	})
+	mux.HandleFunc("/api/v1/series/detail", func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("series_id")
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": SeriesDetailResult{Drama: Drama{SeriesID: id, Title: "真实短剧样例详情", Cover: "https://p3-reading-sign.fqnovelpic.com/novel-pic/fixture-cover~tplv-tt-cs0:400:572.jpg", Intro: "离线交互验证使用的详情数据。", EpisodeCount: 2, Episodes: []Episode{{Index: 1, VideoID: "7690163276214176794"}, {Index: 2, VideoID: "7690163276214176795"}}}}})
+	})
+	mux.HandleFunc("/api/v1/actors/works", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": ActorWorksResult{Actor: ActorSummary{ID: r.URL.Query().Get("actor_id"), Name: "演员样例"}, Items: []Drama{{SeriesID: "7690163276214176792", Title: "演员作品样例", EpisodeCount: 24}}}})
+	})
 	mux.HandleFunc("/api/v1/lists/search", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query().Get("q")
 		if q == "慢查询" {

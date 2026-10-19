@@ -97,6 +97,7 @@ func main() {
 	mux.HandleFunc("/api/v1/series/next-season", s.nextSeason)
 	mux.HandleFunc("/api/v1/series/seasons", s.seriesSeasons)
 	mux.HandleFunc("/api/v1/search", s.search)
+	mux.HandleFunc("/api/v1/search/suggestions", s.searchSuggestions)
 	mux.HandleFunc("/api/v1/actors/works", s.actorWorks)
 	mux.HandleFunc("/api/v1/lists/", s.lists)
 	mux.HandleFunc("/api/v1/follow", s.follow)
@@ -282,6 +283,19 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := s.hongguo.Search(r.Context(), r.URL.Query().Get("q"))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": result})
+}
+
+func (s *server) searchSuggestions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	result, err := s.hongguo.SearchSuggestions(r.Context(), r.URL.Query().Get("q"))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return

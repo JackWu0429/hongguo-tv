@@ -46,6 +46,8 @@ test('Back exits sidebar-free playback, reveals controls and focuses the active 
       coreConnectionModalOpen: false,
       autoCinemaCandidate: false,
       endRecommendations: { close: () => false },
+      searchSuggestionOpen: false,
+      closeSearchSuggestions() {},
       searchScanOpen: false,
       danmakuScanOpen: false,
       accountCountryModalOpen: false,
