@@ -85,6 +85,7 @@ test('settings remote focus moves between display modes, updates and decoding wi
   const zones = { sidebarDisplay: [expanded, icons], localeActions: [locale], appUpdates: [update], autoCinema: [autoCinema], playbackModes: [decode], sidebar: [sidebar] };
   let updateVisible = true;
   const c = vm.createContext({
+    coreConnectionModalOpen: false,
     scanModalOpen: () => false, supportModalOpen: false, confirmOpen: false,
     rankFilterOpen: false, playerOptionsOpen: false, detailModalOpen: false, discussionOpen: false,
     selectedSidebarDisplay: () => icons, activeSidebar: () => sidebar,
