@@ -32,6 +32,12 @@ test('failure and mismatched identity do not invent statistics',async()=>{
  const f=fixture();f.state.select(a);f.calls[0].resolve({...b,likes:100,comments:5,favorites:10});await settle();assert.equal(f.paints.at(-1).data,null);
  f.state.select(b);f.calls[1].reject(Error('offline'));await settle();assert.equal(f.paints.at(-1).data,null);
 });
+test('episode cover travels with exact-VID statistics and repeated selection renders cached cover',async()=>{
+ const f=fixture();f.state.select(a);f.calls[0].resolve({...a,likes:1,favorites:2,comments:3,episode_cover:'https://img.example/episode-1.jpg'});await settle();
+ assert.equal(f.paints.at(-1).data.episode_cover,'https://img.example/episode-1.jpg');
+ f.state.select(a);assert.equal(f.paints.at(-1).data.episode_cover,'https://img.example/episode-1.jpg');assert.equal(f.calls.length,1);
+ f.state.select(b);assert.equal(f.paints.at(-1).data,null);
+});
 test('confirmed changes adjust the exact episode once and preserve series favorite totals',async()=>{
  const f=fixture();f.state.select(a);f.calls[0].resolve({...a,likes:4,comments:0,favorites:10});await settle();
  f.state.adjust('like',1,b);assert.equal(f.paints.at(-1).data.likes,4);

@@ -11,10 +11,10 @@ import (
 func TestEngagementSelectsExactEpisodeAndDistinguishesMissingFromZero(t *testing.T) {
 	video := map[string]any{"series_id_str": fixtureSeries, "followed_cnt": json.Number("388000"), "digg_cnt": 999999, "video_list": []any{
 		map[string]any{"vid": "11111", "digged_count": 13000, "comment_count": 529},
-		map[string]any{"vid": fixtureVideo, "digged_count": 0},
+		map[string]any{"vid": fixtureVideo, "digged_count": 0, "episode_cover": "https://p3-novel.example/episode-2.jpg"},
 	}}
 	out, err := engagementFromVideo(fixtureSeries, fixtureVideo, video)
-	if err != nil || out.Likes == nil || *out.Likes != 0 || out.Comments != nil || *out.Favorites != 388000 {
+	if err != nil || out.Likes == nil || *out.Likes != 0 || out.Comments != nil || *out.Favorites != 388000 || out.EpisodeCover != "https://p3-novel.example/episode-2.jpg" {
 		t.Fatalf("wrong episode or missing count: %+v %v", out, err)
 	}
 	if _, err = engagementFromVideo(fixtureSeries, "99999", video); err == nil {
@@ -27,6 +27,17 @@ func TestEngagementSelectsExactEpisodeAndDistinguishesMissingFromZero(t *testing
 		if engagementCount(bad) != nil {
 			t.Fatalf("invalid count accepted: %v", bad)
 		}
+	}
+}
+
+func TestEpisodeCoverRequiresHTTPSURL(t *testing.T) {
+	for _, value := range []any{"http://images.example/cover.jpg", "javascript:alert(1)", "//images.example/cover.jpg", nil} {
+		if got := episodeCoverURL(value); got != "" {
+			t.Fatalf("unsafe cover URL accepted: %v => %q", value, got)
+		}
+	}
+	if got := episodeCoverURL("  https://images.example/cover.jpg  "); got != "https://images.example/cover.jpg" {
+		t.Fatalf("valid cover URL rejected: %q", got)
 	}
 }
 

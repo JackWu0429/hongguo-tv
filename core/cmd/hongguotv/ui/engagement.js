@@ -22,7 +22,7 @@
     function clear() { cancel(); target = null; data = null; options.render(null, null); }
     function select(item, force) {
       if (!item || !item.series_id || !item.vid) { clear(); return; }
-      if (!force && target && key(target) === key(item)) return;
+      if (!force && target && key(target) === key(item)) { options.render(target, data); return; }
       cancel(); target = { series_id: item.series_id, vid: item.vid }; data = null;
       var id = key(target), current = target, generation = epoch;
       var stored = cache[id];
@@ -32,7 +32,7 @@
       request = options.request(current);
       request.promise.then(function (result) {
         if (epoch !== generation || target !== current || !result || result.series_id !== current.series_id || result.vid !== current.vid) return;
-        data = { likes: result.likes, favorites: result.favorites, comments: result.comments };
+        data = { likes: result.likes, favorites: result.favorites, comments: result.comments, episode_cover: result.episode_cover || '' };
         var keys = Object.keys(cache); if (keys.length >= 48) delete cache[keys[0]];
         cache[id] = { at: Date.now(), data: data }; request = null; options.render(target, data);
       }, function () { if (epoch === generation) { request = null; options.render(target, data); } });

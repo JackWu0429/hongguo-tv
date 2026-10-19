@@ -7,16 +7,27 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // Likes/comments belong to an exact episode; followed_cnt belongs to the series.
 // Pointers preserve the difference between a real zero and missing statistics.
 type Engagement struct {
-	SeriesID  string `json:"series_id"`
-	VideoID   string `json:"vid"`
-	Likes     *int64 `json:"likes"`
-	Favorites *int64 `json:"favorites"`
-	Comments  *int64 `json:"comments"`
+	SeriesID     string `json:"series_id"`
+	VideoID      string `json:"vid"`
+	Likes        *int64 `json:"likes"`
+	Favorites    *int64 `json:"favorites"`
+	Comments     *int64 `json:"comments"`
+	EpisodeCover string `json:"episode_cover,omitempty"`
+}
+
+func episodeCoverURL(value any) string {
+	raw := strings.TrimSpace(asString(value))
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		return ""
+	}
+	return raw
 }
 
 func engagementCount(value any) *int64 {
@@ -60,6 +71,7 @@ func engagementFromVideo(series, vid string, video map[string]any) (Engagement, 
 		}
 		out.Likes = engagementCount(row["digged_count"])
 		out.Comments = engagementCount(row["comment_count"])
+		out.EpisodeCover = episodeCoverURL(row["episode_cover"])
 		return out, nil
 	}
 	return out, errors.New("当前集不在短剧统计列表中")

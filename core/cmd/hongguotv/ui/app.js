@@ -333,6 +333,7 @@
   var confirmAfterClose = null;
   var confirmationGeneration = 0;
   var activePlayback = null;
+  var mpvEpisodeCoverLoader = null;
   var detailCache = {};
   var playerOptionsOpen = false;
   var playerOptionsReturn = null;
@@ -3789,6 +3790,7 @@
   function cancelPlaybackPreparation() {
     clearRangeTransitionHint();
     clearRangeStallTimer();
+    clearMpvEpisodeCover();
     if (playbackInfoRequest) playbackInfoRequest.abort(); playbackInfoRequest = null;
     if (playbackPrefetchHandoff) playbackPrefetchHandoff.cancel(); playbackPrefetchHandoff = null;
     interruptPlaybackPresentation(activePlayback);
@@ -3895,6 +3897,58 @@
     canvas.__playbackFrame = null;
     // Release the pixel buffer and reset any origin-tainted canvas state.
     canvas.width = 0; canvas.height = 0;
+  }
+  function clearMpvEpisodeCover(playback) {
+    if (playbackEngineName() !== 'mpv') return;
+    if (playback && activePlayback && playback !== activePlayback) return;
+    var hero = document.getElementById('hero');
+    var cover = document.getElementById('hero-episode-cover');
+    mpvEpisodeCoverLoader = null;
+    if (cover) {
+      cover.__coverLoader = null;
+      cover.__coverSource = '';
+      cover.style.backgroundImage = 'none';
+      cover.classList.remove('is-ready');
+    }
+    if (hero) hero.classList.remove('is-mpv-episode-cover');
+  }
+  function setMpvEpisodeCover(target, data) {
+    if (playbackEngineName() !== 'mpv' || !target || !data || !data.episode_cover) return;
+    var playback = activePlayback;
+    var hero = document.getElementById('hero');
+    var cover = document.getElementById('hero-episode-cover');
+    if (!playback || !hero || !cover || !hero.classList.contains('is-preparing-video') ||
+        playback.generation !== feedGeneration || playback.owner !== accountEpoch ||
+        playback.item.series_id !== target.series_id || playback.vid !== target.vid ||
+        playback.presentation && playback.presentation.rendered) return;
+    var source = String(data.episode_cover);
+    if (cover.__coverSource === source) {
+      if (cover.__coverLoader === mpvEpisodeCoverLoader && mpvEpisodeCoverLoader) return;
+      if (cover.classList.contains('is-ready')) {
+        hero.classList.add('is-mpv-episode-cover');
+        return;
+      }
+    }
+    var loader = new Image();
+    mpvEpisodeCoverLoader = loader;
+    cover.__coverLoader = loader;
+    cover.__coverSource = source;
+    loader.onload = function () {
+      if (cover.__coverLoader !== loader || activePlayback !== playback || playback.generation !== feedGeneration ||
+          playback.owner !== accountEpoch || playback.presentation && playback.presentation.rendered ||
+          !hero.classList.contains('is-preparing-video')) return;
+      cover.style.backgroundImage = 'url(' + JSON.stringify(loader.src) + ')';
+      cover.classList.add('is-ready');
+      hero.classList.add('is-mpv-episode-cover');
+    };
+    loader.onerror = function () {
+      if (cover.__coverLoader !== loader) return;
+      cover.__coverLoader = null;
+      cover.__coverSource = '';
+      cover.style.backgroundImage = 'none';
+      cover.classList.remove('is-ready');
+    };
+    loader.src = source;
   }
   function layoutLastPlaybackFrame() {
     var canvas = document.getElementById('hero-last-frame');
@@ -4020,6 +4074,7 @@
     if (!playbackVideoReady(playback, presentation, video)) return;
     clearRangeStallTimer();
     if (!hero.classList.contains('is-preparing-video')) {
+      clearMpvEpisodeCover(playback);
       releasePresentedAudio(playback, presentation, video);
       finishAutoCinema(playback);
       return;
@@ -4036,6 +4091,7 @@
       if (!painted || !playbackVideoReady(playback, presentation, video)) return;
       if (typeof clearRangeTransitionHint === 'function') clearRangeTransitionHint();
       clearLastPlaybackFrame();
+      clearMpvEpisodeCover(playback);
       hero.classList.remove('is-preparing-video', 'is-starting-video', 'is-episode-transition', 'is-range-transition', 'is-range-source-reset');
       setPlayerStatus('');
       releasePresentedAudio(playback, presentation, video);
@@ -6829,6 +6885,7 @@
       return { abort: function () { controller.abort(); }, promise: fetchData('/api/v1/player/stats?' + new URLSearchParams(target), { signal: controller.signal }) };
     },
     render: function (target, data) {
+      setMpvEpisodeCover(target, data);
       ['like', 'favorite', 'comment'].forEach(function (kind) {
         var field = { like: 'likes', favorite: 'favorites', comment: 'comments' }[kind];
         var text = window.HongguoEngagement.countText(data && data[field]);
