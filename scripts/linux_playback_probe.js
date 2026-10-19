@@ -57,6 +57,7 @@
       presentedCallbacks: presented, lastPTS: lastPTS,
       viewport: { width: innerWidth, height: innerHeight },
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      desktopBackground: !!(window.HongguoDesktop && window.HongguoDesktop.background), documentHidden: document.hidden,
       overlay: document.getElementById('hero').className,
       status: text('#player-status') || text('.hero-status') };
   }
@@ -67,7 +68,7 @@
     };
     video.requestVideoFrameCallback(frame);
   }
-  ['loadstart', 'loadedmetadata', 'loadeddata', 'playing', 'waiting', 'seeking', 'seeked', 'ended', 'error'].forEach(function (name) {
+  ['loadstart', 'loadedmetadata', 'loadeddata', 'playing', 'pause', 'waiting', 'seeking', 'seeked', 'ended', 'error'].forEach(function (name) {
     video.addEventListener(name, function () {
       if (report.events.length < 120) report.events.push({ event: name, sample: sample() });
     });
@@ -93,10 +94,21 @@
       // The normal shell/API/account startup must finish before card launch.
       await sleep(4000);
       if (!window.HongguoTV.openHomeProgram({ series_id: report.series_id, title: '神豪外挂第一季' })) throw new Error('card launch rejected');
+      await waitFor('episode 1 metadata', function () {
+        return text('.hero-title') === '神豪外挂第一季' && /第1集/.test(text('#hero-top-episode')) &&
+          video.videoWidth > 0 && video.readyState >= 2;
+      }, 100000);
+      await sleep(700);
+      report.pausedBeforeUserGesture = video.paused;
+      report.nativeWindowState = JSON.parse(await window.go.main.desktopApp.GetWindowState());
+      if (video.paused) {
+        document.getElementById('hero-feed-focus').focus();
+        report.initialUserPlay = await send('activate', {});
+      }
       await waitFor('episode 1 first decoded picture', function () {
         return text('.hero-title') === '神豪外挂第一季' && /第1集/.test(text('#hero-top-episode')) &&
           video.videoWidth > 0 && video.readyState >= 2 && video.currentTime > 2 && !video.paused;
-      }, 100000);
+      }, 40000);
       var first = await capture('first-a');
       await sleep(3500);
       var later = await capture('first-b');

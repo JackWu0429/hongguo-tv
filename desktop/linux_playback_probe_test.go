@@ -60,7 +60,7 @@ func TestLinuxPlaybackProbe(t *testing.T) {
 	mediaPath := regexp.MustCompile(`^/minireel-proxy/media/[a-zA-Z0-9_-]+\.mp4$`)
 	stageName := regexp.MustCompile(`^(first-a|first-b|after-seek|second-a|second-b|failure)$`)
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/__linux_probe/capture" && r.URL.Path != "/__linux_probe/report" && r.URL.Path != "/__linux_probe/heartbeat" {
+		if r.URL.Path != "/__linux_probe/capture" && r.URL.Path != "/__linux_probe/report" && r.URL.Path != "/__linux_probe/heartbeat" && r.URL.Path != "/__linux_probe/activate" {
 			if !desktopRequestAllowed(r) {
 				t.Logf("shell request rejected: method=%s path=%s host=%s origin=%s", r.Method, r.URL.Path, r.Host, r.Header.Get("Origin"))
 			}
@@ -77,6 +77,21 @@ func TestLinuxPlaybackProbe(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/__linux_probe/activate" {
+			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			defer cancel()
+			id, err := exec.CommandContext(ctx, "xdotool", "search", "--onlyvisible", "--name", "^Hongguo Linux playback validation$").Output()
+			window := strings.TrimSpace(string(id))
+			if err == nil && regexp.MustCompile(`^[0-9]+$`).MatchString(window) {
+				err = exec.CommandContext(ctx, "xdotool", "windowactivate", "--sync", window).Run()
+				if err == nil {
+					// XTEST key input exercises the normal app's Space/play handler.
+					err = exec.CommandContext(ctx, "xdotool", "key", "--clearmodifiers", "space").Run()
+				}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": err == nil, "input": "X11 Space key"})
+			return
+		}
 		if r.URL.Path == "/__linux_probe/heartbeat" {
 			mu.Lock()
 			heartbeat = payload
@@ -129,7 +144,7 @@ func TestLinuxPlaybackProbe(t *testing.T) {
 			Kind    string          `json:"kind"`
 			Payload json.RawMessage `json:"payload"`
 		}
-		if json.Unmarshal([]byte(message), &request) != nil || (request.Kind != "heartbeat" && request.Kind != "capture" && request.Kind != "report") {
+		if json.Unmarshal([]byte(message), &request) != nil || (request.Kind != "heartbeat" && request.Kind != "capture" && request.Kind != "report" && request.Kind != "activate") {
 			return `{"error":"invalid diagnostic message"}`
 		}
 		response := httptest.NewRecorder()
