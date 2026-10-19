@@ -31,6 +31,10 @@ type linuxProbeBridge struct{ dispatch func(string) string }
 func (b *linuxProbeBridge) Dispatch(message string) string { return b.dispatch(message) }
 
 func TestLinuxPlaybackProbe(t *testing.T) {
+	// go test links the application package under its import path, not main.
+	// Match the separately stamped core explicitly in this opt-in test.
+	version = "linux-playback-validation"
+	desktopVersion = "0.2.92-linux-validation"
 	output := os.Getenv("HONGGUO_PROBE_OUTPUT")
 	if output == "" || os.Getenv("HONGGUO_CORE_PATH") == "" {
 		t.Fatal("probe requires isolated output and a compiled core")

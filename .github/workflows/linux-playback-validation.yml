@@ -41,7 +41,7 @@ jobs:
           go build -ldflags '-X main.version=linux-playback-validation' -o "$HONGGUO_CORE_PATH" ./core/cmd/hongguotv
           node desktop/frontend/build.mjs
           cd desktop
-          go test -c -tags 'production,webkit2_41,linux_playback_probe' -ldflags '-X main.version=linux-playback-validation -X main.desktopVersion=0.2.92-linux-validation' -o "$RUNNER_TEMP/linux-playback-probe"
+          go test -c -tags 'production,webkit2_41,linux_playback_probe' -o "$RUNNER_TEMP/linux-playback-probe"
       - name: Run real desktop window with live Hongguo media
         run: |
           xvfb-run -a -s '-screen 0 1280x800x24' dbus-run-session -- bash -c '
