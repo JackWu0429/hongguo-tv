@@ -61,6 +61,24 @@ func TestRecommendationsUseNestedDetailAndFeedCursor(t *testing.T) {
 	}
 }
 
+func TestRecommendationFeedParserCountsDirectPlayableAndFilteredRecords(t *testing.T) {
+	cells := []any{
+		map[string]any{"video_data": []any{
+			map[string]any{"video_detail": map[string]any{"series_id": "7690163276214176792", "series_title": "嵌套推荐", "episode_cnt": 9}},
+			map[string]any{"disable_play": true, "video_detail": map[string]any{"series_id": "7690163276214176793", "episode_cnt": 9}},
+		}},
+		map[string]any{"video_detail": map[string]any{"series_id": "7690163276214176794", "series_title": "直接详情", "episode_cnt": 12, "first_vid": "7690223053078268953"}},
+		map[string]any{"video_detail": map[string]any{"series_id": "7690163276214176795", "series_title": "无可播剧集", "episode_cnt": 0}},
+	}
+	items, diagnostics := parseFeedDramas(cells)
+	if len(items) != 2 || items[1].SeriesID != "7690163276214176794" || items[1].Vid != "7690223053078268953" {
+		t.Fatalf("direct details were not parsed safely: %+v", items)
+	}
+	if diagnostics != (FeedParseDiagnostics{CellsSeen: 3, RecordsSeen: 4, Parsed: 2, Filtered: 2}) {
+		t.Fatalf("unexpected aggregate diagnostics: %+v", diagnostics)
+	}
+}
+
 func TestFeedChannelPhaseTransition(t *testing.T) {
 	c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/reading/bookapi/bookmall/tab/v" {

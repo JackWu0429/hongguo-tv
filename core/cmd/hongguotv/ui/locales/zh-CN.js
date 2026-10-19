@@ -847,6 +847,8 @@
     'ui.seasonNumber': '第{season}季',
     'ui.unnamedDrama': '未命名短剧',
     'ui.loadedCount': '已加载 {count} 部',
+    'ui.feedPositionAtLeast': '第{current}部，已加载至少{count}部',
+    'ui.feedPositionTotal': '第{current}部，共{count}部',
     'ui.searchEmptyBrowse': '没有符合这些条件的短剧，试试放宽筛选。',
     'ui.searchEmptyQuery': '没有找到匹配的短剧，换个关键词试试。',
     'ui.allDrama': '全部短剧',

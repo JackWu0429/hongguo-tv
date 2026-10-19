@@ -844,6 +844,8 @@
   "ui.seasonNumber": "第{season}季",
   "ui.unnamedDrama": "未命名短劇",
   "ui.loadedCount": "已加載 {count} 部",
+  "ui.feedPositionAtLeast": "第{current}部，已載入至少{count}部",
+  "ui.feedPositionTotal": "第{current}部，共{count}部",
   "ui.searchEmptyBrowse": "沒有符合這些條件的短劇，試試放寬篩選。",
   "ui.searchEmptyQuery": "沒有找到匹配的短劇，換個關鍵詞試試。",
   "ui.allDrama": "全部短劇",

@@ -844,6 +844,8 @@
   "ui.seasonNumber": "第{season}シーズン",
   "ui.unnamedDrama": "名前のないドラマ",
   "ui.loadedCount": "{count}作品を読み込みました",
+  "ui.feedPositionAtLeast": "{count}作品以上を読み込み済み、現在{current}作品目",
+  "ui.feedPositionTotal": "全{count}作品中、現在{current}作品目",
   "ui.searchEmptyBrowse": "条件に一致するドラマがありません。絞り込みを緩めてください。",
   "ui.searchEmptyQuery": "一致するドラマが見つかりません。別のキーワードをお試しください",
   "ui.allDrama": "全作品ドラマ",

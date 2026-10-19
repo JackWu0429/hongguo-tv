@@ -49,6 +49,14 @@ test('feed switches from tab phase to cell phase at offset zero without stopping
   const p=create({cursor:(d,old)=>({offset:d.next_offset||0,feed_cell:d.feed_cell||old.feed_cell||'',feed_plan:d.feed_plan||old.feed_plan||''}),request:async q=>{calls.push(q);return q.feed_cell ? {items:[row('second')],next_offset:6,has_more:false} : {items:[row('first')],next_offset:0,feed_cell:'cell',feed_plan:'plan',has_more:true};},render:()=>{}});
   await p.reset({channel:'39'});assert.equal(p.hasMore(),true);await p.load();assert.equal(calls[1].offset,0);assert.equal(calls[1].feed_cell,'cell');assert.equal(p.items.length,2);assert.equal(p.hasMore(),false);
 });
+test('recommendation pager prefetches one remote page after the first page only', async () => {
+  const calls=[];
+  const p=create({prefetchPages:1,request:async q=>{calls.push(q.offset||0);const page=calls.length;return {items:[row(String(page))],has_more:true,next_offset:page*10};},render:()=>{}});
+  await p.reset();
+  for (let i=0;i<20 && (p.pagesLoaded < 2 || p.busy); i++) await new Promise(resolve=>setTimeout(resolve,0));
+  assert.deepEqual(calls,[0,10]);assert.equal(p.items.length,2);assert.equal(p.pagesLoaded,2);
+  await p.load();assert.deepEqual(calls,[0,10,20]);assert.equal(p.items.length,3);
+});
 test('calendar continues when released offset resets, then follows the independent upcoming cursor', async () => {
   const fs=require('node:fs'),vm=require('node:vm');
   const source=fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'),'utf8');

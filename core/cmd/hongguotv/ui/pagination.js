@@ -13,7 +13,7 @@
   // replies are invalidated before aborting, including WebViews without AbortController.
   function createPager(options) {
     var p = { items: [], buffer: [], params: {}, cursor: {}, busy: false, error: '',
-      more: true, loaded: false, generation: 0, emptyPages: 0, seen: Object.create(null), request: null };
+      more: true, loaded: false, generation: 0, emptyPages: 0, pagesLoaded: 0, seen: Object.create(null), request: null };
     var inFlight = null;
     function status() { if (options.status) options.status(p); }
     p.cancel = function () {
@@ -25,14 +25,14 @@
     p.reset = function (params) {
       p.cancel(); p.params = Object.assign({}, params || {}); p.cursor = {};
       p.items = []; p.buffer = []; p.seen = Object.create(null); p.more = true;
-      p.loaded = false; p.error = ''; p.emptyPages = 0;
+      p.loaded = false; p.error = ''; p.emptyPages = 0; p.pagesLoaded = 0;
       if (options.clear) options.clear();
       status(); return p.load();
     };
     p.hasMore = function () { return p.buffer.length > 0 || p.more; };
     p.local = function (items, count) {
       p.items = items.slice(0, count); p.buffer = items.slice(count);
-      p.loaded = true; p.more = false; p.error = ''; status();
+      p.loaded = true; p.more = false; p.error = ''; p.pagesLoaded = 0; status();
     };
     function flush() {
       var rows = p.buffer.splice(0, options.pageSize || 20);
@@ -72,6 +72,7 @@
           p.emptyPages = p.buffer.length ? 0 : p.emptyPages + 1;
           var advances = options.cursor ? JSON.stringify(p.cursor) !== JSON.stringify(previousCursor) && Object.keys(p.cursor).length > 0 : next > previousOffset;
           p.more = !!data.has_more && advances && p.emptyPages < 3;
+          p.pagesLoaded++;
           return flush();
         }).catch(function (error) {
           if (generation !== p.generation || error.name === 'AbortError') return [];
@@ -80,6 +81,7 @@
           if (generation === p.generation) {
             p.busy = false; p.request = null; inFlight = null; status();
             if (options.after) options.after(p);
+            if (!p.error && Number(options.prefetchPages) > 0 && p.pagesLoaded <= Number(options.prefetchPages) && p.hasMore()) p.load();
           }
           return added;
         });

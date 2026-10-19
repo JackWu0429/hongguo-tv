@@ -478,7 +478,7 @@
     if (date) cursor.date = date;
     return cursor;
   }
-  function createListPager(endpoint, container, selector, id, render, metadata) {
+  function createListPager(endpoint, container, selector, id, render, metadata, prefetchPages) {
     var pager = HongguoPagination.create({
       request: function (params, signal) { var requestParams = Object.assign({}, params); if (endpoint === '/api/v1/follow') delete requestParams.shown; return fetchData((pager.endpoint || endpoint) + '?' + new URLSearchParams(requestParams).toString(), signal ? { signal: signal } : {}); },
       clear: function () { if (container) renderMessage(container, 'list-empty', uiText('common.loading', '正在加载…')); },
@@ -488,6 +488,7 @@
       },
       metadata: metadata,
       cursor: endpoint === '/api/v1/lists/calendar' ? calendarCursor : endpoint === '/api/v1/lists/recommend' ? function (data, old) { return { offset: Number(data.next_offset) || 0, session_id: data.session_id || old.session_id || '', feed_cell: data.feed_cell || old.feed_cell || '', feed_plan: data.feed_plan || old.feed_plan || '' }; } : endpoint === '/api/v1/follow' ? function (data) { return data.next_cursor ? { cursor: data.next_cursor } : {}; } : null,
+      prefetchPages: prefetchPages,
       status: function (p) { listStatus(p, id); },
       after: queueTailCheck
     });
@@ -525,7 +526,7 @@
     if (!append) renderFeed(items);
     else if (feedIndex < 0 && items.length) renderFeed(items);
     else { feedItems = feedItems.concat(items); updateFeedCounter(); syncHomeChannel(feedItems); }
-  });
+  }, null, 1);
   var discussionPager = HongguoPagination.create({
     key: function (item) { return item.comment_id; },
     cursor: function (data) { return data.next_cursor ? { cursor: data.next_cursor } : {}; },
@@ -3286,7 +3287,14 @@
 
   function updateFeedCounter() {
     var counter = document.getElementById('hero-top-count');
-    if (counter) counter.textContent = feedItems.length ? (feedIndex + 1) + ' / ' + feedItems.length : '0 / 0';
+    if (!counter) return;
+    var count = feedItems.length;
+    var current = count ? Math.max(1, Math.min(feedIndex + 1, count)) : 0;
+    var hasMore = count > 0 && feedPager.hasMore();
+    counter.textContent = count ? current + ' / ' + count + (hasMore ? '+' : '') : '0 / 0';
+    var label = count ? uiText(hasMore ? 'ui.feedPositionAtLeast' : 'ui.feedPositionTotal', hasMore ? '第{current}部，已加载至少{count}部' : '第{current}部，共{count}部', { current: current, count: count }) : '0 / 0';
+    counter.setAttribute('aria-label', label);
+    counter.title = label;
   }
 
   function recommendationChannel() {

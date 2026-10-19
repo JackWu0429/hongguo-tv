@@ -15,22 +15,29 @@ import (
 // from the number of visible cards: calendar/search may contain non-video rows.
 type ListResult struct {
 	CategoryResult
-	SearchID        string          `json:"search_id,omitempty"`
-	Passback        string          `json:"passback,omitempty"`
-	NextCursor      string          `json:"next_cursor,omitempty"`
-	Calendar        *CalendarSchema `json:"calendar,omitempty"`
-	Ranks           []RankOption    `json:"ranks,omitempty"`
-	Source          string          `json:"source,omitempty"`
-	FeedCell        string          `json:"feed_cell,omitempty"`
-	FeedPlan        string          `json:"feed_plan,omitempty"`
-	OnlineTotal     *int            `json:"online_total_count,omitempty"`
-	OfflineTotal    *int            `json:"offline_total_count,omitempty"`
-	SubscribeOffset *int            `json:"next_subscribe_offset,omitempty"`
+	SearchID        string                `json:"search_id,omitempty"`
+	Passback        string                `json:"passback,omitempty"`
+	NextCursor      string                `json:"next_cursor,omitempty"`
+	Calendar        *CalendarSchema       `json:"calendar,omitempty"`
+	Ranks           []RankOption          `json:"ranks,omitempty"`
+	Source          string                `json:"source,omitempty"`
+	FeedCell        string                `json:"feed_cell,omitempty"`
+	FeedPlan        string                `json:"feed_plan,omitempty"`
+	FeedDiagnostics *FeedParseDiagnostics `json:"feed_diagnostics,omitempty"`
+	OnlineTotal     *int                  `json:"online_total_count,omitempty"`
+	OfflineTotal    *int                  `json:"offline_total_count,omitempty"`
+	SubscribeOffset *int                  `json:"next_subscribe_offset,omitempty"`
 }
 type CalendarSchema struct {
 	Dates       []string `json:"dates"`
 	DefaultDate string   `json:"default_date"`
 	CurrentDate string   `json:"current_date"`
+}
+type FeedParseDiagnostics struct {
+	CellsSeen   int `json:"cells_seen"`
+	RecordsSeen int `json:"records_seen"`
+	Parsed      int `json:"parsed"`
+	Filtered    int `json:"filtered"`
 }
 type RankOption struct {
 	ID       string              `json:"id"`
@@ -137,31 +144,59 @@ func (c *passportClient) NewSeries(ctx context.Context, q url.Values) (ListResul
 	return out, nil
 }
 
-// The Mac feed uses a dedicated cell, not the hot-drama ranking. The cursor
-// counts feed cells, including ads; only video_detail records become TV cards.
-func feedDramas(cells []any) []Drama {
+// The feed cursor counts cells, including non-video cells. Diagnostics contain
+// aggregate counts only; they never include titles, IDs, or account data.
+func parseFeedDramas(cells []any) ([]Drama, FeedParseDiagnostics) {
 	out := []Drama{}
-	for _, value := range cells {
-		cell, _ := asMap(value)
-		videos, _ := cell["video_data"].([]any)
-		for _, value := range videos {
-			video, _ := asMap(value)
-			detail, _ := asMap(video["video_detail"])
-			if asBool(video["disable_play"]) {
-				continue
-			}
-			drama, ok := normalizeDrama(detail)
-			if !ok || !validID(drama.SeriesID) || drama.EpisodeCount < 1 {
-				continue
-			}
-			drama.Vid = firstNonEmpty(asString(detail["first_vid"]), drama.Vid)
-			out = append(out, drama)
+	diagnostics := FeedParseDiagnostics{}
+	appendDetail := func(detail any, disabled bool) {
+		diagnostics.RecordsSeen++
+		if disabled {
+			diagnostics.Filtered++
+			return
 		}
-		if nested, ok := cell["cell_data"].([]any); ok {
-			out = append(out, feedDramas(nested)...)
+		drama, ok := normalizeDrama(detail)
+		if !ok || !validID(drama.SeriesID) || drama.EpisodeCount < 1 {
+			diagnostics.Filtered++
+			return
+		}
+		diagnostics.Parsed++
+		detailMap, _ := asMap(detail)
+		drama.Vid = firstNonEmpty(asString(detailMap["first_vid"]), drama.Vid)
+		out = append(out, drama)
+	}
+	var walk func([]any)
+	walk = func(rows []any) {
+		for _, value := range rows {
+			cell, _ := asMap(value)
+			diagnostics.CellsSeen++
+			if detail, ok := cell["video_detail"]; ok {
+				appendDetail(detail, asBool(cell["disable_play"]))
+			}
+			videos, _ := cell["video_data"].([]any)
+			for _, value := range videos {
+				video, _ := asMap(value)
+				detail, ok := video["video_detail"]
+				if !ok {
+					diagnostics.RecordsSeen++
+					diagnostics.Filtered++
+					continue
+				}
+				appendDetail(detail, asBool(video["disable_play"]))
+			}
+			if nested, ok := cell["cell_data"].([]any); ok {
+				walk(nested)
+			}
 		}
 	}
-	return out
+	walk(cells)
+	return out, diagnostics
+}
+
+// The Mac feed uses a dedicated cell, not the hot-drama ranking.
+func feedDramas(cells []any) []Drama {
+	items, _ := parseFeedDramas(cells)
+	return items
 }
 func (c *passportClient) Recommendations(ctx context.Context, q url.Values) (ListResult, error) {
 	tab := firstNonEmpty(q.Get("channel"), "16")
@@ -189,7 +224,9 @@ func (c *passportClient) Recommendations(ctx context.Context, q url.Values) (Lis
 		cv, _ := asMap(d["cell_view"])
 		cells, _ := cv["cell_data"].([]any)
 		out := ListResult{CategoryResult: listCursor(d), FeedCell: cell, FeedPlan: plan}
-		out.Items = feedDramas(cells)
+		items, diagnostics := parseFeedDramas(cells)
+		out.Items = items
+		out.FeedDiagnostics = &diagnostics
 		stopStalledPage(&out, asInt(q.Get("offset")))
 		return out, nil
 	}
@@ -211,7 +248,8 @@ func (c *passportClient) Recommendations(ctx context.Context, q url.Values) (Lis
 			continue
 		}
 		cells, _ := t["cell_data"].([]any)
-		out := ListResult{CategoryResult: CategoryResult{Items: feedDramas(cells), SessionID: asString(t["session_id"])}, FeedPlan: asString(t["bookstore_id"])}
+		items, diagnostics := parseFeedDramas(cells)
+		out := ListResult{CategoryResult: CategoryResult{Items: items, SessionID: asString(t["session_id"])}, FeedPlan: asString(t["bookstore_id"]), FeedDiagnostics: &diagnostics}
 		for _, value := range cells {
 			cell, _ := asMap(value)
 			id := firstNonEmpty(asString(cell["cell_id_str"]), asString(cell["cell_id"]))
@@ -227,7 +265,9 @@ func (c *passportClient) Recommendations(ctx context.Context, q url.Values) (Lis
 			if tab == "45" {
 				out.HasMore = asBool(cell["has_more"])
 				out.NextOffset = asInt(cell["next_offset"])
-				out.Items = feedDramas([]any{cell})
+				items, diagnostics := parseFeedDramas([]any{cell})
+				out.Items = items
+				out.FeedDiagnostics = &diagnostics
 			}
 			break
 		}
