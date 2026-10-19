@@ -9,19 +9,20 @@ const compatCss = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/comp
 const helper = source.match(/  function revealSidebarFocus\(element\) \{[\s\S]*?\n  \}/);
 assert.ok(helper, 'sidebar focus visibility helper exists');
 
-test('short viewport compatibility rules preserve sidebar item and icon dimensions', () => {
+test('short viewport rules compact the sidebar at tested height boundaries', () => {
   assert.match(appCss, /\.side-item\s*\{[^}]*min-height:\s*54px;[^}]*font-size:\s*20px;/);
   assert.match(appCss, /\.app-shell\.sidebar-icons \.side-icon\s*\{[^}]*width:\s*36px;[^}]*height:\s*36px;/);
-  const sidebarRules = compatCss.match(/[^{}]+\{[^{}]*\}/g) || [];
-  for (const rule of sidebarRules) {
-    const [selector, declarations] = rule.split('{');
-    if (/\.side-item(?:[.#\s:+>~]|$)/.test(selector)) {
-      assert.doesNotMatch(declarations, /\b(?:min-height|height|flex(?:-basis)?|font-size|padding(?:-[\w-]+)?)\s*:/);
-    }
-    if (/\.side-icon(?:[.#\s:+>~]|$)/.test(selector)) {
-      assert.doesNotMatch(declarations, /\b(?:width|height|flex(?:-basis)?|padding(?:-[\w-]+)?)\s*:/);
-    }
-  }
+  const compactAt850 = compatCss.indexOf('@media (max-height: 850px)');
+  const compactAt680 = compatCss.indexOf('@media (max-height: 680px)');
+  const compactAt560 = compatCss.indexOf('@media (max-height: 560px)');
+  assert.ok(compactAt850 >= 0 && compactAt850 < compactAt680 && compactAt680 < compactAt560);
+  assert.match(compatCss.slice(compactAt850, compactAt680), /\.app-shell\.sidebar-icons \.side-item\s*\{[^}]*padding-top:\s*4px;[^}]*padding-bottom:\s*4px;/);
+  assert.match(compatCss.slice(compactAt850, compactAt680), /\.app-shell\.sidebar-icons \.side-icon\s*\{[^}]*width:\s*32px;[^}]*height:\s*32px;/);
+  assert.match(compatCss.slice(compactAt680, compactAt560), /\.side-item\s*\{[^}]*min-height:\s*38px;[^}]*font-size:\s*18px;/);
+  assert.match(compatCss.slice(compactAt560), /\.side-item\s*\{[^}]*min-height:\s*36px;[^}]*font-size:\s*17px;/);
+  assert.match(compatCss.slice(compactAt560), /\.app-shell\.sidebar-icons \.side-icon\s*\{[^}]*width:\s*30px;[^}]*height:\s*30px;/);
+  assert.match(appCss, /\.sidebar\s*\{[^}]*overflow-y:\s*auto;/);
+  assert.match(appCss, /\.side-nav\s*\{[^}]*overflow-y:\s*auto;/);
 });
 
 function container(name, top, height, overflowY, parentElement) {

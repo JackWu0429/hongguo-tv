@@ -105,3 +105,43 @@
 .legacy-grid .reservation-grid > .reservation-login { width: calc(100% - 20px); margin-right: 20px; }
 /* This rail uses margins on old WebViews without flex gap. */
 .legacy-flex-gap .round-action + .round-action { margin-top: 12px; }
+
+/* Keep the complete sidebar visible on short TV viewports while retaining scroll as a fallback. */
+@media (max-height: 850px) {
+  .sidebar { padding-top: calc(10px + 1vh); padding-bottom: calc(8px + 1vh); }
+  .brand { height: calc(36px + 1.5vh); font-size: 18px; }
+  .side-nav { gap: 3px; margin-top: calc(8px + 1vh); padding-top: 8px; padding-bottom: 8px; }
+  .side-item { min-height: calc(36px + 1vh); padding-left: 12px; padding-right: 12px; font-size: 18px; }
+  .side-icon { flex-basis: 28px; width: 28px; height: 28px; }
+  .sidebar-bottom { margin-top: 6px; padding-top: calc(6px + 1vh); }
+  .sidebar-bottom .side-item + .side-item { margin-top: 3px; }
+  .legacy-flex-gap .side-nav .side-item + .side-item { margin-top: 3px; }
+  .app-shell.sidebar-icons .side-item { min-height: 0; padding-top: 4px; padding-bottom: 4px; }
+  .app-shell.sidebar-icons .side-icon { width: 32px; height: 32px; }
+}
+
+@media (max-height: 680px) {
+  .sidebar { padding-top: 8px; padding-bottom: 8px; }
+  .brand { height: 38px; font-size: 18px; }
+  .side-nav { gap: 2px; margin-top: 6px; padding-top: 6px; padding-bottom: 6px; }
+  .side-item { min-height: 38px; padding-left: 10px; padding-right: 10px; font-size: 18px; }
+  .side-icon { flex-basis: 28px; width: 28px; height: 28px; }
+  .sidebar-bottom { margin-top: 4px; padding-top: 4px; }
+  .sidebar-bottom .side-item + .side-item,
+  .legacy-flex-gap .side-nav .side-item + .side-item { margin-top: 2px; }
+  .app-shell.sidebar-icons .side-item { min-height: 0; padding-top: 3px; padding-bottom: 3px; }
+  .app-shell.sidebar-icons .side-icon { width: 32px; height: 32px; }
+}
+
+@media (max-height: 560px) {
+  .sidebar { padding-top: 8px; padding-bottom: 8px; }
+  .brand { height: 34px; font-size: 17px; }
+  .side-nav { gap: 2px; margin-top: 6px; padding-top: 8px; padding-bottom: 8px; }
+  .side-item { min-height: 36px; font-size: 17px; }
+  .side-icon { flex-basis: 26px; width: 26px; height: 26px; }
+  .sidebar-bottom { margin-top: 4px; padding-top: 4px; }
+  .sidebar-bottom .side-item + .side-item,
+  .legacy-flex-gap .side-nav .side-item + .side-item { margin-top: 2px; }
+  .app-shell.sidebar-icons .side-item { min-height: 0; padding-top: 3px; padding-bottom: 3px; }
+  .app-shell.sidebar-icons .side-icon { width: 30px; height: 30px; }
+}
