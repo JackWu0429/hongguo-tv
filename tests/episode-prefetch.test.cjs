@@ -18,6 +18,16 @@ test('starts once after five stable playback seconds, early in a long episode', 
   f.p.maybe(info());f.p.maybe(info({position:90}));await tick();assert.equal(f.calls.length,1);
   const g=fixture();g.p.maybe(info({duration:600,position:2.5}));await tick();assert.equal(g.calls.length,1);
 });
+test('MPV can request an earlier prefetch threshold without changing the default', async()=>{
+  const f=fixture();
+  f.p.maybe(info({stable_seconds:.99,prefetch_after_seconds:1}));
+  await tick();assert.equal(f.calls.length,0);
+  f.p.maybe(info({stable_seconds:1,prefetch_after_seconds:1}));
+  await tick();assert.equal(f.calls.length,1);
+  const g=fixture();
+  g.p.maybe(info({stable_seconds:4.99}));
+  await tick();assert.equal(g.calls.length,0);
+});
 test('collects at most four future unlocked VIDs without crossing the current episode',()=>{
   const detail={vid_list:['10','11','12','13','14','15','16'],episodes:[
     {video_id:'10',locked:false},{video_id:'11',locked:false},{video_id:'12',locked:true},

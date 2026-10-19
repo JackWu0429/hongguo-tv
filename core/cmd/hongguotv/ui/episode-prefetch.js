@@ -3,6 +3,10 @@
   // A single speculative episode. No media is attached to a second player.
   function create(options) {
     var entry = null;
+    function stableThreshold(info) {
+      var value = Number(info && info.prefetch_after_seconds);
+      return isFinite(value) && value >= 0 ? value : 5;
+    }
     function cancel() {
       var previous = entry; entry = null;
       if (previous && previous.request) previous.request.abort();
@@ -16,7 +20,7 @@
     function maybe(info) {
       if (!info.active || !info.started || info.paused || info.ended || !isFinite(info.duration) ||
           !(info.duration > 0) || !isFinite(info.position) || info.position < 0 ||
-          !isFinite(info.stable_seconds) || info.stable_seconds < 5) return;
+          !isFinite(info.stable_seconds) || info.stable_seconds < stableThreshold(info)) return;
       var identity = key(info);
       if (entry && entry.key === identity) return;
       cancel();

@@ -21,6 +21,7 @@
   function num(value) { return typeof value === 'number' && isFinite(value) ? Math.max(0, value) : 0; }
   function errorCode(value) { return typeof value === 'number' && isFinite(value) ? Math.round(value) : 0; }
   function metric(value) { return typeof value === 'number' && isFinite(value) && value >= 0 ? Math.floor(value) : tr('diagnostic.notObtained'); }
+  function millis(value) { return typeof value === 'number' && isFinite(value) && value >= 0 ? Math.floor(value) + 'ms' : tr('diagnostic.notObtained'); }
   function clock(value) { var seconds = Math.floor(num(value)); return Math.floor(seconds / 60) + ':' + ('0' + seconds % 60).slice(-2); }
   function readVideo(video) {
     var result = { position: num(video.currentTime), duration: num(video.duration), width: num(video.videoWidth), height: num(video.videoHeight), ready: num(video.readyState), network: num(video.networkState), paused: !!video.paused, ended: !!video.ended, seeking: !!video.seeking, muted: !!video.muted, volume: num(video.volume), buffered: 0, error: video.error ? num(video.error.code) : 0, decoded: null };
@@ -108,6 +109,26 @@
     var visibility = native.engine === 'mpv' ? ' · ' + tr('diagnostic.nativeLayer') + (typeof native.surface_visible === 'boolean' ? (native.surface_visible && native.surface_attached ? tr('diagnostic.visible') : tr('diagnostic.hidden')) : tr('diagnostic.pending')) : ' · ' + tr('diagnostic.video') + (flags.videoVisible ? tr('diagnostic.surfaceVisible') : tr('diagnostic.hidden'));
     add(tr('diagnostic.videoProtection'), (flags.loading || flags.preparing ? tr('diagnostic.loadingLayer') : tr('diagnostic.loadingRemoved')) + visibility + (flags.waiting ? ' · ' + tr('diagnostic.waitingData') : ''));
     add(tr('diagnostic.soundState'), (flags.audioHeld ? tr('diagnostic.temporaryMute') : video.muted || !video.volume ? tr('diagnostic.playerMute') : tr('diagnostic.unmute')) + ' · ' + tr('diagnostic.volume', { value: Math.round(video.volume * 100) + '%' }));
+    if (snapshot.timing) {
+      var timing = snapshot.timing;
+      add(tr('diagnostic.transitionTiming'), tr('diagnostic.transitionTimingValue', {
+        prefetch: millis(timing.prefetch_ms), wait: millis(timing.handoff_wait_ms), resolver: millis(timing.foreground_resolve_ms),
+        source: millis(timing.source_ready_ms), total: millis(timing.total_ms)
+      }));
+    }
+    if (core.media_prepared && core.media_mode) {
+      var mediaTiming = core.media_mode === 'range' ? tr('diagnostic.rangePreparationTiming', {
+        resolve: millis(core.media_resolve_ms), range: millis(core.media_range_init_ms)
+      }) : tr('diagnostic.fullPreparationTiming', {
+        resolve: millis(core.media_resolve_ms), download: millis(core.media_download_ms), decrypt: millis(core.media_decrypt_ms)
+      });
+      add(tr('diagnostic.mediaPreparationTiming'), mediaTiming);
+    }
+    if (native.engine === 'mpv' && (native.last_stop_fence_ms > 0 || typeof native.load_to_file_loaded_ms === 'number')) {
+      add(tr('diagnostic.mpvTransitionTiming'), tr('diagnostic.mpvTransitionTimingValue', {
+        stop: millis(native.last_stop_fence_ms), loaded: millis(native.load_to_file_loaded_ms), ready: millis(native.load_to_output_ready_ms)
+      }));
+    }
     var request = flags.failed ? tr('diagnostic.prepareError') : flags.source ? tr('diagnostic.sourceReturned') : flags.resolving ? tr('content.reading') : tr('diagnostic.notRequested');
     if (flags.source && core.media_prepared) request += core.media_mode === 'range' ? ' · ' + tr('diagnostic.rangeReady', { size: (num(core.media_bytes) / 1024).toFixed(0) + ' KB' }) : ' · ' + tr('diagnostic.mp4Ready', { size: (num(core.media_bytes) / 1048576).toFixed(1) + ' MB' });
     request += flags.source && core.media_http_status ? ' · HTTP ' + num(core.media_http_status) + '（' + num(core.media_age_seconds) + tr('diagnostic.secondsAgo') : core.unavailable ? ' · ' + tr('diagnostic.coreReadFailed') : ' · ' + tr('diagnostic.noMediaRequest');

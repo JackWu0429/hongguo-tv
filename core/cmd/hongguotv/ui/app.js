@@ -399,8 +399,10 @@
   });
   var playbackSpeeds = [.5, .75, 1, 1.25, 1.5, 2];
   function rangePlaybackEnabled() {
-    try { return !(window.HongguoNativePlayer && window.HongguoNativePlayer.engine && window.HongguoNativePlayer.engine() === 'mpv'); }
-    catch (ignored) { return true; }
+    // MPV now tries the same local Range/decrypt proxy as WebView/Media3.
+    // The server still returns the established complete-file source when the
+    // Range contract is not usable, so this remains a bounded preference.
+    return true;
   }
   var keyNames = {
     // WebView delivers DOM key codes, not Android KeyEvent constants.
@@ -2228,9 +2230,22 @@
     var presentation = activePlayback && activePlayback.presentation;
     var source = video.getAttribute('src') || '';
     if (desktopShell && window.HongguoDesktop.mediaBase && source.indexOf(window.HongguoDesktop.mediaBase + '/') === 0) source = source.slice(window.HongguoDesktop.mediaBase.length);
+    var activeTiming = activePlayback && activePlayback.timing;
+    var timingSnapshot = activeTiming ? Object.assign({}, activeTiming) : (playbackTiming.length ? Object.assign({}, playbackTiming[playbackTiming.length - 1]) : null);
+    if (timingSnapshot && activeTiming) {
+      var timingNow = Date.now();
+      timingSnapshot.source_ready_ms = timingSnapshot.ready_at ? Math.max(0, timingSnapshot.ready_at - timingSnapshot.started_at) : null;
+      timingSnapshot.native_frame_ms = presentation && presentation.frame_at && timingSnapshot.ready_at ? Math.max(0, presentation.frame_at - timingSnapshot.ready_at) : null;
+      timingSnapshot.total_ms = Math.max(0, timingNow - timingSnapshot.started_at);
+      if (timingSnapshot.handoff_started_at && timingSnapshot.handoff_wait_ms === null)
+        timingSnapshot.handoff_wait_ms = Math.max(0, timingNow - timingSnapshot.handoff_started_at);
+      if (timingSnapshot.foreground_resolve_started_at && timingSnapshot.foreground_resolve_ms === null)
+        timingSnapshot.foreground_resolve_ms = Math.max(0, timingNow - timingSnapshot.foreground_resolve_started_at);
+    }
     var snapshot = {
       device: device || {}, userAgent: environment.userAgent, environmentRows: environment.rows,
       native: native || {},
+      timing: timingSnapshot,
       capturedAt: ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2) + ':' + ('0' + now.getSeconds()).slice(-2),
       video: readDiagnosticVideo(video),
       episode: activePlayback && activePlayback.episode || playbackRequest && playbackRequest.episode || 0,
@@ -3834,6 +3849,11 @@
         playback.generation !== feedGeneration || video.paused || video.seeking || applicationInBackground || applicationHidden() || rangeStallTimer) return;
     var generation = playback.generation;
     var lastPosition = Math.max(0, Number(video.currentTime) || 0);
+    // The Range proxy can spend up to three 12-second upstream attempts plus
+    // bounded retry delays. Do not replace that resumable request with a full
+    // download before its recovery window has elapsed. MPV's own output-ready
+    // timeout is 25 seconds, so keep a small margin above both limits.
+    var stallDelay = playbackEngineName() === 'mpv' ? 40000 : 45000;
     rangeStallTimer = setTimeout(function () {
       rangeStallTimer = null;
       if (activePlayback !== playback || generation !== feedGeneration || playback.mode !== 'range' ||
@@ -3844,7 +3864,7 @@
         return;
       }
       fallbackRangePlayback(playback);
-    }, 45000);
+    }, stallDelay);
   }
   function maybePrefetchNextEpisode(video) {
     var playback = activePlayback;
@@ -3852,6 +3872,7 @@
     episodePrefetch.maybe({ item: playback.item, series_id: playback.item.series_id, vid: playback.vid,
       episode: playback.episode, quality: playbackPreferences.quality, generation: playback.generation, owner: accountEpoch,
       mode: (typeof rangePlaybackEnabled === 'function' && rangePlaybackEnabled()) ? 'range' : '',
+      prefetch_after_seconds: playbackEngineName() === 'mpv' ? 1 : 5,
       duration: Number(video.duration), position: Number(video.currentTime), paused: video.paused, ended: video.ended,
       stable_seconds: playback.stableSince ? Math.max(0, Date.now() - playback.stableSince) / 1000 : 0,
       started: playback.started, active: playback.generation === feedGeneration && isPlaybackPage() && !applicationInBackground && !applicationHidden() && !qualityPrevious });
@@ -3932,7 +3953,8 @@
     document.getElementById('hero-video').muted = muted;
   }
   function bindPlaybackPresentation(playback, source) {
-    playback.presentation = { source: source, position: Number(playback.position) || 0, epoch: 0, pending: false, waiting: false, rendered: false, failed: false };
+    playback.presentation = { source: source, position: Number(playback.position) || 0, epoch: 0, pending: false, waiting: false,
+      rendered: false, frame_at: 0, failed: false };
   }
   function interruptPlaybackPresentation(playback) {
     if (!playback || !playback.presentation) return;
@@ -4035,9 +4057,22 @@
     if (playback.timing && !playback.timing.reported) {
       var timing = playback.timing;
       timing.reported = true;
+      var nativeStopFenceMs = null;
+      try {
+        var nativeTiming = window.HongguoNativePlayer && window.HongguoNativePlayer.diagnostics ? JSON.parse(window.HongguoNativePlayer.diagnostics()) : null;
+        if (nativeTiming && typeof nativeTiming.last_stop_fence_ms === 'number') nativeStopFenceMs = nativeTiming.last_stop_fence_ms;
+      } catch (ignoredNativeTiming) {}
+      timing.source_ready_ms = Math.max(0, timing.ready_at - timing.started_at);
+      timing.native_frame_ms = presentation && presentation.frame_at ? Math.max(0, presentation.frame_at - timing.ready_at) : null;
+      timing.native_stop_fence_ms = nativeStopFenceMs;
+      timing.video_start_ms = Math.max(0, Date.now() - timing.ready_at);
+      timing.total_ms = Math.max(0, Date.now() - timing.started_at);
       playbackTiming.push({ episode: timing.episode, automatic_next: timing.automatic_next, prefetch_ms: timing.prefetch_ms,
+        handoff_wait_ms: timing.handoff_wait_ms, foreground_resolve_ms: timing.foreground_resolve_ms,
         prepared_before_switch: timing.prepared_before_switch,
         source_ready_ms: Math.max(0, timing.ready_at - timing.started_at),
+        native_frame_ms: presentation && presentation.frame_at ? Math.max(0, presentation.frame_at - timing.ready_at) : null,
+        native_stop_fence_ms: nativeStopFenceMs,
         video_start_ms: Math.max(0, Date.now() - timing.ready_at), total_ms: Math.max(0, Date.now() - timing.started_at) });
       if (playbackTiming.length > 20) playbackTiming.shift();
     }
@@ -4210,7 +4245,10 @@
           endedPending: false,
           mode: '', rangeFallback: '', rangeFallbackAttempted: false,
           recoveryAttempts: recovery && recovery.recoveryAttempts || 0,
-          timing: { episode: episode, automatic_next: fastContinuation, started_at: switchStartedAt, ready_at: 0, prefetch_ms: null, prepared_before_switch: false, reported: false } };
+          timing: { episode: episode, automatic_next: fastContinuation, started_at: switchStartedAt, ready_at: 0,
+            prefetch_started_at: 0, prefetch_ready_at: 0, prefetch_ms: null, handoff_wait_ms: null,
+            foreground_resolve_started_at: 0, foreground_resolve_ms: null,
+            prepared_before_switch: false, reported: false } };
         if (autoCinemaCandidate && generation === autoCinemaGeneration) autoCinemaSession = activePlayback;
         setFeatured(playing);
         updateDetailProgress();
@@ -4218,22 +4256,31 @@
         var target = { series_id: item.series_id, vid: vid, episode: episode, quality: playbackPreferences.quality, owner: accountEpoch, mode: playbackMode };
         var handoff = episodePrefetch.consume(target);
         playbackPrefetchHandoff = handoff;
+        activePlayback.timing.handoff_started_at = Date.now();
         return waitForPlaybackPrefetch(handoff, generation, request.signal).then(function (prepared) {
           if (generation !== feedGeneration || request.signal.aborted || applicationInBackground || applicationHidden()) return null;
-          if (handoff && handoff.timing.ready_at) {
-            activePlayback.timing.prefetch_ms = Math.max(0, handoff.timing.ready_at - handoff.timing.started_at);
-            activePlayback.timing.prepared_before_switch = handoff.timing.ready_at <= switchStartedAt;
+          activePlayback.timing.handoff_wait_ms = Math.max(0, Date.now() - activePlayback.timing.handoff_started_at);
+          if (handoff && handoff.timing) {
+            activePlayback.timing.prefetch_started_at = Number(handoff.timing.started_at) || 0;
+            activePlayback.timing.prefetch_ready_at = Number(handoff.timing.ready_at) || 0;
+            if (handoff.timing.ready_at) {
+              activePlayback.timing.prefetch_ms = Math.max(0, handoff.timing.ready_at - handoff.timing.started_at);
+              activePlayback.timing.prepared_before_switch = handoff.timing.ready_at <= switchStartedAt;
+            }
           }
           if (prepared && prepared.path) {
             playbackPrefetchHandoff = null;
+            activePlayback.timing.handoff_wait_ms = Math.max(0, Date.now() - activePlayback.timing.handoff_started_at);
             return prepared;
           }
           // Revalidate the prepared cache entry; the core reuses the same file
           // and retries a failed or timed-out speculative job through the
           // normal resolver. The 1.2s handoff budget keeps navigation responsive.
+          activePlayback.timing.foreground_resolve_started_at = Date.now();
           var params = { series_id: item.series_id, vid: vid, quality: playbackPreferences.quality, fallback: '1', mode: playbackMode };
           return fetchData('/api/v1/play/info?' + new URLSearchParams(params), { signal: request.signal }).then(function (data) {
             playbackPrefetchHandoff = null;
+            activePlayback.timing.foreground_resolve_ms = Math.max(0, Date.now() - activePlayback.timing.foreground_resolve_started_at);
             return data;
           });
         });
@@ -6569,6 +6616,7 @@
     // history/progress purposes.
     if (activePlayback && activePlayback.presentation) {
       activePlayback.presentation.rendered = true;
+      activePlayback.presentation.frame_at = Date.now();
       if (!media.paused && !media.seeking && media.readyState >= 2) activePlayback.presentation.waiting = false;
       finishPlaybackPreparation(activePlayback);
     }

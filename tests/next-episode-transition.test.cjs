@@ -8,7 +8,7 @@ const slice = (a,b) => source.slice(source.indexOf('  function '+a+'('), source.
 const tick = () => new Promise(r=>setImmediate(r));
 function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve}}
 function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,detailGate=null,captureFailure=false,native=false,prefetchReady=false}={}) {
-  const gate=deferred(), calls=[], writes=[], notices=[], frames=new Map(), handlers={}, timers=[];let frameID=0;
+  const gate=deferred(), calls=[], resolverURLs=[], writes=[], notices=[], frames=new Map(), handlers={}, timers=[];let frameID=0;
   function classes(...initial){const names=new Set(initial);return {add(...x){x.forEach(n=>names.add(n))},remove(...x){x.forEach(n=>names.delete(n))},contains(n){return names.has(n)},toggle(n,on){if(on)names.add(n);else names.delete(n)},names}}
   const hero={classList:classes('is-feed'),style:{}};
   const video={currentTime:120,duration:120,paused:false,ended:false,seeking:false,readyState:4,videoWidth:720,videoHeight:1280,muted:false,volume:.75,classList:classes('has-source'),getAttribute(n){return this[n]||null},addEventListener(name,fn){handlers[name]=fn},pause(){this.paused=true},removeAttribute(n){delete this[n]},load(){calls.push('load');assert.equal(hero.classList.contains('is-preparing-video'),true)}};
@@ -21,21 +21,21 @@ function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,d
   const c=vm.createContext({Promise,AbortController,URLSearchParams,Date,Object,Number,Math,clearTimeout,console,
     setTimeout(fn,delay){timers.push({fn,delay});return timers.length},
     requestAnimationFrame(fn){frames.set(++frameID,fn);return frameID},cancelAnimationFrame(id){frames.delete(id)},
-    engine,video,calls,writes,notices,gate,detailGate,document,uiText,
+    engine,video,calls,resolverURLs,writes,notices,gate,detailGate,document,uiText,
     apiError(payload,status,key,fallback){return payload&&(payload.error||payload.message)||fallback||('HTTP '+status)},
     fetch:async(url,options)=>{
       assert.equal(url,'/api/v1/library');const change=JSON.parse(options.body);calls.push('history:'+change.episode);writes.push(change);
       if(change.episode===1)await gate.promise;
       return {ok:!(failWrite&&change.episode===1),json:async()=>({ok:!(failWrite&&change.episode===1),error:'fixture disk failure',data:{owner_id:'123',entries:[{drama:change.drama,episode:change.episode}]}})};
     },
-    fetchData:async url=>{calls.push('source');assert.match(url,/\/api\/v1\/play\/info\?/);if(sourceGate)await sourceGate.promise;return {path:'/media/next.mp4',quality:'720P',qualities:['720P']};}
+    fetchData:async url=>{calls.push('source');resolverURLs.push(url);assert.match(url,/\/api\/v1\/play\/info\?/);if(sourceGate)await sourceGate.promise;return {path:'/media/next.mp4',quality:'720P',qualities:['720P']};}
   });
   vm.runInContext("var desktopShell=false;" + source.match(/  function applicationHidden[^\n]+/)[0], c);
   vm.runInContext(`
     var accountEpoch=2,feedGeneration=1,continuationGeneration=0,seasonSwitchRequest=null;
     var autoCinemaCandidate=false,autoCinemaGeneration=0,autoCinemaSession=null;
     var rangeTransitionTimer=null;
-    var rangePlaybackEnabled=function(){return engine==='range'};
+    var rangePlaybackEnabled=function(){return engine==='range'||engine==='mpv'};
     var detailModalOpen=false,qualityPrevious=null,applicationInBackground=false;
     var libraryData={owner_id:'123',entries:[]},libraryLoaded=${ready},libraryError='';
     var libraryReady=Promise.resolve(),libraryQueue=Promise.resolve();
@@ -60,7 +60,7 @@ function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,d
     slice('continueAfterEpisode','offerNextSeasonReservation')+slice('holdPlaybackAudio','renderFeed'),c);
   vm.runInContext('var media=video;'+source.slice(source.indexOf("  media.addEventListener('playing'"),source.indexOf("  document.addEventListener('visibilitychange'")),c);
   vm.runInContext("document.addEventListener('visibilitychange', function () { if (desktopShell) return; if (applicationHidden()) pauseForBackground(); else resumeFromBackground(); });",c);
-  return {c,gate,detailGate,calls,writes,notices,video,hero,canvas,bounds,root,document,paint,frames,handlers,timers};
+  return {c,gate,detailGate,calls,resolverURLs,writes,notices,video,hero,canvas,bounds,root,document,paint,frames,handlers,timers};
 }
 function setHidden(f, hidden) {
   f.document.hidden = hidden;
@@ -143,6 +143,16 @@ test('a completed prefetch is adopted without a second foreground resolver reque
   f.paint();f.paint();await tick();await tick();
   assert.equal(f.video.src,'/media/prefetched.mp4');
   assert.ok(!f.calls.includes('source'));
+});
+test('MPV retries a failed speculative Range preparation through the foreground Range/full-file fallback contract',async()=>{
+  const f=fixture({engine:'mpv'});f.gate.resolve();f.c.playFeedItem(0,2,0);
+  f.paint();f.paint();await tick();await tick();await tick();
+  assert.equal(f.video.src,'/media/next.mp4');
+  assert.equal(f.resolverURLs.length,1);
+  const query=new URLSearchParams(f.resolverURLs[0].split('?')[1]);
+  assert.equal(query.get('mode'),'range');
+  assert.equal(query.get('fallback'),'1');
+  assert.equal(query.has('prefetch'),false);
 });
 test('a failed completion write is reported without stopping the already prepared next episode or poisoning later saves',async()=>{
   const f=fixture({failWrite:true}),old=f.c.activePlayback;
@@ -265,8 +275,8 @@ test('frame buffers are bounded and preserve portrait/landscape proportions when
 });
 test('another drama, account or MPV switch cannot reuse a held frame',()=>{
   for(const change of ['drama','account','mpv']){
-    const f=fixture({engine:'range'});f.video.src='/media/current.mp4';f.c.playFeedItem(0,2,0);
-    assert.equal(f.canvas.classList.contains('is-visible'),true);
+    const f=fixture({engine:change==='mpv'?'mpv':'range',native:change==='mpv'});f.video.src='/media/current.mp4';f.c.playFeedItem(0,2,0);
+    if(change !== 'mpv') assert.equal(f.canvas.classList.contains('is-visible'),true);
     if(change==='drama')f.c.feedItems=[{series_id:'other',vid_list:['111']}];
     else if(change==='account')f.c.accountEpoch++;
     else f.c.engine='mpv';

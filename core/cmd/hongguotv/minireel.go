@@ -59,17 +59,21 @@ type miniReelOption struct {
 }
 
 type miniReelMediaJob struct {
-	Ready     chan struct{}
-	Path      string
-	Range     *miniReelRangeSource
-	Mode      string
-	Quality   string
-	Qualities []string
-	Err       error
-	Accessed  time.Time
-	Context   context.Context
-	Cancel    context.CancelFunc
-	Waiters   int
+	Ready       chan struct{}
+	Path        string
+	Range       *miniReelRangeSource
+	Mode        string
+	Quality     string
+	Qualities   []string
+	Err         error
+	Accessed    time.Time
+	Context     context.Context
+	Cancel      context.CancelFunc
+	Waiters     int
+	ResolveMS   int64
+	DownloadMS  int64
+	DecryptMS   int64
+	RangeInitMS int64
 }
 
 var miniReelState = struct {
@@ -292,7 +296,9 @@ func prepareMiniReelMedia(ctx context.Context, job *miniReelMediaJob, token, ser
 			_ = os.RemoveAll(directory)
 		}
 	}()
+	resolveStarted := time.Now()
 	options, err := miniReelNativeOptions(ctx, vid)
+	job.ResolveMS = time.Since(resolveStarted).Milliseconds()
 	if err != nil {
 		job.Err = err
 		return
@@ -319,19 +325,25 @@ func prepareMiniReelMedia(ctx context.Context, job *miniReelMediaJob, token, ser
 		return
 	}
 	path := filepath.Join(directory, token+".mp4")
+	downloadStarted := time.Now()
 	if err := downloadMiniReelMedia(ctx, option.URL, path); err != nil {
+		job.DownloadMS = time.Since(downloadStarted).Milliseconds()
 		job.Err = err
 		return
 	}
+	job.DownloadMS = time.Since(downloadStarted).Milliseconds()
 	if err := ctx.Err(); err != nil {
 		job.Err = err
 		return
 	}
 	if len(option.Key) > 0 {
+		decryptStarted := time.Now()
 		if err := decryptMiniReelMP4(path, option.Key); err != nil {
+			job.DecryptMS = time.Since(decryptStarted).Milliseconds()
 			job.Err = fmt.Errorf("MiniReel CENC decrypt failed: %w", err)
 			return
 		}
+		job.DecryptMS = time.Since(decryptStarted).Milliseconds()
 	}
 	if err := ctx.Err(); err != nil {
 		job.Err = err

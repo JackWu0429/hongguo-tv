@@ -64,15 +64,17 @@ func resolveMiniReelMediaRangeQuality(ctx context.Context, seriesID, vid, qualit
 	// that ignore Range all use the established whole-file preparation path.
 	result, fallbackErr := resolveMiniReelMediaQuality(ctx, seriesID, vid, quality, fallback)
 	if fallbackErr != nil {
-		return nil, fmt.Errorf("按需读取和标准播放准备均失败: %w", fallbackErr)
+		return nil, fmt.Errorf("按需读取和完整文件准备均失败: %w", fallbackErr)
 	}
 	result["mode"] = "full"
-	result["range_fallback"] = "按需读取不可用，已切换标准播放"
+	result["range_fallback"] = "按需读取不可用，已切换完整文件播放模式"
 	return result, nil
 }
 
 func prepareMiniReelRangeMedia(ctx context.Context, job *miniReelMediaJob, token, seriesID, vid, quality string, fallback bool) {
+	resolveStarted := time.Now()
 	options, err := miniReelNativeOptions(ctx, vid)
+	job.ResolveMS = time.Since(resolveStarted).Milliseconds()
 	if err != nil {
 		job.Err = err
 		return
@@ -86,7 +88,9 @@ func prepareMiniReelRangeMedia(ctx context.Context, job *miniReelMediaJob, token
 		job.Err = err
 		return
 	}
+	rangeStarted := time.Now()
 	source, err := openMiniReelRangeSource(ctx, option, vid)
+	job.RangeInitMS = time.Since(rangeStarted).Milliseconds()
 	if err != nil {
 		job.Err = err
 		return

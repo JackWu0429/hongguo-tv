@@ -67,14 +67,18 @@ func (w *diagnosticMediaWriter) Write(p []byte) (int, error) {
 func (w *diagnosticMediaWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 type playbackDiagnosticResponse struct {
-	Version         string `json:"version"`
-	OS              string `json:"os"`
-	Arch            string `json:"arch"`
-	MediaPrepared   bool   `json:"media_prepared"`
-	MediaMode       string `json:"media_mode,omitempty"`
-	MediaBytes      int64  `json:"media_bytes"`
-	MediaHTTPStatus int    `json:"media_http_status"`
-	MediaAgeSeconds int    `json:"media_age_seconds"`
+	Version          string `json:"version"`
+	OS               string `json:"os"`
+	Arch             string `json:"arch"`
+	MediaPrepared    bool   `json:"media_prepared"`
+	MediaMode        string `json:"media_mode,omitempty"`
+	MediaBytes       int64  `json:"media_bytes"`
+	MediaHTTPStatus  int    `json:"media_http_status"`
+	MediaAgeSeconds  int    `json:"media_age_seconds"`
+	MediaResolveMS   int64  `json:"media_resolve_ms,omitempty"`
+	MediaDownloadMS  int64  `json:"media_download_ms,omitempty"`
+	MediaDecryptMS   int64  `json:"media_decrypt_ms,omitempty"`
+	MediaRangeInitMS int64  `json:"media_range_init_ms,omitempty"`
 }
 
 func (s *server) playbackDiagnostics(w http.ResponseWriter, r *http.Request) {
@@ -99,6 +103,10 @@ func (s *server) playbackDiagnostics(w http.ResponseWriter, r *http.Request) {
 		if job != nil && isMiniReelReady(job.Ready) && job.Err == nil {
 			file = job.Path
 			result.MediaMode = job.Mode
+			result.MediaResolveMS = job.ResolveMS
+			result.MediaDownloadMS = job.DownloadMS
+			result.MediaDecryptMS = job.DecryptMS
+			result.MediaRangeInitMS = job.RangeInitMS
 			if job.Range != nil {
 				result.MediaPrepared = true
 				result.MediaBytes = int64(len(job.Range.Prefix))

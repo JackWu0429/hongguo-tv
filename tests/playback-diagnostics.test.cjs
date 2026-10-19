@@ -101,3 +101,11 @@ test('MPV diagnostics expose file-open and END_FILE stages without source detail
   s.native.source='https://media.invalid/a.mp4?key=secret';
   assert.doesNotMatch(JSON.stringify(diagnostics.report(s)),/media\.invalid|secret/);
 });
+test('playback diagnostics show split episode transition timings',()=>{
+  const s=snapshot({timing:{prefetch_ms:2200,handoff_wait_ms:1200,source_ready_ms:5000,native_frame_ms:1300,native_stop_fence_ms:80,total_ms:6300}});
+  const rows=Object.fromEntries(diagnostics.report(s).rows.map(x=>[x.label,x.value]));
+  assert.match(rows['切集耗时'],/预取 2200ms/);assert.match(rows['切集耗时'],/源就绪 5000ms/);assert.match(rows['切集耗时'],/总计 6300ms/);
+  const mpv=snapshot({native:{engine:'mpv',last_stop_fence_ms:80,load_to_file_loaded_ms:500,load_to_output_ready_ms:900}});
+  const mpvRows=Object.fromEntries(diagnostics.report(mpv).rows.map(x=>[x.label,x.value]));
+  assert.match(mpvRows['MPV 切源耗时'],/停止边界 80ms.*FILE_LOADED 500ms.*输出就绪 900ms/);
+});

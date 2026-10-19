@@ -2,6 +2,7 @@ package rocks.aston.hongguotv;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
@@ -33,6 +34,8 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     private final MpvStopFence stopFence = new MpvStopFence();
     private long stopCommandSequence;
     private Runnable stopTimeout;
+    private long stopFenceStartedAt;
+    private long lastStopFenceMs;
     private volatile long generation;
     private boolean destroyed, background, surfaceReady;
     private long surfaceEpoch, stopSurfaceEpoch = -1;
@@ -52,6 +55,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         MPVLib player;
         boolean outputReady, wantsPlay, terminal, pendingSeek;
         long position, duration;
+        long loadRequestedAt, fileLoadedAt, outputReadyAt;
         String decoder = "", state = "preparing";
         String errorKind = "";
         int errorCode;
@@ -188,6 +192,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             // applied to this session.
             active.setPropertyBoolean("pause", true);
             // The previous source reached the stop fence before this loadfile.
+            target.loadRequestedAt = SystemClock.uptimeMillis();
             active.command(new String[]{"loadfile", target.source, "replace"});
             target.output.openRequested = true;
             playerQuiescent = false;
@@ -284,6 +289,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                     post(target -> {
                         if (value == MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED) {
                             target.output.loaded = true;
+                            target.fileLoadedAt = SystemClock.uptimeMillis();
                             if (target.pendingSeek) { active.command(new String[]{"seek", Double.toString(target.position / 1000.0), "absolute+exact"}); target.pendingSeek = false; }
                             applyPlayState(target);
                             updateDiagnostic(target, null);
@@ -335,6 +341,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         target.decoder = decoder == null ? "" : decoder;
         if (!target.outputReady) {
             target.outputReady = true;
+            target.outputReadyAt = SystemClock.uptimeMillis();
             handler.removeCallbacks(target.timeout);
             JSONObject detail = new JSONObject();
             try { detail.put("width", w).put("height", h); } catch (Exception ignored) {}
@@ -396,7 +403,12 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                 .put("output_messages", target.output.messages())
                 .put("open_requested", target.output.openRequested)
                 .put("file_loaded", target.output.loaded)
+                .put("last_stop_fence_ms", lastStopFenceMs)
                 .put("end_file_seen", target.output.endFileSeen);
+            if (target.loadRequestedAt > 0) {
+                fields.put("load_to_file_loaded_ms", target.fileLoadedAt > 0 ? target.fileLoadedAt - target.loadRequestedAt : -1)
+                    .put("load_to_output_ready_ms", target.outputReadyAt > 0 ? target.outputReadyAt - target.loadRequestedAt : -1);
+            }
             if (target.output.endFileSeen) {
                 fields.put("end_file_reason", target.output.endFileReason)
                     .put("end_file_error", target.output.endFileError);
@@ -595,6 +607,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         boolean expectEndFile = old != null && old.output.openRequested && !"ended".equals(old.state);
         long requestId = ++stopCommandSequence;
         stopSurfaceEpoch = surfaceEpoch;
+        stopFenceStartedAt = SystemClock.uptimeMillis();
         stopFence.begin(requestId, expectEndFile);
         stopTimeout = () -> {
             if (stopFence.onTimeout() && stoppingPlayer == player) finishStopBoundary(false);
@@ -614,6 +627,10 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         if (stopTimeout != null) handler.removeCallbacks(stopTimeout);
         stopTimeout = null;
         boolean hadFence = stopFence.isActive();
+        if (hadFence && stopFenceStartedAt > 0) {
+            lastStopFenceMs = Math.max(0, SystemClock.uptimeMillis() - stopFenceStartedAt);
+            stopFenceStartedAt = 0;
+        }
         stopFence.clear();
         MPVLib stopped = stoppingPlayer; stoppingPlayer = null;
         boolean sameSurface = !hadFence || stopSurfaceEpoch == surfaceEpoch;

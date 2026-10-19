@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -119,6 +120,52 @@ func TestPlaybackDiagnosticsPrivateReadOnlyAndRedacted(t *testing.T) {
 			if tt.expected == 200 && strings.Contains(w.Body.String(), `"`+value+`"`) {
 				t.Fatalf("sensitive field %s", value)
 			}
+		}
+	}
+}
+
+func TestPlaybackDiagnosticsExposeMediaPreparationDurations(t *testing.T) {
+	token := "aaaaaaaaaaaaaaaaaaaaaaaa"
+	ready := make(chan struct{})
+	close(ready)
+	root := t.TempDir()
+	path := root + "/media.mp4"
+	if err := os.WriteFile(path, []byte("prepared"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	miniReelState.Lock()
+	previous := miniReelState.jobs
+	miniReelState.jobs = map[string]*miniReelMediaJob{
+		token:                      {Ready: ready, Path: path, Mode: "full", ResolveMS: 21, DownloadMS: 34, DecryptMS: 8},
+		"bbbbbbbbbbbbbbbbbbbbbbbb": {Ready: ready, Mode: "range", Range: &miniReelRangeSource{Prefix: []byte("moov")}, ResolveMS: 13, RangeInitMS: 27},
+	}
+	miniReelState.Unlock()
+	t.Cleanup(func() { miniReelState.Lock(); miniReelState.jobs = previous; miniReelState.Unlock() })
+
+	r := httptest.NewRequest("GET", "/api/v1/player/diagnostics?media=/minireel-proxy/media/"+token+".mp4", nil)
+	w := httptest.NewRecorder()
+	(&server{}).playbackDiagnostics(w, r)
+	var payload struct {
+		Data playbackDiagnosticResponse `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Data.MediaResolveMS != 21 || payload.Data.MediaDownloadMS != 34 || payload.Data.MediaDecryptMS != 8 {
+		t.Fatalf("missing media timing: %+v", payload.Data)
+	}
+	r = httptest.NewRequest("GET", "/api/v1/player/diagnostics?media=/minireel-proxy/media/bbbbbbbbbbbbbbbbbbbbbbbb.mp4", nil)
+	w = httptest.NewRecorder()
+	(&server{}).playbackDiagnostics(w, r)
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Data.MediaPrepared || payload.Data.MediaMode != "range" || payload.Data.MediaBytes != 4 || payload.Data.MediaResolveMS != 13 || payload.Data.MediaRangeInitMS != 27 {
+		t.Fatalf("missing Range preparation timing: %+v", payload.Data)
+	}
+	for _, sensitive := range []string{"series_id", "vid", "path", "token", "account"} {
+		if strings.Contains(w.Body.String(), `"`+sensitive+`"`) {
+			t.Fatalf("diagnostics exposed %s", sensitive)
 		}
 	}
 }
