@@ -20,6 +20,74 @@
   function editing(element) {
     return !!(element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.isContentEditable));
   }
+  function createPointerFocus(win, options) {
+    var doc = win.document, hovered = null, muted = null, pointer = false, lastX = null, lastY = null;
+    var moveEvent = win.PointerEvent ? 'pointermove' : 'mousemove';
+    var downEvent = win.PointerEvent ? 'pointerdown' : 'mousedown';
+    function unmute() {
+      if (muted) muted.classList.remove('pointer-focus-muted');
+      muted = null;
+    }
+    function paint(element) {
+      unmute();
+      if (pointer && doc.activeElement && doc.activeElement !== element) {
+        muted = doc.activeElement;
+        muted.classList.add('pointer-focus-muted');
+      }
+      options.paint(element);
+    }
+    function target(event) {
+      var node = event.target && event.target.closest && event.target.closest(options.selector);
+      return node && !node.disabled && (pointer && hovered === node || options.allowed(node)) ? node : null;
+    }
+    function focusChanged(element) {
+      pointer = false; hovered = null;
+      paint(element);
+    }
+    function move(event) {
+      if (event.pointerType && event.pointerType !== 'mouse') return;
+      // Layout changes and a stationary cursor must not take focus back
+      // after keyboard navigation, scrolling or a modal has opened.
+      if (lastX === event.clientX && lastY === event.clientY) return;
+      lastX = event.clientX; lastY = event.clientY;
+      var node = target(event);
+      if (pointer && hovered === node) return;
+      pointer = true; hovered = node;
+      paint(node);
+      if (options.hover) options.hover(node);
+    }
+    function down(event) {
+      if (event.pointerType && event.pointerType !== 'mouse' || event.button !== 0) return;
+      var node = target(event);
+      if (!node) return;
+      // Safari buttons do not always focus on click. Establish the opener
+      // before its click handler, without moving the page or consuming it.
+      node.focus({ preventScroll: true });
+      focusChanged(doc.activeElement);
+    }
+    function key(event) {
+      if (!pointer) return;
+      var node = hovered, active = doc.activeElement;
+      var handoff = !editing(active) && !event.isComposing && event.keyCode !== 229 &&
+        !event.ctrlKey && !event.altKey && !event.metaKey &&
+        /^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Enter| |Tab)$/.test(event.key || '');
+      focusChanged(active);
+      if (handoff && node && options.allowed(node)) options.focus(node);
+    }
+    function clear() {
+      if (!pointer) return;
+      hovered = null;
+      paint(null);
+    }
+    function leave(event) { if (!event.relatedTarget) clear(); }
+    doc.addEventListener(moveEvent, move);
+    doc.addEventListener(downEvent, down, true);
+    doc.addEventListener('keydown', key, true);
+    doc.addEventListener('scroll', clear, true);
+    doc.addEventListener('mouseout', leave);
+    win.addEventListener('blur', clear);
+    return { focusChanged: focusChanged, clear: clear };
+  }
   function install(win) {
     var doc = win.document, config = win.HongguoDesktop || { platform: 'preview', version: t('ui.desktopPreview', '桌面预览') };
     win.HongguoDesktop = config;
@@ -105,5 +173,5 @@
       openFolder: function () { invoke('OpenUpdateFolder'); }
     };
   }
-  return { mediaSource: mediaSource, editing: editing, install: install, createUpdateBridge: createUpdateBridge, createWindowMonitor: createWindowMonitor };
+  return { mediaSource: mediaSource, editing: editing, createPointerFocus: createPointerFocus, install: install, createUpdateBridge: createUpdateBridge, createWindowMonitor: createWindowMonitor };
 }));

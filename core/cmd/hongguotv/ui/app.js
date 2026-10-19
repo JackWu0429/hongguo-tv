@@ -155,6 +155,7 @@
   // Explicit Wails configuration or ?platform=desktop; TV browser previews
   // retain the Android interaction model but do not expose native settings.
   var desktopShell = !!window.HongguoDesktop;
+  var desktopPointerFocus = null;
   var autoCinemaPlatform = desktopShell ? 'desktop' : androidShell ? 'android' : webosShell ? 'webos' : 'desktop';
   var autoCinemaEnabled = autoCinemaPlatform === 'android' || autoCinemaPlatform === 'webos';
   var autoCinemaCandidate = false;
@@ -854,6 +855,11 @@
   }
 
   function markFocus(element) {
+    if (typeof desktopPointerFocus !== 'undefined' && desktopPointerFocus) { desktopPointerFocus.focusChanged(element); return; }
+    paintFocus(element);
+  }
+
+  function paintFocus(element) {
     document.querySelectorAll('.is-focused').forEach(function (node) { node.classList.remove('is-focused'); });
     if (element) element.classList.add('is-focused');
   }
@@ -6421,6 +6427,18 @@
     if (!restoring) goFocus(firstContentFocus());
   }
 
+  if (desktopShell && window.HongguoDesktopUI && window.HongguoDesktopUI.createPointerFocus) {
+    desktopPointerFocus = window.HongguoDesktopUI.createPointerFocus(window, {
+      selector: Object.keys(zoneSelectors).map(function (zone) { return zoneSelectors[zone]; }).join(','),
+      allowed: function (element) { return focusables().indexOf(element) >= 0; },
+      paint: paintFocus,
+      focus: goFocus,
+      hover: function (element) {
+        if (element && element.closest('#hero')) revealControls();
+        if (element && element.closest('#end-recommendations')) cancelEndRecommendationAutoplay();
+      }
+    });
+  }
   document.addEventListener('keydown', handleKey, true);
   document.addEventListener('scroll', queueTailCheck, true);
   window.addEventListener('resize', queueTailCheck);
