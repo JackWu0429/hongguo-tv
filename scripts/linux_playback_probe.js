@@ -17,7 +17,7 @@
     series_id: '7696023326375808024', steps: [], events: [], requests: [] };
   var video = document.getElementById('hero-video');
   var started = performance.now(), presented = 0, lastPTS = null, sourceNumber = 0, lastSource = '';
-  var originalFetch = window.fetch;
+  var originalFetch = window.fetch, mediaPaths = Object.create(null);
   // Keep status/mode evidence without retaining signed URLs, response bodies,
   // keys, local media tokens, or account data in the test report.
   window.fetch = function (input, options) {
@@ -33,6 +33,7 @@
           if (entry.endpoint === 'play/info') {
             entry.mode = data.mode || null;
             entry.vid = data.vid || null;
+            if (data.vid && data.path) mediaPaths[data.vid] = new URL(data.path, location.href).pathname;
           }
         }).catch(function () {});
       }
@@ -41,6 +42,10 @@
   };
   function sleep(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
   function text(selector) { var node = document.querySelector(selector); return node ? node.textContent.trim() : ''; }
+  function isEpisodeSource(vid) {
+    try { return !!mediaPaths[vid] && new URL(video.currentSrc || video.src).pathname === mediaPaths[vid]; }
+    catch (ignored) { return false; }
+  }
   function sample() {
     var source = video.currentSrc || video.src;
     if (source !== lastSource) { lastSource = source; sourceNumber++; }
@@ -95,7 +100,7 @@
       await sleep(4000);
       if (!window.HongguoTV.openHomeProgram({ series_id: report.series_id, title: '神豪外挂第一季' })) throw new Error('card launch rejected');
       await waitFor('episode 1 metadata', function () {
-        return text('.hero-title') === '神豪外挂第一季' && /第1集/.test(text('#hero-top-episode')) &&
+        return isEpisodeSource('7696024766267804697') && text('.hero-title') === '神豪外挂第一季' && /第1集/.test(text('#hero-top-episode')) &&
           video.videoWidth > 0 && video.readyState >= 2;
       }, 100000);
       await sleep(700);
@@ -106,7 +111,7 @@
         report.initialUserPlay = await send('activate', {});
       }
       await waitFor('episode 1 first decoded picture', function () {
-        return text('.hero-title') === '神豪外挂第一季' && /第1集/.test(text('#hero-top-episode')) &&
+        return isEpisodeSource('7696024766267804697') && text('.hero-title') === '神豪外挂第一季' && /第1集/.test(text('#hero-top-episode')) &&
           video.videoWidth > 0 && video.readyState >= 2 && video.currentTime > 2 && !video.paused;
       }, 40000);
       var first = await capture('first-a');
@@ -126,7 +131,7 @@
       document.getElementById('hero-feed-focus').focus();
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
       await waitFor('episode 2 decoded picture', function () {
-        return /第2集/.test(text('#hero-top-episode')) && video.currentSrc !== oldSource &&
+        return isEpisodeSource('7696024585514257433') && /第2集/.test(text('#hero-top-episode')) && video.currentSrc !== oldSource &&
           video.videoWidth > 0 && video.currentTime > 2 && video.readyState >= 2 && !video.paused;
       }, 100000);
       var second = await capture('second-a');
