@@ -76,7 +76,7 @@
           <button class="channel-tab is-active" data-focus="channel-recommend" data-i18n="nav.recommend">推荐</button>
           <button class="channel-tab recommend-refresh" id="recommend-refresh" data-focus="recommend-refresh" aria-label="换一批推荐" data-i18n-aria-label="channel.refresh" data-i18n="channel.refresh">换一批</button>
         </div>
-        <div class="top-status" id="core-status"><svg class="status-icon" aria-hidden="true" focusable="false"><use href="#icon-connection" xlink:href="#icon-connection"></use></svg><span id="core-status-label">连接核心服务…</span></div>
+        <button type="button" class="top-status" id="core-status" tabindex="-1" aria-disabled="true" aria-haspopup="dialog" aria-controls="core-connection-modal"><svg class="status-icon" aria-hidden="true" focusable="false"><use href="#icon-connection" xlink:href="#icon-connection"></use></svg><span id="core-status-label">连接核心服务…</span></button>
       </div>
 
       <section class="page-placeholder is-hidden" id="page-placeholder" aria-live="polite">
@@ -424,6 +424,18 @@
       <div class="notification-popup is-hidden" id="notification-popup" role="status" aria-live="polite" aria-atomic="true"></div>
     </section>
   </main>
+  <section class="core-connection-modal is-hidden" id="core-connection-modal" aria-hidden="true">
+    <div class="core-connection-dialog" role="dialog" aria-modal="true" aria-labelledby="core-connection-title">
+      <h2 id="core-connection-title" data-i18n="connection.title">无法连接本机服务</h2>
+      <p id="core-connection-summary" class="core-connection-summary" data-i18n="connection.summary">请拍下此页并反馈，帮助定位连接问题。</p>
+      <div class="core-connection-scroll" id="core-connection-scroll" tabindex="0" data-focus="core-connection-scroll" aria-label="连接诊断信息" data-i18n-aria-label="connection.details"></div>
+      <p class="core-connection-privacy" data-i18n="connection.privacy">此信息不包含账号、验证码或播放链接。</p>
+      <div class="core-connection-actions">
+        <button type="button" class="core-connection-action is-primary" id="core-connection-retry" data-focus="core-connection-retry" data-i18n="common.retry">重试</button>
+        <button type="button" class="core-connection-action" id="core-connection-close" data-focus="core-connection-close" data-i18n="common.close">关闭</button>
+      </div>
+    </div>
+  </section>
   <script src="/pagination.js"></script>
   <script src="/episode-prefetch.js"></script>
   <script src="/end-recommendations.js"></script>

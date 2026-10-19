@@ -16,6 +16,16 @@ mkdir -p "$app_stage" "$service_stage" "$out_dir"
 cp -R "$repo_dir/core/cmd/hongguotv/ui/." "$app_stage/"
 cp "$repo_dir/webos/appinfo.json" "$app_stage/appinfo.json"
 cp "$repo_dir/webos/app/webos-adapter.js" "$app_stage/webos-adapter.js"
+node - "$app_stage/webos-adapter.js" "$app_stage/appinfo.json" <<'NODE'
+var fs = require('fs');
+var adapterPath = process.argv[2];
+var appInfoPath = process.argv[3];
+var adapter = fs.readFileSync(adapterPath, 'utf8');
+var appInfo = JSON.parse(fs.readFileSync(appInfoPath, 'utf8'));
+var marker = "appVersion: ''";
+if (adapter.indexOf(marker) < 0) throw new Error('webOS adapter appVersion placeholder missing');
+fs.writeFileSync(adapterPath, adapter.replace(marker, 'appVersion: ' + JSON.stringify(appInfo.version)));
+NODE
 mkdir -p "$app_stage/webOSTVjs-1.2.13"
 cp "$repo_dir/webos/app/webOSTVjs-1.2.13/webOSTV.js" "$app_stage/webOSTVjs-1.2.13/webOSTV.js"
 cp "$repo_dir/webos/app/webOSTVjs-1.2.13/LICENSE-2.0.txt" "$app_stage/webOSTVjs-1.2.13/LICENSE-2.0.txt"

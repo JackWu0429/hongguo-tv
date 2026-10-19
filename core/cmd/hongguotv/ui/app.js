@@ -6,7 +6,8 @@
   // on screen, which is especially confusing on a TV.
   var zoneSelectors = {
     sidebar: '.side-item',
-    channels: '.channel-tab',
+    channels: '.channel-tab, #core-status[tabindex="0"]',
+    coreConnection: '.core-connection-action, #core-connection-scroll',
     feed: '.hero-feed-focus',
     catalog: '.catalog-card',
     actions: '.round-action',
@@ -79,6 +80,9 @@
   var coreStatusState = 'connecting';
   var coreStatusVersion = '';
   var coreStatusDiagnostic = '';
+  var coreConnectionDiagnostic = null;
+  var coreConnectionModalOpen = false;
+  var coreConnectionReturnFocus = null;
   var notice = document.getElementById('action-notice');
   var shell = document.querySelector('.app-shell');
   function uiText(key, fallback, params) {
@@ -91,9 +95,12 @@
       error: ['ui.serviceError', '连接异常'],
       unavailable: ['ui.serviceUnavailable', '本机服务连接失败，请重新打开应用']
     }[coreStatusState] || ['core.connecting', '连接核心服务…'];
-    var diagnostic = coreStatusState === 'unavailable' ? coreStatusDiagnostic : '';
+    var diagnostic = coreStatusState !== 'connected' ? coreStatusDiagnostic : '';
     coreStatusLabel.textContent = uiText(message[0], message[1]) + (diagnostic ? ' [' + diagnostic + ']' : '');
     status.dataset.ok = coreStatusState === 'connected' ? 'true' : 'false';
+    var canDiagnose = !!window.HongguoWebOS && coreStatusState !== 'connected';
+    status.tabIndex = canDiagnose ? 0 : -1;
+    status.setAttribute('aria-disabled', canDiagnose ? 'false' : 'true');
     if (coreStatusState === 'connected' && coreStatusVersion) status.title = uiText('common.version', '版本 {version}', { version: coreStatusVersion });
     else if (diagnostic) status.title = diagnostic;
     else status.removeAttribute('title');
@@ -803,7 +810,8 @@
     Array.prototype.forEach.call(document.querySelectorAll(query), function (element) {
       var style = window.getComputedStyle(element);
       var insideModal = element.closest && element.closest('#detail-modal');
-      if (scanModalOpen()) { if (!element.closest('#search-scan-modal')) return; }
+      if (coreConnectionModalOpen) { if (!element.closest('#core-connection-modal')) return; }
+      else if (scanModalOpen()) { if (!element.closest('#search-scan-modal')) return; }
       else if (accountCountryModalOpen) { if (!element.closest('#account-country-modal')) return; }
       else if (accountKeypadOpen()) { if (!element.closest('#account-keypad-modal')) return; }
       else if (supportModalOpen) { if (!element.closest('#support-modal')) return; }
@@ -851,6 +859,8 @@
 
   function zoneOf(element) {
     if (!element) return '';
+    if (element.id === 'core-connection-scroll' || element.classList.contains('core-connection-action')) return 'coreConnection';
+    if (element.id === 'core-status') return 'channels';
     if (element.classList.contains('end-recommendation-card') || element.id === 'end-recommendations-close') return 'endRecommendations';
     if (element.classList.contains('search-scan-action')) return 'searchScan';
     if (element.classList.contains('search-history-action')) return 'searchHistory';
@@ -932,6 +942,7 @@
   function goFocus(element) {
     if (!element || element.disabled || !element.getClientRects().length) return;
     if (window.getComputedStyle(element).visibility !== 'visible') return;
+    if (coreConnectionModalOpen && !element.closest('#core-connection-modal')) return;
     // The default scroll behavior is sufficient; old WebViews have no
     // focus-options overload.
     var previous = document.activeElement;
@@ -1188,6 +1199,7 @@
   }
 
   function moveFrom(current, direction) {
+    if (coreConnectionModalOpen) return moveCoreConnectionFocus(current, direction);
     if (scanModalOpen()) return direction === 'left' || direction === 'right' ? moveWithinZone('searchScan', current, direction) : null;
     if (typeof accountCountryModalOpen !== 'undefined' && accountCountryModalOpen) {
       if (current.id === 'account-country-close') return direction === 'down' ? document.querySelector('.account-country-item.is-selected') || firstVisible('.account-country-item') : null;
@@ -2455,6 +2467,7 @@
     fullscreenExitKeepsHidden = false;
   }
   function handleBack() {
+    if (coreConnectionModalOpen) { closeCoreConnectionModal(true); return true; }
     if (autoCinemaCandidate) cancelPendingAutoCinema();
     if (endRecommendations && endRecommendations.close(true)) return true;
     if (searchScanOpen) { closeSearchScan(true); return true; }
@@ -6382,35 +6395,159 @@
     }
   });
 
-  function loadStatus() {
+  function coreDiagnosticValue(value, limit) {
+    return String(value == null ? '' : value)
+      .replace(/[\u0000-\u001f\u007f]/g, ' ')
+      .replace(/\bhttps?:\/\/\S+/gi, '[URL redacted]')
+      .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')
+      .replace(/\b(cookie|authorization|token|signature|secret|password)\b(\s*[:=]\s*)\S+/gi, '$1$2[redacted]')
+      .replace(/\s+/g, ' ').slice(0, limit || 240);
+  }
+  function coreConnectionRows(diagnostic) {
+    var bridge = window.HongguoWebOS || {};
+    var timestamp = diagnostic.timestamp ? new Date(diagnostic.timestamp) : new Date();
+    var device = coreDiagnosticValue(window.navigator && window.navigator.userAgent, 260) || uiText('connection.unknown', '未取得');
+    var rows = [
+      [uiText('connection.stage', '失败阶段'), diagnostic.stage || 'unknown'],
+      [uiText('connection.code', '错误码'), diagnostic.code || 'UNKNOWN'],
+      [uiText('connection.detail', '错误详情'), diagnostic.message || uiText('connection.unknown', '未取得')],
+      [uiText('connection.serviceId', 'webOS 服务'), 'com.aston314.hongguo.webos.service'],
+      [uiText('connection.address', '本机服务'), '127.0.0.1:' + String(diagnostic.port || 7655)],
+      [uiText('connection.time', '发生时间'), timestamp.toLocaleString()],
+      [uiText('connection.version', '应用版本'), bridge.appVersion || uiText('connection.unknown', '未取得')],
+      [uiText('connection.device', '设备标识'), device]
+    ];
+    var root = document.getElementById('core-connection-scroll');
+    root.innerHTML = '';
+    rows.forEach(function (entry, index) {
+      var row = document.createElement('div'); row.className = 'core-connection-row';
+      var label = document.createElement('span'); label.className = 'core-connection-label'; label.textContent = entry[0];
+      var value = document.createElement('span'); value.className = 'core-connection-value'; value.textContent = coreDiagnosticValue(entry[1], index === 7 ? 260 : 300);
+      row.appendChild(label); row.appendChild(value); root.appendChild(row);
+    });
+  }
+  function openCoreConnectionModal() {
+    if (!window.HongguoWebOS || coreConnectionModalOpen) return;
+    coreConnectionReturnFocus = document.activeElement;
+    coreConnectionModalOpen = true;
+    var modal = document.getElementById('core-connection-modal');
+    modal.classList.remove('is-hidden'); modal.setAttribute('aria-hidden', 'false');
+    if (coreConnectionDiagnostic) coreConnectionRows(coreConnectionDiagnostic);
+    goFocus(document.getElementById('core-connection-retry'));
+  }
+  function closeCoreConnectionModal(restore) {
+    if (!coreConnectionModalOpen) return;
+    coreConnectionModalOpen = false;
+    var modal = document.getElementById('core-connection-modal');
+    modal.classList.add('is-hidden'); modal.setAttribute('aria-hidden', 'true');
+    var target = coreConnectionReturnFocus || status;
+    if (coreStatusState === 'connected' && target === status) target = activeSidebar();
+    coreConnectionReturnFocus = null;
+    if (restore !== false) goFocus(target && document.contains(target) ? target : status);
+  }
+  function moveCoreConnectionFocus(current, direction) {
+    var scroll = document.getElementById('core-connection-scroll');
+    var retry = document.getElementById('core-connection-retry');
+    var close = document.getElementById('core-connection-close');
+    if (current === scroll) {
+      if (direction === 'right') return retry;
+      if (direction === 'down' || direction === 'up') {
+        var bottom = Math.max(0, scroll.scrollHeight - scroll.clientHeight);
+        if (direction === 'down' && scroll.scrollTop >= bottom - 1) return retry;
+        var step = Math.max(48, Math.round(scroll.clientHeight * .65));
+        scroll.scrollTop = Math.max(0, Math.min(bottom, scroll.scrollTop + (direction === 'down' ? step : -step)));
+      }
+      return null;
+    }
+    if (direction === 'up') return scroll;
+    if (direction === 'left' || direction === 'right') return current === retry ? close : retry;
+    return null;
+  }
+  function setCoreConnectionFailure(error, open) {
+    var bridge = window.HongguoWebOS || {};
+    var adapterDiagnostic = null;
+    if (typeof bridge.getDiagnostic === 'function') {
+      try { adapterDiagnostic = bridge.getDiagnostic(); } catch (ignoredDiagnostic) {}
+    }
+    var adapterHasFailure = adapterDiagnostic && adapterDiagnostic.code && adapterDiagnostic.code !== 'READY' && adapterDiagnostic.code !== 'NOT_CHECKED';
+    var diagnostic = adapterHasFailure ? adapterDiagnostic : error;
+    if (!diagnostic || !diagnostic.code) {
+      diagnostic = { stage: error && error.stage || 'status_request', code: error && error.code || 'STATUS_UNREACHABLE', message: error && error.message || uiText('connection.statusFailed', '无法读取本机服务状态'), port: 7655, timestamp: Date.now() };
+    }
+    coreConnectionDiagnostic = {
+      stage: coreDiagnosticValue(diagnostic.stage || 'unknown', 64),
+      code: coreDiagnosticValue(diagnostic.code || 'UNKNOWN', 64),
+      message: coreDiagnosticValue(diagnostic.message || uiText('connection.statusFailed', '无法读取本机服务状态'), 300),
+      port: Number(diagnostic.port) || 7655,
+      timestamp: Number(diagnostic.timestamp) || Date.now()
+    };
+    coreStatusState = coreConnectionDiagnostic.stage === 'status_http' || coreConnectionDiagnostic.stage === 'status_response' ? 'error' : 'unavailable';
+    coreStatusVersion = '';
+    coreStatusDiagnostic = coreConnectionDiagnostic.code;
+    renderCoreStatus();
+    coreConnectionRows(coreConnectionDiagnostic);
+    var retry = document.getElementById('core-connection-retry');
+    retry.disabled = false;
+    retry.textContent = uiText('common.retry', '重试');
+    if (coreConnectionModalOpen) {
+      document.getElementById('core-connection-summary').textContent = uiText('connection.summary', '请拍下此页并反馈，帮助定位连接问题。');
+      goFocus(retry);
+    }
+    else if (open && window.HongguoWebOS) openCoreConnectionModal();
+  }
+  function retryCoreConnection() {
+    var button = document.getElementById('core-connection-retry');
+    if (button.disabled) return;
+    button.disabled = true;
+    button.textContent = uiText('connection.retrying', '正在重试…');
+    document.getElementById('core-connection-summary').textContent = uiText('connection.retryingDetail', '正在重新检查 webOS 系统服务和本机数据服务…');
+    goFocus(document.getElementById('core-connection-scroll'));
+    var bridge = window.HongguoWebOS || {};
+    if (typeof bridge.wakeService !== 'function') {
+      button.disabled = false;
+      button.textContent = uiText('common.retry', '重试');
+      setCoreConnectionFailure({ stage: 'luna_ping', code: 'LUNA_API_UNAVAILABLE', message: uiText('connection.bridgeUnavailable', '未找到 webOS 系统服务接口') }, false);
+      return;
+    }
+    Promise.resolve().then(function () { return bridge.wakeService(); }).then(function () {
+      loadStatus({ openOnFailure: false, closeOnSuccess: true });
+    }, function (error) {
+      button.disabled = false;
+      button.textContent = uiText('common.retry', '重试');
+      setCoreConnectionFailure(error, false);
+    });
+  }
+  document.getElementById('core-status').addEventListener('click', function () {
+    if (window.HongguoWebOS && coreStatusState !== 'connected') openCoreConnectionModal();
+  });
+  document.getElementById('core-connection-retry').addEventListener('click', retryCoreConnection);
+  document.getElementById('core-connection-close').addEventListener('click', function () { closeCoreConnectionModal(true); });
+  function loadStatus(options) {
+    options = options || {};
     // Use a bounded request even on WebViews without fetch/AbortController.
     var request = new XMLHttpRequest();
     request.open('GET', '/api/v1/status', true);
     request.timeout = 8000;
-    function failed() {
-      coreStatusState = 'unavailable'; coreStatusVersion = ''; coreStatusDiagnostic = '';
-      if (window.HongguoWebOS && typeof window.HongguoWebOS.getDiagnostic === 'function') {
-        try {
-          var diagnostic = window.HongguoWebOS.getDiagnostic();
-          if (diagnostic && diagnostic.code && diagnostic.code !== 'NOT_CHECKED') {
-            coreStatusDiagnostic = String(diagnostic.code).slice(0, 32);
-            status.title = 'stage=' + String(diagnostic.stage || 'unknown') + '; code=' + coreStatusDiagnostic + '; ' + String(diagnostic.message || '').slice(0, 180);
-          }
-        } catch (ignoredDiagnostic) {}
-      }
-      renderCoreStatus();
-    }
+    function failed(error) { setCoreConnectionFailure(error, options.openOnFailure !== false); }
     renderCoreStatus();
     request.onload = function () {
       try {
         var data = JSON.parse(request.responseText);
-        coreStatusState = request.status === 200 && data.ok ? 'connected' : 'error';
-        coreStatusVersion = coreStatusState === 'connected' ? data.version || '' : '';
-        coreStatusDiagnostic = '';
-        renderCoreStatus();
-      } catch (error) { failed(); }
+        if (request.status === 200 && data.ok) {
+          coreStatusState = 'connected'; coreStatusVersion = data.version || ''; coreStatusDiagnostic = ''; coreConnectionDiagnostic = null;
+          var retryButton = document.getElementById('core-connection-retry');
+          retryButton.disabled = false;
+          retryButton.textContent = uiText('common.retry', '重试');
+          document.getElementById('core-connection-summary').textContent = uiText('connection.summary', '请拍下此页并反馈，帮助定位连接问题。');
+          renderCoreStatus();
+          if (options.closeOnSuccess && coreConnectionModalOpen) closeCoreConnectionModal(true);
+        } else {
+          failed({ stage: 'status_http', code: 'STATUS_HTTP_' + (request.status || 0), message: data && (data.message || data.error) || 'HTTP ' + (request.status || 0) });
+        }
+      } catch (error) { failed({ stage: 'status_response', code: 'STATUS_INVALID_RESPONSE', message: error && error.message || 'invalid response' }); }
     };
-    request.onerror = failed; request.ontimeout = failed;
+    request.onerror = function () { failed({ stage: 'status_request', code: 'STATUS_NETWORK_ERROR', message: '连接本机服务的状态请求失败' }); };
+    request.ontimeout = function () { failed({ stage: 'status_request', code: 'STATUS_TIMEOUT', message: '等待本机服务状态超时' }); };
     request.send();
   }
 
