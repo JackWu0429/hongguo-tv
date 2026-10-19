@@ -1,0 +1,81 @@
+name: Linux playback validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/linux-playback-validation]
+
+permissions:
+  contents: read
+
+jobs:
+  playback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    env:
+      HONGGUO_PROBE_OUTPUT: ${{ runner.temp }}/linux-playback-evidence
+      HONGGUO_CORE_PATH: ${{ runner.temp }}/hongguo-tv-core
+      HONGGUO_PROBE_JS: ${{ github.workspace }}/scripts/linux_playback_probe.js
+      XDG_CACHE_HOME: ${{ runner.temp }}/linux-playback-cache
+      XDG_CONFIG_HOME: ${{ runner.temp }}/linux-playback-config
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      # Exercise the software HEVC decoder, without relying on runner GPU drivers.
+      GST_PLUGIN_FEATURE_RANK: avdec_h265:300,avdec_h264:300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache-dependency-path: |
+            go.sum
+            desktop/go.sum
+      - name: Install native WebKitGTK and media dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev gstreamer1.0-tools gstreamer1.0-libav gstreamer1.0-plugins-good gstreamer1.0-plugins-bad xvfb xauth dbus-x11 pulseaudio ffmpeg imagemagick python3-pil fonts-noto-cjk openbox
+          mkdir -p "$HONGGUO_PROBE_OUTPUT" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME"
+          { uname -a; pkg-config --modversion gtk+-3.0 webkit2gtk-4.1; gst-inspect-1.0 --version; gst-inspect-1.0 avdec_h265; gst-inspect-1.0 avdec_aac; } > "$HONGGUO_PROBE_OUTPUT/environment.txt"
+      - name: Build actual Go core and opt-in Wails probe
+        run: |
+          node --check scripts/linux_playback_probe.js
+          go build -ldflags '-X main.version=linux-playback-validation' -o "$HONGGUO_CORE_PATH" ./core/cmd/hongguotv
+          node desktop/frontend/build.mjs
+          cd desktop
+          go test -c -tags 'production,webkit2_41,linux_playback_probe' -ldflags '-X main.version=linux-playback-validation -X main.desktopVersion=0.2.92-linux-validation' -o "$RUNNER_TEMP/linux-playback-probe"
+      - name: Run real desktop window with live Hongguo media
+        run: |
+          xvfb-run -a -s '-screen 0 1280x800x24' dbus-run-session -- bash -c '
+            set -e
+            openbox > "$RUNNER_TEMP/openbox.log" 2>&1 &
+            pulseaudio --start --exit-idle-time=-1
+            pactl load-module module-null-sink sink_name=linux_probe >/dev/null
+            pactl set-default-sink linux_probe
+            "$RUNNER_TEMP/linux-playback-probe" -test.run "^TestLinuxPlaybackProbe$" -test.v -test.timeout 7m
+          ' > "$RUNNER_TEMP/linux-playback-private.log" 2>&1
+      - name: Retain sanitized native diagnostics
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'linux-playback-private.log'
+          if path.exists():
+              log = re.sub(r'''(?:https?|wails)://[^\s'"<>]+''', '[URL omitted]', path.read_text(errors='replace'))
+              (Path(os.environ['HONGGUO_PROBE_OUTPUT']) / 'native.txt').write_text(log)
+              print(log[-6000:])
+          PY
+      - name: Verify pictures, progress, audio, seek and episode change
+        if: always()
+        run: python3 scripts/verify_linux_playback.py "$HONGGUO_PROBE_OUTPUT"
+      - name: Upload diagnostic evidence (no media files or credentials)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-playback-evidence
+          path: |
+            ${{ env.HONGGUO_PROBE_OUTPUT }}/*.json
+            ${{ env.HONGGUO_PROBE_OUTPUT }}/*.png
+            ${{ env.HONGGUO_PROBE_OUTPUT }}/environment.txt
+            ${{ env.HONGGUO_PROBE_OUTPUT }}/native.txt
+          retention-days: 5
+          if-no-files-found: warn
