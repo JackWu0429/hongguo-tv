@@ -46,5 +46,17 @@ test('loading poster layers reveal the decoded current source together and rejec
   assert.equal(c.poster.names.includes('is-cover-pending'),false);
   const count=c.images.length;c.setBackdrop(c.backdrop,{cover:'second.jpg'},c.poster);assert.equal(c.images.length,count);
   c.setBackdrop(c.backdrop,{cover:'bad.jpg'},c.poster);c.backdrop.__coverLoader.onerror();
-  assert.equal(c.backdrop.style.backgroundImage,'none');assert.equal(c.poster.style.backgroundImage,'none');
+  assert.equal(c.backdrop.style.backgroundImage,'url("second.jpg")');assert.equal(c.poster.style.backgroundImage,'url("second.jpg")');
+});
+
+test('a loaded poster stays visible while the next episode cover is decoding', () => {
+  const c=posters();
+  vm.runInContext(`backdrop=node();poster=node();setBackdrop(backdrop,{cover:'first.jpg'},poster);first=backdrop.__coverLoader;first.onload();paint();setBackdrop(backdrop,{cover:'second.jpg'},poster);second=backdrop.__coverLoader`,c);
+  assert.equal(c.backdrop.style.backgroundImage,'url("first.jpg")');
+  assert.equal(c.poster.style.backgroundImage,'url("first.jpg")');
+  assert.equal(c.backdrop.names.includes('is-cover-pending'),false);
+  assert.equal(c.poster.names.includes('is-cover-pending'),false);
+  c.second.onload();c.paint();
+  assert.equal(c.backdrop.style.backgroundImage,'url("second.jpg")');
+  assert.equal(c.poster.style.backgroundImage,'url("second.jpg")');
 });

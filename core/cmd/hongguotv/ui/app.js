@@ -3247,11 +3247,17 @@
     if (backdrop.__coverSource === source) return;
     backdrop.__coverSource = source;
     var layers = poster ? [backdrop, poster] : [backdrop];
+    // During a same-series switch the previous poster is already a valid
+    // loading surface. Keep it visible while the target image is fetched and
+    // decoded; clearing the CSS background here creates a black paint gap.
+    var retainPrevious = layers.some(function (layer) {
+      return layer.style.backgroundImage && layer.style.backgroundImage !== 'none';
+    });
     var loader = new Image();
     backdrop.__coverLoader = loader;
     layers.forEach(function (layer) {
-      layer.classList.add('is-cover-pending');
-      layer.style.backgroundImage = 'none';
+      if (!retainPrevious) layer.classList.add('is-cover-pending');
+      if (!retainPrevious) layer.style.backgroundImage = 'none';
     });
     loader.onload = function () {
       if (backdrop.__coverLoader !== loader) return;
@@ -3262,8 +3268,13 @@
         if (backdrop.__coverLoader === loader) layers.forEach(function (layer) { layer.classList.remove('is-cover-pending'); });
       });
     };
-    loader.onerror = function () { if (backdrop.__coverLoader === loader) layers.forEach(function (layer) { layer.style.backgroundImage = 'none'; }); };
+    loader.onerror = function () {
+      if (backdrop.__coverLoader !== loader) return;
+      if (!retainPrevious) layers.forEach(function (layer) { layer.style.backgroundImage = 'none'; });
+      layers.forEach(function (layer) { layer.classList.remove('is-cover-pending'); });
+    };
     if (source) loader.src = source;
+    else loader.onerror();
   }
 
   function setFeatured(item, waitingForProgress) {

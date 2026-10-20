@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 
 const source=fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'),'utf8');
+const styles=fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'),'utf8');
 function between(start,end){return source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));}
 function classes(...initial){const values=new Set(initial);return {add(...names){names.forEach(x=>values.add(x));},remove(...names){names.forEach(x=>values.delete(x));},contains(name){return values.has(name);}};}
 function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};}
@@ -26,6 +27,12 @@ function fixture(engine='mpv'){
  return {context,hero,cover,canvas,video,images,paint,playback};
 }
 const target={series_id:'series-1',vid:'vid-2'};
+
+test('standard same-series switches keep the loaded series cover until the target episode cover is ready',()=>{
+ assert.match(styles,/\.hero\.is-preparing-video \.hero-backdrop, \.hero\.is-preparing-video \.hero-loading-poster \{ visibility: visible; \}/);
+ assert.match(styles,/\.hero\.is-preparing-video\.is-episode-transition\.is-range-transition \.hero-backdrop, \.hero\.is-preparing-video\.is-episode-transition\.is-range-transition \.hero-loading-poster \{ visibility: hidden; \}/);
+ assert.doesNotMatch(styles,/\.hero\.is-preparing-video\.is-episode-transition \.hero-backdrop, \.hero\.is-preparing-video\.is-episode-transition \.hero-loading-poster/);
+});
 
 test('only the current episode can reveal its episode_cover for MPV and standard playback',()=>{
  const f=fixture();
