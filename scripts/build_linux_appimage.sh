@@ -33,7 +33,7 @@ install -m 644 "$repo_dir/docs/linux-appimage.md" "$app_dir/README.md"
 curl --fail --location --retry 3 'https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage' -o "$build_dir/appimagetool.AppImage"
 curl --fail --location --retry 3 'https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64' -o "$build_dir/runtime-x86_64"
 printf '%s  %s\n' '95cbe7cce9717fce90c484e34052ee7c7f1d7635b33c12525b4776826a7d29b6' "$build_dir/appimagetool.AppImage" | sha256sum --check
-printf '%s  %s\n' '156f4bdbde9c52d01814600013e0a273f0118dc2de98975f3c8c63427ec79074' "$build_dir/runtime-x86_64" | sha256sum --check
+printf '%s  %s\n' '617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46' "$build_dir/runtime-x86_64" | sha256sum --check
 chmod +x "$build_dir/appimagetool.AppImage"
 cd "$build_dir"
 ./appimagetool.AppImage --appimage-extract >/dev/null
