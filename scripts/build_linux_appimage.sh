@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Experimental distribution builds run inside Debian 12 on GitHub Actions.
+# Linux test packages are built inside Debian 12 on GitHub Actions.
 set -euo pipefail
 : "${GITHUB_ACTIONS:?Use the Linux AppImage validation workflow}"
 : "${HONGGUO_CORE_VERSION:?Exact bundled core identity is required}"
-: "${HONGGUO_LINUX_VERSION:?Experimental package version is required}"
+: "${HONGGUO_LINUX_VERSION:?Linux package version is required}"
 : "${HONGGUO_LINUX_OUT:?Output directory is required}"
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 build_dir="$(mktemp -d /tmp/hongguo-appimage-build.XXXXXX)"
@@ -42,6 +42,7 @@ ARCH=x86_64 ./squashfs-root/AppRun --no-appstream --runtime-file "$build_dir/run
 chmod 755 "$package_path"
 cd "$HONGGUO_LINUX_OUT"
 sha256sum ./*.AppImage > SHA256SUMS
+(cd "$HONGGUO_LINUX_OUT" && sha256sum "$(basename "$package_path")" > "$(basename "$package_path").sha256")
 python3 - "$package_path" <<'PY'
 import hashlib, json, os, sys
 from pathlib import Path

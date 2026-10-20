@@ -1,4 +1,4 @@
-# 红果短剧 webOS 实验版（未发布）
+# 红果短剧 webOS 实验版
 
 这个目录是 LG webOS TV 的实验性 Web App 外壳。它复用 Android、桌面和浏览器预览使用的 Web UI，并通过 webOS JavaScript Service 提供本机 HTTP 边界。
 
@@ -52,4 +52,4 @@ ARES_DIR="$HOME/.local/webos" bash scripts/build_webos.sh
 1. 在 macOS 上运行 `bash scripts/verify_webos.sh`，并使用真实上游完成公共接口验收；
 2. 在 webOS Simulator 中验证服务唤醒、首页列表、搜索、详情和连续播放；
 3. 在至少一台 LG 真机验证 HTTP Service、HEVC/AAC 解码、Range 播放和遥控器焦点；
-4. 只有账号态接口和真机结果都明确后，才更新版本号并生成对外 IPK。
+4. 当前公开 IPK 仅供社区真机验证，不是稳定版。只有账号态接口和 LG 真机结果都明确后，才能将 webOS 标为正式支持。

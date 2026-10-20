@@ -1,9 +1,10 @@
-name: Linux AppImage experiment
+name: Linux AppImage test release
 
 on:
   workflow_dispatch:
   push:
     branches: [codex/linux-appimage]
+    tags: ["v*"]
 
 permissions:
   contents: read
@@ -49,10 +50,11 @@ jobs:
       - name: Build in Debian 12 for an older Linux ABI baseline
         run: |
           mkdir -p "$RUNNER_TEMP/linux-appimage-candidate"
-          experimental_version="$(python3 -c 'import json; print(json.load(open("desktop/release.json"))["version_name"])')-linux-test.1"
+          linux_version="$(python3 -c 'import json; print(json.load(open("desktop/release.json"))["version_name"])')"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then test "$GITHUB_REF_NAME" = "v$linux_version"; fi
           docker run --rm -v "$PWD:/work" -v "$(go env GOROOT):/opt/go:ro" -v "$(go env GOMODCACHE):/go/pkg/mod" -v "$RUNNER_TEMP/linux-appimage-candidate:/out" \
-            -e GITHUB_ACTIONS=true -e GITHUB_SHA="$GITHUB_SHA" -e HONGGUO_CORE_VERSION="linux-test.1-$GITHUB_SHA" \
-            -e HONGGUO_LINUX_VERSION="$experimental_version" -e HONGGUO_LINUX_OUT=/out -w /work debian:12 bash -c '
+            -e GITHUB_ACTIONS=true -e GITHUB_SHA="$GITHUB_SHA" -e HONGGUO_CORE_VERSION="$linux_version-$GITHUB_SHA" \
+            -e HONGGUO_LINUX_VERSION="$linux_version" -e HONGGUO_LINUX_OUT=/out -w /work debian:12 bash -c '
               set -e
               apt-get update -qq
               apt-get install -y --no-install-recommends build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev ca-certificates curl file desktop-file-utils squashfs-tools
@@ -114,3 +116,28 @@ jobs:
             ${{ runner.temp }}/linux-appimage-evidence/*.txt
           retention-days: 5
           if-no-files-found: warn
+
+  publish-linux:
+    needs: [desktop-compatibility, playback]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify release source line
+        run: python3 scripts/verify_release_source.py --event "$GITHUB_EVENT_NAME" --ref "$GITHUB_REF" --sha "$GITHUB_SHA"
+      - name: Read Linux release version
+        run: python3 scripts/desktop_metadata.py --github-env "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: internal-linux-appimage-candidate
+          path: ${{ runner.temp }}/linux-appimage-release
+      - name: Publish playback-verified Linux test package
+        env:
+          GH_TOKEN: ${{ secrets.HONGGUO_RELEASES_TOKEN }}
+        run: |
+          test -n "$GH_TOKEN" || { echo "Configure HONGGUO_RELEASES_TOKEN" >&2; exit 1; }
+          python3 scripts/publish_linux_appimage.py \
+            --directory "$RUNNER_TEMP/linux-appimage-release" \
+            --version "$APP_VERSION" \
+            --source-commit "$GITHUB_SHA" \
+            --notes docs/linux-appimage-release.md
