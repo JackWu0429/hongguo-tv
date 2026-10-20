@@ -274,7 +274,7 @@ html.tv-shell .catalog-card-title { font-size: 18px; }
 html.tv-shell .catalog-card-meta { font-size: 13px; }
 html.tv-shell .hero-title { font-size: 26px; }
 html.tv-shell .hero-episode { font-size: 17px; }
-html.tv-shell .hero-summary { font-size: 16px; }
+html.tv-shell .hero-summary { max-height: 48px; font-size: 16px; }
 html.tv-shell .search-suggestion-name { font-size: 17px; }
 html.tv-shell .search-suggestion-meta,
 html.tv-shell .search-suggestion-kind { font-size: 13px; }
