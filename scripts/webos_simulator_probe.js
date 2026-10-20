@@ -11,7 +11,7 @@
   var presented = 0;
   var report = {
     platform: 'webOS TV 26 Simulator',
-    appVersion: '0.2.97',
+    appVersion: '0.2.98',
     seriesID: seriesID,
     title: '神豪外挂第一季',
     player: 'HTML5 video through webOS JS Service',
