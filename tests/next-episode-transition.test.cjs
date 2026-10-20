@@ -34,6 +34,8 @@ function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,d
   vm.runInContext(`
     var accountEpoch=2,feedGeneration=1,continuationGeneration=0,seasonSwitchRequest=null;
     function playbackEngineName(){return engine==='mpv'?'mpv':engine==='range'?'webview':'webview_media3'}
+    function nativePlaybackActive(){return document.documentElement.classList.contains('native-playback')}
+    function isNativeMedia3PlaybackActive(){return nativePlaybackActive()&&playbackEngineName()!=='mpv'}
     var autoCinemaCandidate=false,autoCinemaGeneration=0,autoCinemaSession=null;
     var rangeTransitionTimer=null;
     var rangePlaybackEnabled=function(){return engine==='range'||engine==='mpv'};

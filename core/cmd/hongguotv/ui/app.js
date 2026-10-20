@@ -3879,6 +3879,12 @@
       return window.HongguoNativePlayer && window.HongguoNativePlayer.engine ? window.HongguoNativePlayer.engine() : '';
     } catch (ignored) { return ''; }
   }
+  function nativePlaybackActive() {
+    return document.documentElement.classList.contains('native-playback');
+  }
+  function isNativeMedia3PlaybackActive() {
+    return nativePlaybackActive() && playbackEngineName() !== 'mpv';
+  }
   function playbackDebug(message) {
     try { if (window.console && console.debug) console.debug(message); } catch (ignored) {}
   }
@@ -3972,6 +3978,7 @@
   function clearLastPlaybackFrame() {
     var canvas = document.getElementById('hero-last-frame');
     if (!canvas) return;
+    document.getElementById('hero').classList.remove('is-native-frame-revealing');
     canvas.classList.remove('is-visible');
     canvas.__playbackFrame = null;
     // Release the pixel buffer and reset any origin-tainted canvas state.
@@ -3981,6 +3988,12 @@
     if (playback && activePlayback && playback !== activePlayback) return;
     var hero = document.getElementById('hero');
     var cover = document.getElementById('hero-episode-cover');
+    var current = playback || activePlayback;
+    if (current && current.presentation && current.presentation.revealTimer) {
+      clearTimeout(current.presentation.revealTimer);
+      current.presentation.revealTimer = null;
+    }
+    if (current && current.presentation) current.presentation.revealing = false;
     episodeCoverLoader = null;
     if (cover) {
       cover.__coverLoader = null;
@@ -3988,14 +4001,14 @@
       cover.style.backgroundImage = 'none';
       cover.classList.remove('is-ready');
     }
-    if (hero) hero.classList.remove('is-episode-cover');
+    if (hero) hero.classList.remove('is-episode-cover', 'is-native-frame-revealing');
   }
   function setEpisodeCover(target, data) {
     if (!target || !data || !data.episode_cover) return;
     var playback = activePlayback;
     var hero = document.getElementById('hero');
     var cover = document.getElementById('hero-episode-cover');
-    if (!playback || !hero || !cover || !hero.classList.contains('is-preparing-video') ||
+    if (!playback || playback.episodeCoverAllowed === false || !hero || !cover || !hero.classList.contains('is-preparing-video') ||
         playback.generation !== feedGeneration || playback.owner !== accountEpoch ||
         playback.item.series_id !== target.series_id || playback.vid !== target.vid ||
         playback.presentation && playback.presentation.rendered) return;
@@ -4086,13 +4099,18 @@
   }
   function bindPlaybackPresentation(playback, source) {
     playback.presentation = { source: source, position: Number(playback.position) || 0, epoch: 0, pending: false, waiting: false,
-      rendered: false, frame_at: 0, failed: false };
+      rendered: false, progressed: false, revealing: false, revealTimer: null, frame_at: 0, failed: false };
   }
   function interruptPlaybackPresentation(playback) {
     if (!playback || !playback.presentation) return;
-    playback.presentation.epoch++;
-    playback.presentation.pending = false;
-    playback.presentation.audioPending = false;
+    var presentation = playback.presentation;
+    presentation.epoch++;
+    presentation.pending = false;
+    presentation.audioPending = false;
+    presentation.revealing = false;
+    if (presentation.revealTimer) clearTimeout(presentation.revealTimer);
+    presentation.revealTimer = null;
+    document.getElementById('hero').classList.remove('is-native-frame-revealing');
   }
   function currentPlaybackPresentation(playback, presentation, video) {
     return !!(playback && presentation && activePlayback === playback && playback.presentation === presentation &&
@@ -4102,11 +4120,9 @@
   }
   function playbackVideoReady(playback, presentation, video) {
     return !!(currentPlaybackPresentation(playback, presentation, video) && !presentation.waiting &&
-      // Media3 can render and expose a real frame before Android delivers the
-      // `playing` callback to the WebView.  The native adapter marks that
-      // frame explicitly; it is enough to remove the opaque transition cover.
-      // `playback.started` remains the gate for history/progress writes. A
-      // generic canplay/loadeddata event alone must not reveal the cover.
+      // Media3 reports a frame when it reaches the native surface, before the
+      // WebView can know that SurfaceFlinger has presented it. Wait for media
+      // time to advance as well, so removing the cover cannot expose a blank surface.
       (playback.started || presentation.rendered) && !video.paused && !video.ended && !video.seeking && video.readyState >= 2 &&
       video.videoWidth > 0 && video.videoHeight > 0);
   }
@@ -4165,15 +4181,38 @@
     var epoch = presentation.epoch;
     waitForPlaybackPaint(playback.generation).then(function (painted) {
       if (playback.presentation !== presentation || presentation.epoch !== epoch) return;
-      presentation.pending = false;
-      if (!painted || !playbackVideoReady(playback, presentation, video)) return;
-      if (typeof clearRangeTransitionHint === 'function') clearRangeTransitionHint();
-      clearLastPlaybackFrame();
-      clearEpisodeCover(playback);
-      hero.classList.remove('is-preparing-video', 'is-starting-video', 'is-episode-transition', 'is-range-transition', 'is-range-source-reset');
-      setPlayerStatus('');
-      releasePresentedAudio(playback, presentation, video);
-      finishAutoCinema(playback);
+      if (!painted || !playbackVideoReady(playback, presentation, video)) { presentation.pending = false; return; }
+      function complete() {
+        if (playback.presentation !== presentation || presentation.epoch !== epoch || !playbackVideoReady(playback, presentation, video)) {
+          presentation.pending = false;
+          presentation.revealing = false;
+          hero.classList.remove('is-native-frame-revealing');
+          return;
+        }
+        presentation.pending = false;
+        presentation.revealing = false;
+        presentation.revealTimer = null;
+        if (typeof clearRangeTransitionHint === 'function') clearRangeTransitionHint();
+        clearLastPlaybackFrame();
+        clearEpisodeCover(playback);
+        hero.classList.remove('is-preparing-video', 'is-starting-video', 'is-episode-transition', 'is-range-transition', 'is-range-source-reset');
+        setPlayerStatus('');
+        releasePresentedAudio(playback, presentation, video);
+        finishAutoCinema(playback);
+      }
+      var hasHeldFrame = document.getElementById('hero').classList.contains('is-episode-cover') ||
+        document.getElementById('hero-last-frame').classList.contains('is-visible');
+      if (isNativeMedia3PlaybackActive() && playback.preserveNativeTransition && hasHeldFrame && !presentation.progressed) {
+        presentation.pending = false;
+        return;
+      }
+      if (isNativeMedia3PlaybackActive() && playback.preserveNativeTransition && hasHeldFrame) {
+        presentation.revealing = true;
+        hero.classList.add('is-native-frame-revealing');
+        presentation.revealTimer = setTimeout(complete, 200);
+        return;
+      }
+      complete();
     });
   }
   function markPlaybackStarted(playback) {
@@ -4221,6 +4260,7 @@
     if (advancing) {
       clearRangeStallTimer();
       presentation.waiting = false;
+      presentation.progressed = true;
       if (!playback.started) markPlaybackStarted(playback);
       else if (!playback.stableSince) playback.stableSince = Date.now();
       if (!document.getElementById('hero').classList.contains('is-preparing-video')) setPlayerStatus('');
@@ -4298,6 +4338,7 @@
     if (!recovery || !recovery.recoveryAttempts) playbackRecovery.reset();
     resetEndRecommendations();
     var switchStartedAt = Date.now();
+    var nativeAtSwitch = nativePlaybackActive();
     var sameSeries = !!((activePlayback && activePlayback.started && activePlayback.owner === accountEpoch &&
       activePlayback.item.series_id === item.series_id) || hasLastPlaybackFrame(item));
     var fastContinuation = !!(continuation && continuation.completed && canContinuePlayback(continuation) &&
@@ -4320,14 +4361,17 @@
     var hero = document.getElementById('hero');
     var video = document.getElementById('hero-video');
     var placeholder = document.getElementById('hero-placeholder');
-    var keepRangeFrame = sameSeries && playbackMode === 'range' && !!video.getAttribute('src');
+    var keepRangeFrame = sameSeries && playbackMode === 'range' && !!video.getAttribute('src') &&
+      (!nativeAtSwitch || playbackEngineName() === 'mpv');
+    var capturedLastFrame = false;
     if (keepRangeFrame) {
-      var capturedLastFrame = captureLastPlaybackFrame(item);
+      capturedLastFrame = captureLastPlaybackFrame(item);
       // The standard Media3 Surface is not readable by the HTML canvas. Only
       // use the transparent frame transition when the previous frame really
       // was captured; otherwise keep the poster/episode cover over the reset.
       if (playbackEngineName() !== 'mpv' && !capturedLastFrame) keepRangeFrame = false;
     } else clearLastPlaybackFrame();
+    var keepEpisodeCover = playbackEngineName() === 'mpv' || !sameSeries || nativeAtSwitch || !capturedLastFrame;
     var generation = ++feedGeneration;
     if (autoCinemaCandidate && autoCinemaGeneration && generation !== autoCinemaGeneration) cancelPendingAutoCinema();
     holdPlaybackAudio(generation);
@@ -4383,6 +4427,8 @@
         if (!vid) throw new Error(uiText('content.episodeNoVideo', '第{episode}集暂无视频数据', { episode: episode }));
         var playing = Object.assign({}, item, detail, { start_episode: episode, vid: vid });
         activePlayback = { item: playing, episode: episode, vid: vid, position: position, generation: generation, owner: accountEpoch, started: false, stableSince: 0, lastWrite: 0, completed: false,
+          episodeCoverAllowed: keepEpisodeCover,
+          preserveNativeTransition: sameSeries,
           endedPending: false,
           mode: '', rangeFallback: '', rangeFallbackAttempted: false,
           recoveryAttempts: recovery && recovery.recoveryAttempts || 0,

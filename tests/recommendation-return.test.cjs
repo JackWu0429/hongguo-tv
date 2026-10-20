@@ -63,6 +63,7 @@ function fixture({ failSave = false, writeGate = null, sourceGate = null } = {})
     var searchPager={loaded:true,cancel:function(){}},searchKind='browse',activeSearchQuery='',searchHistory={load:function(){}};
     var episodePrefetch={keepFor:function(){},consume:function(){return null},cancel:function(){}};
     function pageMode(){return shell.dataset.mode}function isPlaybackPage(){return pageMode()==='recommend'||pageMode()==='player'}function isLibraryPage(){return false}
+    function playbackEngineName(){return ''}function nativePlaybackActive(){return false}
     function activeChannel(){return channel}function basicDrama(x){return {series_id:x.series_id,title:x.title,episode_count:x.episode_count}}
     function libraryEntry(id){return libraryData.entries.filter(function(e){return e.drama.series_id===id})[0]||null}
     function firstVid(x){return x.vid||x.vid_list&&x.vid_list[0]}function getDetail(x){return Promise.resolve(Object.assign({},x,{vid_list:[x.series_id+'-1',x.series_id+'-2',x.series_id+'-3']}))}
