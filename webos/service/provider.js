@@ -504,24 +504,80 @@
     return jobs[token];
   }
 
+  function parseMediaByteRange(value, length) {
+    if (value == null) return { start: 0, end: length - 1, partial: false };
+    if (length <= 0) return null;
+    var match = /^bytes=(\d*)-(\d*)$/i.exec(String(value).trim());
+    if (!match || match[1] === '' && match[2] === '') return null;
+    function safeInteger(raw) {
+      if (!/^\d+$/.test(raw)) return null;
+      var parsed = Number(raw);
+      return isFinite(parsed) && Math.floor(parsed) === parsed && parsed <= 9007199254740991 ? parsed : null;
+    }
+    if (match[1] === '') {
+      var suffix = safeInteger(match[2]);
+      if (suffix == null || suffix <= 0) return null;
+      suffix = Math.min(suffix, length);
+      return { start: length - suffix, end: length - 1, partial: true };
+    }
+    var start = safeInteger(match[1]);
+    if (start == null || start >= length) return null;
+    var end = match[2] === '' ? length - 1 : safeInteger(match[2]);
+    if (end == null || end < start) return null;
+    return { start: start, end: Math.min(end, length - 1), partial: true };
+  }
+
+  function ifRangeMatches(value, etag, modifiedAt) {
+    if (!value) return true;
+    if (String(value).trim() === etag) return true;
+    var date = Date.parse(value);
+    return isFinite(date) && Math.floor(modifiedAt / 1000) <= Math.floor(date / 1000);
+  }
+
   function serveMedia(req, res, token) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.setHeader('Allow', 'GET, HEAD');
+      return jsonResponse(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' });
+    }
     if (!/^[a-f0-9]{24}$/.test(token)) return jsonResponse(res, 400, { ok: false, error: '媒体标识无效' });
     var file = path.join(ensureCacheRoot(), token, token + '.mp4');
     var stat;
     try { stat = fs.statSync(file); } catch (error) { mediaStatus[token] = { status: 404, at: Date.now() }; return jsonResponse(res, 404, { ok: false, error: '媒体尚未准备好' }); }
-    var start = 0; var end = stat.size - 1; var range = req.headers.range;
-    if (range) {
-      var match = /^bytes=(\d*)-(\d*)$/.exec(range);
-      if (match) { if (match[1]) start = Number(match[1]); if (match[2]) end = Number(match[2]); else end = stat.size - 1; }
+    if (!stat.isFile() || stat.size <= 0) { mediaStatus[token] = { status: 404, at: Date.now() }; return jsonResponse(res, 404, { ok: false, error: '媒体缓存无效' }); }
+    var range = parseMediaByteRange(req.headers.range, stat.size);
+    if (!range) {
+      mediaStatus[token] = { status: 416, at: Date.now() };
+      res.statusCode = 416;
+      res.setHeader('Content-Range', 'bytes */' + stat.size);
+      return res.end();
     }
-    if (start < 0 || start >= stat.size || end < start) { mediaStatus[token] = { status: 416, at: Date.now() }; res.statusCode = 416; res.setHeader('Content-Range', 'bytes */' + stat.size); return res.end(); }
-    end = Math.min(end, stat.size - 1);
-    res.statusCode = range ? 206 : 200; mediaStatus[token] = { status: res.statusCode, at: Date.now() };
-    res.setHeader('Content-Type', 'video/mp4'); res.setHeader('Accept-Ranges', 'bytes'); res.setHeader('Content-Length', end - start + 1); res.setHeader('Cache-Control', 'private, max-age=900');
-    res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range'); res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    if (range) res.setHeader('Content-Range', 'bytes ' + start + '-' + end + '/' + stat.size);
+    var modifiedAt = stat.mtime.getTime();
+    var etag = '"' + stat.size + '-' + modifiedAt + '"';
+    if (range.partial && req.headers['if-range'] && !ifRangeMatches(req.headers['if-range'], etag, modifiedAt)) {
+      range = { start: 0, end: stat.size - 1, partial: false };
+    }
+    var start = range.start;
+    var end = range.end;
+    res.statusCode = range.partial ? 206 : 200;
+    mediaStatus[token] = { status: res.statusCode, at: Date.now() };
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Length', String(end - start + 1));
+    res.setHeader('Cache-Control', 'private, max-age=900');
+    res.setHeader('ETag', etag);
+    res.setHeader('Last-Modified', stat.mtime.toUTCString());
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range, If-Range');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    if (range.partial) res.setHeader('Content-Range', 'bytes ' + start + '-' + end + '/' + stat.size);
     if (req.method === 'HEAD') return res.end();
-    fs.createReadStream(file, { start: start, end: end }).pipe(res);
+    var stream = fs.createReadStream(file, { start: start, end: end });
+    stream.on('error', function (error) {
+      mediaStatus[token] = { status: 500, at: Date.now() };
+      if (res.headersSent) { if (typeof res.destroy === 'function') res.destroy(error); return; }
+      jsonResponse(res, 500, { ok: false, error: '媒体缓存读取失败' });
+    });
+    stream.pipe(res);
   }
 
   function jsonResponse(res, status, payload) { var body = JSON.stringify(payload); res.statusCode = status; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range'); res.setHeader('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS'); res.end(body); }
@@ -1033,7 +1089,7 @@
     suggestions: suggestions, actorWorks: actorWorks, engagement: engagement, discussion: discussion, replies: replies,
     radar: radar, library: library, changeLibrary: changeLibrary,
     dataDirectory: dataDirectory,
-    searchHistory: searchHistory, mediaDiagnostics: mediaDiagnostics,
+    searchHistory: searchHistory, mediaDiagnostics: mediaDiagnostics, parseMediaByteRange: parseMediaByteRange,
     videoModelDiagnostics: videoModelDiagnostics, inspectVideoModel: inspectVideoModel,
     status: function () { return { playback_verified: false, provider: 'first-party-js-port', media: 'cenc-aes-ctr-local-cache', data: 'real-public-metadata-plus-local-library' }; }
   };

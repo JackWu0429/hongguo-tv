@@ -3,6 +3,7 @@
 var assert = require('assert');
 var EventEmitter = require('events');
 var PassThrough = require('stream').PassThrough;
+var http = require('http');
 var https = require('https');
 var fs = require('fs');
 var os = require('os');
@@ -10,6 +11,7 @@ var path = require('path');
 var originalRequest = https.request;
 var dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hongguo-webos-provider-'));
 process.env.HONGGUO_WEBOS_DATA_DIR = dataRoot;
+process.env.HONGGUO_WEBOS_CACHE_DIR = dataRoot;
 var seriesID = '1234567890123456789';
 var categoryRequest = null;
 var calendarRequest = null;
@@ -74,8 +76,71 @@ https.request = function (options) {
 
 var provider = require('./provider');
 
+function requestMedia(server, method, range, ifRange) {
+  return new Promise(function (resolve, reject) {
+    var headers = {};
+    if (range) headers.Range = range;
+    if (ifRange) headers['If-Range'] = ifRange;
+    var request = http.request({ host: '127.0.0.1', port: server.address().port, method: method, path: '/media', headers: headers }, function (response) {
+      var chunks = [];
+      response.on('data', function (chunk) { chunks.push(chunk); });
+      response.on('end', function () { resolve({ status: response.statusCode, headers: response.headers, body: Buffer.concat(chunks) }); });
+    });
+    request.on('error', reject);
+    request.end();
+  });
+}
+
+async function testMediaRangeProxy() {
+  var token = '0123456789abcdef01234567';
+  var mediaDir = path.join(dataRoot, token);
+  fs.mkdirSync(mediaDir, { recursive: true });
+  fs.writeFileSync(path.join(mediaDir, token + '.mp4'), Buffer.from('abcdefghij'));
+  var server = http.createServer(function (request, response) {
+    provider.serveMedia(request, response, token);
+  });
+  await new Promise(function (resolve) { server.listen(0, '127.0.0.1', resolve); });
+  try {
+    var bounded = await requestMedia(server, 'GET', 'bytes=2-5');
+    assert.strictEqual(bounded.status, 206);
+    assert.strictEqual(bounded.headers['content-range'], 'bytes 2-5/10');
+    assert.strictEqual(bounded.headers['content-length'], '4');
+    assert.strictEqual(bounded.body.toString(), 'cdef');
+    assert(bounded.headers.etag, 'the cached media has a validator for If-Range');
+
+    var suffix = await requestMedia(server, 'GET', 'bytes=-3');
+    assert.strictEqual(suffix.status, 206);
+    assert.strictEqual(suffix.headers['content-range'], 'bytes 7-9/10');
+    assert.strictEqual(suffix.body.toString(), 'hij');
+
+    var matchingIfRange = await requestMedia(server, 'GET', 'bytes=0-1', bounded.headers.etag);
+    assert.strictEqual(matchingIfRange.status, 206);
+    assert.strictEqual(matchingIfRange.body.toString(), 'ab');
+
+    var staleIfRange = await requestMedia(server, 'GET', 'bytes=0-1', '"stale"');
+    assert.strictEqual(staleIfRange.status, 200);
+    assert.strictEqual(staleIfRange.headers['content-range'], undefined);
+    assert.strictEqual(staleIfRange.body.toString(), 'abcdefghij');
+
+    var head = await requestMedia(server, 'HEAD', 'bytes=1-3');
+    assert.strictEqual(head.status, 206);
+    assert.strictEqual(head.headers['content-length'], '3');
+    assert.strictEqual(head.body.length, 0);
+
+    var invalid = await requestMedia(server, 'GET', 'bytes=0-1,4-5');
+    assert.strictEqual(invalid.status, 416);
+    assert.strictEqual(invalid.headers['content-range'], 'bytes */10');
+  } finally {
+    await new Promise(function (resolve) { server.close(resolve); });
+  }
+}
+
 async function run() {
   try {
+    assert.deepStrictEqual(provider.parseMediaByteRange('bytes=-2', 10), { start: 8, end: 9, partial: true });
+    assert.strictEqual(provider.parseMediaByteRange('bytes=0-1,4-5', 10), null);
+    await testMediaRangeProxy();
+
     var detail = await provider.detail(seriesID);
     assert.strictEqual(detail.episodes.length, 2);
     assert.strictEqual(detail.episodes[1].locked, true);
