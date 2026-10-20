@@ -166,6 +166,7 @@
   var autoCinemaToggle = document.getElementById('auto-cinema-toggle');
   function applicationHidden() { return desktopShell ? !!window.HongguoDesktop.background : !!document.hidden; }
   document.documentElement.classList.toggle('desktop-shell', desktopShell);
+  document.documentElement.classList.toggle('tv-shell', androidShell || webosShell);
   var numericKeypad;
   var accountNumberScan;
   var accountPhoneCountries = window.HongguoPhoneCountries || [];
