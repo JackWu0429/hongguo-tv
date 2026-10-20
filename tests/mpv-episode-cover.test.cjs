@@ -32,10 +32,12 @@ function fixture(engine='mpv'){
 }
 const target={series_id:'series-1',vid:'vid-2'};
 
-test('standard same-series switches keep the loaded series cover until the target episode cover is ready',()=>{
+test('preparing playback shows the poster by default while Range and Media3 transitions suppress it',()=>{
  assert.match(styles,/\.hero\.is-preparing-video \.hero-backdrop, \.hero\.is-preparing-video \.hero-loading-poster \{ visibility: visible; \}/);
  assert.match(styles,/\.hero\.is-preparing-video\.is-episode-transition\.is-range-transition \.hero-backdrop, \.hero\.is-preparing-video\.is-episode-transition\.is-range-transition \.hero-loading-poster \{ visibility: hidden; \}/);
- assert.doesNotMatch(styles,/\.hero\.is-preparing-video\.is-episode-transition \.hero-backdrop, \.hero\.is-preparing-video\.is-episode-transition \.hero-loading-poster/);
+ assert.match(styles,/\.hero\.is-preparing-video\.is-episode-transition\.is-native-media3-episode-transition \.hero-backdrop, \.hero\.is-preparing-video\.is-episode-transition\.is-native-media3-episode-transition \.hero-loading-poster \{ visibility: hidden; \}/);
+ assert.doesNotMatch(styles,/\.hero\.is-preparing-video\.is-episode-transition \.hero-backdrop, \.hero\.is-preparing-video\.is-episode-transition \.hero-loading-poster \{ visibility: hidden; \}/);
+ assert.match(styles,/\.hero\.is-episode-cover \.hero-episode-cover \{ visibility: visible; \}/);
 });
 
 test('only the current episode can reveal its episode_cover for MPV and standard playback',()=>{

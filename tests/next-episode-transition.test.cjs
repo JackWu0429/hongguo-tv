@@ -191,8 +191,9 @@ test('leaving during asynchronous handoff cannot bind the next source',async()=>
   assert.equal(f.video.src,undefined);assert.ok(!f.calls.includes('source'));f.gate.resolve();await f.c.libraryQueue;
 });
 test('same-drama selection keeps the opaque cover and skips its poster before the native video reset',async()=>{
-  const f=fixture();f.gate.resolve();f.c.playFeedItem(0,2,0);
+  const f=fixture({native:true});f.gate.resolve();f.c.playFeedItem(0,2,0);
   assert.equal(f.hero.classList.contains('is-episode-transition'),true);
+  assert.equal(f.hero.classList.contains('is-native-media3-episode-transition'),true);
   assert.equal(f.hero.classList.contains('is-preparing-video'),true);
   assert.equal(f.video.classList.contains('has-source'),false);
   assert.ok(!f.calls.includes('load'));
@@ -200,6 +201,22 @@ test('same-drama selection keeps the opaque cover and skips its poster before th
   f.paint();await tick();await tick();
   assert.equal(f.video.src,'/media/next.mp4');assert.equal(f.calls.filter(x=>x==='load').length,2);
   assert.equal(f.hero.classList.contains('is-preparing-video'),true);
+});
+test('MPV same-series switches do not use the Media3 poster suppression state',()=>{
+  const f=fixture({engine:'mpv',native:true});f.gate.resolve();f.c.playFeedItem(0,2,0);
+  assert.equal(f.hero.classList.contains('is-episode-transition'),true);
+  assert.equal(f.hero.classList.contains('is-native-media3-episode-transition'),false);
+});
+test('a rendered Media3 frame counts as the current same-series playback before time advances',()=>{
+  const f=fixture({native:true});f.c.activePlayback.started=false;f.c.activePlayback.presentation={rendered:true};
+  f.gate.resolve();f.c.playFeedItem(0,2,0);
+  assert.equal(f.hero.classList.contains('is-episode-transition'),true);
+  assert.equal(f.hero.classList.contains('is-native-media3-episode-transition'),true);
+});
+test('first playback does not use the Media3 episode-transition poster suppression state',()=>{
+  const f=fixture({native:true});f.c.activePlayback=null;f.gate.resolve();f.c.playFeedItem(0,1,0);
+  assert.equal(f.hero.classList.contains('is-episode-transition'),false);
+  assert.equal(f.hero.classList.contains('is-native-media3-episode-transition'),false);
 });
 test('same-series Range switch holds the old frame and delays its spinner for 320ms',()=>{
   const f=fixture({engine:'range'});f.video.src='/media/current.mp4';f.c.playFeedItem(0,2,0);

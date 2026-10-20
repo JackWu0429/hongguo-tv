@@ -4001,7 +4001,7 @@
       cover.style.backgroundImage = 'none';
       cover.classList.remove('is-ready');
     }
-    if (hero) hero.classList.remove('is-episode-cover', 'is-native-frame-revealing');
+    if (hero) hero.classList.remove('is-episode-cover', 'is-native-frame-revealing', 'is-native-media3-episode-transition');
   }
   function setEpisodeCover(target, data) {
     if (!target || !data || !data.episode_cover) return;
@@ -4195,7 +4195,7 @@
         if (typeof clearRangeTransitionHint === 'function') clearRangeTransitionHint();
         clearLastPlaybackFrame();
         clearEpisodeCover(playback);
-        hero.classList.remove('is-preparing-video', 'is-starting-video', 'is-episode-transition', 'is-range-transition', 'is-range-source-reset');
+        hero.classList.remove('is-preparing-video', 'is-starting-video', 'is-episode-transition', 'is-range-transition', 'is-range-source-reset', 'is-native-media3-episode-transition');
         setPlayerStatus('');
         releasePresentedAudio(playback, presentation, video);
         finishAutoCinema(playback);
@@ -4339,8 +4339,8 @@
     resetEndRecommendations();
     var switchStartedAt = Date.now();
     var nativeAtSwitch = nativePlaybackActive();
-    var sameSeries = !!((activePlayback && activePlayback.started && activePlayback.owner === accountEpoch &&
-      activePlayback.item.series_id === item.series_id) || hasLastPlaybackFrame(item));
+    var sameSeries = !!((activePlayback && (activePlayback.started || activePlayback.presentation && activePlayback.presentation.rendered) &&
+      activePlayback.owner === accountEpoch && activePlayback.item.series_id === item.series_id) || hasLastPlaybackFrame(item));
     var fastContinuation = !!(continuation && continuation.completed && canContinuePlayback(continuation) &&
       continuation.owner === accountEpoch && continuation.item.series_id === item.series_id &&
       forcedEpisode === continuation.episode + 1 && forcedPosition === 0 && libraryLoaded);
@@ -4380,6 +4380,7 @@
     hero.classList.remove('is-catalog-loading', 'is-starting-video', 'is-range-source-reset');
     hero.classList.toggle('is-episode-transition', sameSeries);
     hero.classList.toggle('is-range-transition', keepRangeFrame);
+    hero.classList.toggle('is-native-media3-episode-transition', sameSeries && nativeAtSwitch && playbackEngineName() !== 'mpv');
     placeholder.classList.add('is-hidden');
     updateFeedCounter();
     var incomingResume = resumeCheckpoint && recommendationResume(resumeCheckpoint, libraryEntry(item.series_id), item);
