@@ -41,7 +41,7 @@ package_path="$HONGGUO_LINUX_OUT/hongguo-desktop-$HONGGUO_LINUX_VERSION-x86_64.A
 ARCH=x86_64 ./squashfs-root/AppRun --no-appstream --runtime-file "$build_dir/runtime-x86_64" "$app_dir" "$package_path"
 chmod 755 "$package_path"
 cd "$HONGGUO_LINUX_OUT"
-sha256sum ./*.AppImage > SHA256SUMS
+sha256sum "$(basename "$package_path")" > SHA256SUMS
 (cd "$HONGGUO_LINUX_OUT" && sha256sum "$(basename "$package_path")" > "$(basename "$package_path").sha256")
 python3 - "$package_path" <<'PY'
 import hashlib, json, os, sys
