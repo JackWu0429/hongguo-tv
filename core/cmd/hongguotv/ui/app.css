@@ -983,8 +983,8 @@ html.native-playback .hero-video { display: none !important; }
 @media (max-width: 700px) { .follow-heading, .follow-notification-heading { align-items: flex-start; flex-direction: column; } .follow-title-line, .library-title-line { align-items: flex-start; flex-direction: column; gap: 8px; } .follow-tabs, .library-tabs { gap: 18px; } .follow-actions, .follow-notification-heading > div { width: 100%; } .follow-actions .follow-action { flex: 1 1 auto; } .follow-notification-heading > div { justify-content: space-between; } .notification-popup { right: 14px; bottom: 14px; width: calc(100% - 28px); } }
 @media (min-width: 1500px) {
   .search-box { z-index: 12; }
-  .search-input-wrap { position: static; }
-  .search-suggestions { top: calc(100% - 2px); right: 0; left: auto; width: 720px; max-width: calc(100vw - 260px); }
+  .search-input-wrap { position: relative; }
+  .search-suggestions { top: calc(100% + 8px); right: 0; left: auto; width: 720px; max-width: calc(100vw - 260px); }
 }
 
 .desktop-update-notes { max-width: 70rem; margin: 1rem 0; white-space: pre-wrap; overflow-wrap: break-word; font: inherit; color: #bfc1ce; line-height: 1.6; }

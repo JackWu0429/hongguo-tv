@@ -104,6 +104,10 @@
 .legacy-grid .reservation-login { flex-direction: column; }
 .legacy-flex-gap .reservation-login .publication-action { margin-left: 0; }
 .legacy-grid .reservation-grid > .reservation-login { width: calc(100% - 20px); margin-right: 20px; }
+.legacy-flex-gap .library-title-line > * + *,
+.legacy-flex-gap .follow-title-line > * + * { margin-left: 34px; }
+.legacy-flex-gap .library-tabs > * + *,
+.legacy-flex-gap .follow-tabs > * + * { margin-left: 28px; }
 /* This rail uses margins on old WebViews without flex gap. */
 .legacy-flex-gap .round-action + .round-action { margin-top: 12px; }
 
@@ -132,6 +136,13 @@
   .legacy-flex-gap .side-nav .side-item + .side-item { margin-top: 2px; }
   .app-shell.sidebar-icons .side-item { min-height: 0; padding-top: 3px; padding-bottom: 3px; }
   .app-shell.sidebar-icons .side-icon { width: 32px; height: 32px; }
+}
+
+@media (max-width: 700px) {
+  .legacy-flex-gap .library-title-line > * + *,
+  .legacy-flex-gap .follow-title-line > * + * { margin-left: 0; margin-top: 8px; }
+  .legacy-flex-gap .library-tabs > * + *,
+  .legacy-flex-gap .follow-tabs > * + * { margin-left: 18px; }
 }
 
 @media (max-height: 560px) {

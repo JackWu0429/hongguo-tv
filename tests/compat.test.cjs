@@ -80,6 +80,13 @@ test('legacy playback utility group stays docked to the right of the controls', 
   const css = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/compat.css'), 'utf8');
   assert.match(css, /\.legacy-flex-gap \.playback-buttons > \.playback-utility-group\s*\{\s*margin-left:\s*auto;/);
 });
+test('legacy WebViews retain library and follow tab spacing without flex gap', () => {
+  const css = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/compat.css'), 'utf8');
+  assert.match(css, /\.legacy-flex-gap \.library-title-line > \* \+ \*,\s*\.legacy-flex-gap \.follow-title-line > \* \+ \*\s*\{\s*margin-left:\s*34px;/);
+  assert.match(css, /\.legacy-flex-gap \.library-tabs > \* \+ \*,\s*\.legacy-flex-gap \.follow-tabs > \* \+ \*\s*\{\s*margin-left:\s*28px;/);
+  assert.match(css, /@media \(max-width: 700px\)\s*\{\s*\.legacy-flex-gap \.library-title-line > \* \+ \*,\s*\.legacy-flex-gap \.follow-title-line > \* \+ \*\s*\{\s*margin-left:\s*0;\s*margin-top:\s*8px;/);
+  assert.match(css, /\.legacy-flex-gap \.library-tabs > \* \+ \*,\s*\.legacy-flex-gap \.follow-tabs > \* \+ \*\s*\{\s*margin-left:\s*18px;/);
+});
 test('remote focus uses nearest scrolling rather than old boolean scrollIntoView alignment', () => {
   const c=oldWebView();
   const result=vm.runInContext(`(function(){

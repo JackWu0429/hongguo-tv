@@ -39,7 +39,10 @@ test('suggestion refresh preserves a focused item across DOM replacement', () =>
 test('suggestion list keeps focus rings clear of its scroll clipping edge', () => {
   const css = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8');
   assert.match(css, /\.search-suggestions\s*\{[^}]*padding:\s*10px 6px/);
-  assert.match(css, /@media\s*\(min-width:\s*1500px\)\s*\{[\s\S]*?\.search-suggestions\s*\{[^}]*top:\s*calc\(100%\s*-\s*2px\);[^}]*right:\s*0;[^}]*left:\s*auto;[^}]*width:\s*720px;[^}]*max-width:\s*calc\(100vw\s*-\s*260px\)/);
+  const wideLayout = css.match(/@media\s*\(min-width:\s*1500px\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(wideLayout);
+  assert.match(wideLayout[1], /\.search-input-wrap\s*\{\s*position:\s*relative;/);
+  assert.match(wideLayout[1], /\.search-suggestions\s*\{[^}]*top:\s*calc\(100%\s*\+\s*8px\);[^}]*right:\s*0;[^}]*left:\s*auto;[^}]*width:\s*720px;[^}]*max-width:\s*calc\(100vw\s*-\s*260px\)/);
 });
 
 test('reservation status tabs retain their previous compact pill appearance', () => {
