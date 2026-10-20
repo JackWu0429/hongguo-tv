@@ -14,6 +14,15 @@ test('manual checks set prompt safety before native check and proxy changes rema
   const update=create({bridge:{getStatus:()=>'{"state":"idle"}',setPromptAllowed:x=>calls.push(x),check:()=>calls.push('check'),configure:()=>calls.push('configure')},canPrompt:()=>true,render:()=>{}});
   update.check(); update.configure(); assert.deepEqual(calls,[true,'check','configure']);
 });
+test('the update action installs a verified APK and otherwise checks for updates', () => {
+  const calls=[];
+  let status={state:'ready',desktop:false};
+  const update=create({bridge:{getStatus:()=>JSON.stringify(status),setPromptAllowed:()=>{},check:()=>calls.push('check'),install:()=>calls.push('install')},canPrompt:()=>true,render:()=>{}});
+  update.activate();
+  status={state:'available',desktop:false}; update.activate();
+  status={state:'ready',desktop:true}; update.activate();
+  assert.deepEqual(calls,['install','check','check']);
+});
 test('missing native bridge and invalid bridge data fail without breaking browsing', () => {
   const renders=[];
   const browser=create({render:x=>renders.push(x)}); browser.refresh(); browser.check(); browser.configure();

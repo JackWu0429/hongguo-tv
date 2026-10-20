@@ -960,6 +960,7 @@
     'ui.updateDefault': '启动后每天自动检查一次，播放时不打扰。',
     'ui.checking': '检查中…',
     'ui.viewUpdate': '查看更新 {version}',
+    'ui.installUpdate': '安装更新',
     'ui.checkUpdate': '检查更新',
     'ui.downloadingPercent': '下载中 {percent}%',
     'ui.downloadZip': '下载更新 ZIP',

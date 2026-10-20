@@ -12,19 +12,27 @@
   function create(options) {
     var lastAllowed = null;
     var last = '';
+    var lastData = null;
     function refresh() {
       var bridge = options.bridge;
       if (!bridge) { options.render({ supported: false, state: 'browser', message: t('content.browserUpdateOnly', '请在 Android 正式版中检查更新') }); return; }
       try {
         var text = bridge.getStatus();
-        if (text !== last) { last = text; options.render(JSON.parse(text)); }
+        lastData = JSON.parse(text);
+        if (text !== last) { last = text; options.render(lastData); }
         var allowed = !!options.canPrompt();
         if (allowed !== lastAllowed) { lastAllowed = allowed; bridge.setPromptAllowed(allowed); }
-      } catch (error) { options.render({ supported: false, state: 'error', message: t('content.updateUnavailable', '更新功能暂时不可用') }); }
+      } catch (error) { lastData = null; options.render({ supported: false, state: 'error', message: t('content.updateUnavailable', '更新功能暂时不可用') }); }
     }
     function check() { if (options.bridge) { refresh(); options.bridge.check(); } }
+    function activate() {
+      if (!options.bridge) return;
+      refresh();
+      if (lastData && !lastData.desktop && lastData.state === 'ready' && typeof options.bridge.install === 'function') options.bridge.install();
+      else options.bridge.check();
+    }
     function configure() { if (options.bridge) options.bridge.configure(); }
-    return { refresh: refresh, check: check, configure: configure };
+    return { refresh: refresh, check: check, activate: activate, configure: configure };
   }
   return { create: create };
 }));

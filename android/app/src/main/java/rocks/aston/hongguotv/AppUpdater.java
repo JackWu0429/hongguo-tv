@@ -2,10 +2,16 @@ package rocks.aston.hongguotv;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.ClipData;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.PackageInstaller;
 import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Build;
@@ -22,6 +28,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
@@ -48,13 +55,19 @@ final class AppUpdater {
     private volatile HttpURLConnection connection;
     private volatile boolean destroyed;
     private volatile String snapshot = "{}";
-    private boolean started, checking, downloading, promptAllowed, manualPrompt, waitingPermission, promptCheckPending;
+    private boolean started, checking, downloading, promptAllowed, manualPrompt, promptCheckPending;
     private Manifest latest;
     private String state = "idle", message = "", proxy;
     private long downloaded;
     private AlertDialog dialog;
     private ProgressBar progress;
     private TextView progressText;
+    private volatile int verifiedApkCode;
+    private boolean cacheCheckComplete, pendingInstallResume;
+    private boolean installResultReceiverRegistered;
+    private final BroadcastReceiver installResultReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) { handleInstallResult(intent); }
+    };
 
     AppUpdater(Activity activity, Host host) {
         this.activity = activity; this.host = host;
@@ -66,6 +79,10 @@ final class AppUpdater {
         try { latest = new Manifest(new JSONObject(preferences.getString("manifest", "{}")), activity.getPackageName()); }
         catch (Exception invalid) { latest = null; }
         if (latest != null && latest.code > BuildConfig.VERSION_CODE && latest.minSdk <= Build.VERSION.SDK_INT) state = "available";
+        IntentFilter installResultFilter = new IntentFilter(UpdateInstallReceiver.ACTION_RESULT);
+        if (Build.VERSION.SDK_INT >= 33) activity.registerReceiver(installResultReceiver, installResultFilter, Context.RECEIVER_NOT_EXPORTED);
+        else activity.registerReceiver(installResultReceiver, installResultFilter);
+        installResultReceiverRegistered = true;
         publish();
     }
 
@@ -90,6 +107,11 @@ final class AppUpdater {
     final class Bridge {
         @JavascriptInterface public String getStatus() { return host.trusted() ? snapshot : "{}"; }
         @JavascriptInterface public void check() { if (host.trusted()) activity.runOnUiThread(() -> checkNow(true)); }
+        @JavascriptInterface public void install() {
+            if (host.trusted()) activity.runOnUiThread(() -> {
+                if (latest != null && "ready".equals(state)) launchInstaller(latest);
+            });
+        }
         @JavascriptInterface public void configure() { if (host.trusted()) activity.runOnUiThread(() -> configureSource()); }
         @JavascriptInterface public void setPromptAllowed(boolean allowed) {
             if (host.trusted()) activity.runOnUiThread(() -> { promptAllowed = allowed; maybePrompt(); });
@@ -111,14 +133,39 @@ final class AppUpdater {
     private void cleanupCache() {
         directory.mkdirs();
         partial.delete();
-        if (!apk.isFile()) return;
-        PackageInfo info = activity.getPackageManager().getPackageArchiveInfo(apk.getPath(), 0);
-        if (info == null || info.versionCode <= BuildConfig.VERSION_CODE
-                || System.currentTimeMillis() - apk.lastModified() > UpdatePolicy.CHECK_INTERVAL) apk.delete();
+        try {
+            if (apk.isFile()) {
+                PackageInfo info = activity.getPackageManager().getPackageArchiveInfo(apk.getPath(), 0);
+                if (info == null || info.versionCode <= BuildConfig.VERSION_CODE
+                        || System.currentTimeMillis() - apk.lastModified() > UpdatePolicy.CHECK_INTERVAL) apk.delete();
+                Manifest target = latest;
+                if (apk.isFile() && target != null && apk.length() == target.bytes && info != null && info.versionCode == target.code) {
+                    try {
+                        if (!hash(apk).equals(target.sha256)) throw new IOException("安装包完整性校验失败");
+                        verifyArchive(target, apk);
+                        verifiedApkCode = target.code;
+                        activity.runOnUiThread(() -> {
+                            if (destroyed || latest != target || verifiedApkCode != target.code) return;
+                            state = "ready"; downloaded = target.bytes; message = "更新包已验证，可继续安装"; publish();
+                        });
+                    } catch (Exception invalid) { apk.delete(); }
+                }
+            }
+        } finally {
+            activity.runOnUiThread(() -> {
+                cacheCheckComplete = true;
+                if (pendingInstallResume && !destroyed && host.foreground()) {
+                    pendingInstallResume = false;
+                    resume();
+                }
+            });
+        }
     }
 
     private void checkNow(boolean manual) {
-        if (destroyed || downloading || checking || BuildConfig.DEBUG) return;
+        if (destroyed || downloading || checking || "installing".equals(state) || BuildConfig.DEBUG
+                || preferences.getBoolean("waiting_permission", false)
+                || preferences.getBoolean("waiting_installer", false)) return;
         checking = true; manualPrompt = manual; state = "checking"; message = "正在检查更新…"; publish();
         final int epoch = generation.incrementAndGet();
         final String selectedProxy = proxy;
@@ -142,6 +189,7 @@ final class AppUpdater {
                 latest = response;
                 preferences.edit().putString("manifest", response.json.toString()).apply();
                 if (response.minSdk > Build.VERSION.SDK_INT) { state = "incompatible"; message = "新版本需要更高版本的 Android"; }
+                else if (response.code > BuildConfig.VERSION_CODE && verifiedApkCode == response.code) { state = "ready"; message = "更新包已验证，可继续安装"; }
                 else if (response.code > BuildConfig.VERSION_CODE) { state = "available"; message = "发现新版本 " + response.name; }
                 else { state = "current"; message = "已是最新版本"; }
                 publish(); maybePrompt();
@@ -292,6 +340,7 @@ final class AppUpdater {
                     ensureValid(epoch);
                     verifyArchive(target, partial);
                     if (!partial.renameTo(apk)) throw new IOException("无法保存更新安装包");
+                    verifiedApkCode = target.code;
                     completed(target, epoch); return;
                 } catch (Exception failure) { partial.delete(); error = friendly(failure); }
             }
@@ -311,9 +360,9 @@ final class AppUpdater {
     private void completed(Manifest target, int epoch) {
         activity.runOnUiThread(() -> {
             if (!valid(epoch)) return;
-            downloading = false; downloaded = target.bytes; state = "ready"; message = "安装包已验证，可以安装";
+            downloading = false; downloaded = target.bytes; verifiedApkCode = target.code; state = "ready"; message = "安装包已验证，可以安装";
             latest = target; dismissDialog(); publish();
-            if (host.foreground() && host.trusted()) launchInstaller(target);
+            if (host.foreground()) launchInstaller(target);
         });
     }
 
@@ -356,37 +405,217 @@ final class AppUpdater {
     }
 
     private void launchInstaller(Manifest target) {
-        if (!apk.isFile() || apk.length() != target.bytes || destroyed) return;
+        if (!apk.isFile() || apk.length() != target.bytes || verifiedApkCode != target.code || destroyed) return;
         if (Build.VERSION.SDK_INT >= 26 && !activity.getPackageManager().canRequestPackageInstalls()) {
-            AlertDialog permission = new AlertDialog.Builder(activity).setTitle("允许安装更新")
-                    .setMessage("请在系统设置中允许红果短剧安装更新，随后返回继续安装。")
-                    .setNegativeButton("稍后", null).setPositiveButton("去设置", (d, which) -> {
-                        try {
-                            waitingPermission = true;
-                            activity.startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + activity.getPackageName())));
-                        } catch (Exception failure) { waitingPermission = false; message = "设备无法打开安装权限设置"; publish(); }
-                    }).create();
-            show(permission, AlertDialog.BUTTON_NEGATIVE); return;
+            showInstallPermission(target, "请允许红果短剧安装更新。授权返回后会自动继续安装。");
+            return;
         }
         try {
-            Intent install = new Intent(Intent.ACTION_VIEW);
-            install.setDataAndType(Uri.parse("content://" + activity.getPackageName() + ".updates/apk"), "application/vnd.android.package-archive");
-            install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            activity.startActivity(install);
-        } catch (Exception failure) { message = "设备无法打开系统安装界面"; publish(); showFailure(message); }
+            rememberInstallHandoff(target, "view");
+            launchViewInstaller();
+            state = "installing"; message = "已打开系统安装器，请完成系统确认"; publish();
+        } catch (Exception viewFailure) {
+            launchSessionInstaller(target, "普通安装入口失败：" + friendly(viewFailure));
+        }
+    }
+
+    private void launchSessionInstaller(Manifest target, String reason) {
+        if (!apk.isFile() || apk.length() != target.bytes || verifiedApkCode != target.code || destroyed) return;
+        if (Build.VERSION.SDK_INT >= 26 && !activity.getPackageManager().canRequestPackageInstalls()) {
+            showInstallPermission(target, "请先允许红果短剧安装更新，再使用备用安装流程。");
+            return;
+        }
+        rememberInstallHandoff(target, "session");
+        state = "installing"; message = "正在准备备用系统安装入口…"; publish();
+        worker.execute(() -> {
+            try {
+                installWithPackageInstaller(target);
+            } catch (Exception sessionFailure) {
+                preferences.edit().putBoolean("waiting_installer", false)
+                        .putInt("install_status", PackageInstaller.STATUS_FAILURE)
+                        .putString("install_message", "系统安装器启动失败：" + friendly(sessionFailure)).apply();
+                activity.runOnUiThread(() -> {
+                    if (!destroyed && latest == target) showInstallRecovery(target,
+                            reason + "\n备用安装入口失败：" + friendly(sessionFailure));
+                });
+            }
+        });
     }
 
     void resume() {
         if (destroyed) return;
-        if (waitingPermission) {
-            waitingPermission = false;
-            if (Build.VERSION.SDK_INT >= 26 && activity.getPackageManager().canRequestPackageInstalls()
-                    && latest != null && "ready".equals(state)) {
-                final Manifest target = latest;
-                host.allowPrompt(allowed -> { if (allowed && !destroyed && host.foreground() && target == latest) launchInstaller(target); });
+        int targetCode = preferences.getInt("install_target_code", 0);
+        if (targetCode <= 0) { publish(); return; }
+        if (BuildConfig.VERSION_CODE >= targetCode) {
+            clearInstallHandoff();
+            state = "current"; message = "更新已安装"; publish(); return;
+        }
+        Manifest target = latest != null && latest.code == targetCode ? latest : null;
+        if (target == null || !apk.isFile() || apk.length() != target.bytes) {
+            preferences.edit().putBoolean("waiting_permission", false).putBoolean("waiting_installer", false).apply();
+            message = "已下载的更新包不可用，请重新检查更新"; publish(); return;
+        }
+        if (!cacheCheckComplete || verifiedApkCode != target.code) {
+            pendingInstallResume = true;
+            return;
+        }
+        if (preferences.getBoolean("waiting_permission", false)) {
+            preferences.edit().putBoolean("waiting_permission", false).apply();
+            if (Build.VERSION.SDK_INT < 26 || activity.getPackageManager().canRequestPackageInstalls()) {
+                launchInstaller(target);
+            } else {
+                showInstallRecovery(target, "安装权限尚未开启。已验证的安装包仍保留，可继续授权或重试。");
+            }
+            return;
+        }
+        if (preferences.getBoolean("waiting_installer", false)) {
+            int status = preferences.getInt("install_status", Integer.MIN_VALUE);
+            String detail = preferences.getString("install_message", "");
+            preferences.edit().putBoolean("waiting_installer", false).remove("install_status").remove("install_message").apply();
+            String reason = status == Integer.MIN_VALUE || status == PackageInstaller.STATUS_PENDING_USER_ACTION
+                    ? "系统安装尚未完成。安装包已保留，可再次打开安装界面。"
+                    : UpdateInstallStatus.message(status, detail);
+            showInstallRecovery(target, reason);
+            return;
+        }
+        consumeInstallerResult();
+        publish();
+    }
+
+    private void handleInstallResult(Intent intent) {
+        if (intent == null) return;
+        int targetCode = intent.getIntExtra(UpdateInstallReceiver.EXTRA_TARGET_CODE, 0);
+        int status = intent.getIntExtra(UpdateInstallReceiver.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
+        String detail = intent.getStringExtra(UpdateInstallReceiver.EXTRA_STATUS_MESSAGE);
+        if (targetCode <= 0 || status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+            if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                state = "installing"; message = "等待系统确认安装…"; publish();
+            }
+            return;
+        }
+        handleTerminalInstallResult(targetCode, status, detail);
+    }
+
+    private void consumeInstallerResult() {
+        int status = preferences.getInt("install_status", Integer.MIN_VALUE);
+        if (status == Integer.MIN_VALUE) return;
+        int targetCode = preferences.getInt("install_target_code", 0);
+        String detail = preferences.getString("install_message", "");
+        preferences.edit().remove("install_status").remove("install_message").putBoolean("waiting_installer", false).apply();
+        handleTerminalInstallResult(targetCode, status, detail);
+    }
+
+    private void handleTerminalInstallResult(int targetCode, int status, String detail) {
+        if (status == PackageInstaller.STATUS_SUCCESS) {
+            clearInstallHandoff(); state = "current"; message = "更新已安装"; publish(); return;
+        }
+        if (latest == null || latest.code != targetCode) return;
+        state = "ready";
+        message = "安装未完成，已保留验证过的安装包";
+        publish();
+        if (host.foreground() && !destroyed) showInstallRecovery(latest, UpdateInstallStatus.message(status, detail));
+    }
+
+    private void showInstallPermission(Manifest target, String explanation) {
+        AlertDialog permission = new AlertDialog.Builder(activity).setTitle("允许安装更新")
+                .setMessage(explanation)
+                .setNegativeButton("稍后", null)
+                .setPositiveButton("去设置", (d, which) -> openInstallPermissionSettings(target))
+                .create();
+        show(permission, AlertDialog.BUTTON_NEGATIVE);
+    }
+
+    private void openInstallPermissionSettings(Manifest target) {
+        preferences.edit().putInt("install_target_code", target.code)
+                .putString("manifest", target.json.toString()).putBoolean("waiting_permission", true)
+                .putBoolean("waiting_installer", false).apply();
+        try {
+            activity.startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:" + activity.getPackageName())));
+        } catch (Exception specificFailure) {
+            try {
+                activity.startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:" + activity.getPackageName())));
+            } catch (Exception fallbackFailure) {
+                preferences.edit().putBoolean("waiting_permission", false).apply();
+                showInstallRecovery(target, "设备无法打开安装权限设置。请在系统设置中允许此应用安装未知来源应用后，回到这里继续安装。");
             }
         }
-        publish();
+    }
+
+    private void showInstallRecovery(Manifest target, String explanation) {
+        preferences.edit().putBoolean("waiting_installer", false).remove("install_status").remove("install_message").apply();
+        state = "ready"; message = "安装未完成，已保留验证过的安装包"; publish();
+        if (!host.foreground() || destroyed || dialog != null) return;
+        AlertDialog.Builder retry = new AlertDialog.Builder(activity).setTitle("继续安装 " + target.name)
+                .setMessage(explanation + "\n\n已校验的安装包仍保留，可以重试安装。")
+                .setNegativeButton("稍后", null)
+                .setPositiveButton("继续安装", (d, which) -> launchInstaller(target));
+        if (Build.VERSION.SDK_INT >= 26 && !activity.getPackageManager().canRequestPackageInstalls()) {
+            retry.setNeutralButton("去设置", (d, which) -> openInstallPermissionSettings(target));
+        } else {
+            retry.setNeutralButton("备用方式", (d, which) -> launchSessionInstaller(target, explanation));
+        }
+        show(retry.create(), AlertDialog.BUTTON_POSITIVE);
+    }
+
+    private void rememberInstallHandoff(Manifest target, String mode) {
+        preferences.edit().putInt("install_target_code", target.code)
+                .putString("install_mode", mode).putInt("install_status", Integer.MIN_VALUE)
+                .putString("install_message", "").putString("manifest", target.json.toString())
+                .putBoolean("waiting_permission", false).putBoolean("waiting_installer", true).apply();
+    }
+
+    private void clearInstallHandoff() {
+        preferences.edit().remove("install_target_code").remove("install_mode")
+                .remove("install_status").remove("install_message")
+                .putBoolean("waiting_permission", false).putBoolean("waiting_installer", false).apply();
+    }
+
+    private void launchViewInstaller() throws Exception {
+        Intent install = new Intent(Intent.ACTION_VIEW);
+        Uri uri = Uri.parse("content://" + activity.getPackageName() + ".updates/apk");
+        install.setDataAndType(uri, "application/vnd.android.package-archive");
+        install.setClipData(ClipData.newUri(activity.getContentResolver(), "update", uri));
+        install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        activity.startActivity(install);
+    }
+
+    private void installWithPackageInstaller(Manifest target) throws Exception {
+        PackageInstaller installer = activity.getPackageManager().getPackageInstaller();
+        PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+        params.setAppPackageName(activity.getPackageName());
+        params.setSize(apk.length());
+        if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED);
+        int sessionId = installer.createSession(params);
+        boolean committed = false;
+        PackageInstaller.Session session = null;
+        try {
+            session = installer.openSession(sessionId);
+            try (InputStream input = new FileInputStream(apk);
+                 OutputStream output = session.openWrite("base.apk", 0, apk.length())) {
+                byte[] buffer = new byte[32768]; int count;
+                while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                session.fsync(output);
+            }
+            rememberInstallHandoff(target, "session");
+            Intent callback = new Intent(activity, UpdateInstallReceiver.class);
+            callback.setAction(UpdateInstallReceiver.ACTION_STATUS);
+            callback.setData(Uri.parse("hongguo-update://session/" + sessionId));
+            callback.putExtra(UpdateInstallReceiver.EXTRA_TARGET_CODE, target.code);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= 31) flags |= PendingIntent.FLAG_MUTABLE;
+            PendingIntent status = PendingIntent.getBroadcast(activity, sessionId, callback, flags);
+            session.commit(status.getIntentSender());
+            committed = true;
+        } finally {
+            if (session != null) {
+                try { session.close(); } catch (Exception ignored) { }
+            }
+            if (!committed) {
+                try { installer.abandonSession(sessionId); } catch (Exception ignored) { }
+            }
+        }
     }
 
     private void configureSource() {
@@ -463,6 +692,10 @@ final class AppUpdater {
     void destroy() {
         destroyed = true; generation.incrementAndGet();
         HttpURLConnection active = connection; if (active != null) active.disconnect();
+        if (installResultReceiverRegistered) {
+            try { activity.unregisterReceiver(installResultReceiver); } catch (Exception ignored) { }
+            installResultReceiverRegistered = false;
+        }
         dismissDialog(); worker.shutdownNow();
     }
 }

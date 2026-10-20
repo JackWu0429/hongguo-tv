@@ -52,6 +52,11 @@
         <provider android:name=".UpdateFileProvider" android:authorities="${applicationId}.updates"
             android:exported="false" android:grantUriPermissions="true" />
 
+        <receiver
+            android:name=".UpdateInstallReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
         <service
             android:name=".CoreService"
             android:exported="false"

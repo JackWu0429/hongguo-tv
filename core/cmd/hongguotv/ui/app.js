@@ -7147,8 +7147,8 @@
       var check = document.getElementById('app-check-update');
       // Keep the active TV focus node alive while native checking/download runs.
       check.disabled = !data.supported;
-      check.setAttribute('aria-disabled', data.state === 'checking' || data.state === 'downloading' ? 'true' : 'false');
-      check.textContent = data.state === 'checking' ? uiText('ui.checking', '检查中…') : !data.desktop && (data.state === 'available' || data.state === 'ready') ? uiText('ui.viewUpdate', '查看更新 {version}', { version: data.latest_version }) : uiText('ui.checkUpdate', '检查更新');
+      check.setAttribute('aria-disabled', data.state === 'checking' || data.state === 'downloading' || data.state === 'installing' ? 'true' : 'false');
+      check.textContent = data.state === 'checking' ? uiText('ui.checking', '检查中…') : !data.desktop && data.state === 'ready' ? uiText('ui.installUpdate', '安装更新') : !data.desktop && data.state === 'available' ? uiText('ui.viewUpdate', '查看更新 {version}', { version: data.latest_version }) : uiText('ui.checkUpdate', '检查更新');
       if (data.desktop) {
         var downloading = data.state === 'downloading';
         var download = document.getElementById('desktop-download-update');
@@ -7169,7 +7169,7 @@
       }
     }
   });
-  document.getElementById('app-check-update').addEventListener('click', appUpdates.check);
+  document.getElementById('app-check-update').addEventListener('click', appUpdates.activate);
   document.getElementById('desktop-download-update').addEventListener('click', function () { if (desktopShell) window.HongguoTVUpdates.download(); });
   document.getElementById('desktop-open-update-folder').addEventListener('click', function () { if (desktopShell) window.HongguoTVUpdates.openFolder(); });
   var playbackSettings = window.HongguoPlaybackSettings.create({

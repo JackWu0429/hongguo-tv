@@ -957,6 +957,7 @@
   "ui.updateDefault": "啟動後每天自動檢查一次，播放時不打擾。",
   "ui.checking": "檢查中…",
   "ui.viewUpdate": "查看更新 {version}",
+  "ui.installUpdate": "安裝更新",
   "ui.checkUpdate": "檢查更新",
   "ui.downloadingPercent": "下載中 {percent}%",
   "ui.downloadZip": "下載更新 ZIP",

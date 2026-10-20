@@ -957,6 +957,7 @@
   "ui.updateDefault": "起動後は毎日自動確認します。再生中は邪魔しません。",
   "ui.checking": "確認中…",
   "ui.viewUpdate": "更新 {version} を確認",
+  "ui.installUpdate": "アップデートをインストール",
   "ui.checkUpdate": "更新を確認",
   "ui.downloadingPercent": "ダウンロード中 {percent}%",
   "ui.downloadZip": "更新 ZIP をダウンロード",
