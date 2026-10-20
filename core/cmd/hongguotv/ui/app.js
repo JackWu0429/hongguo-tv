@@ -344,7 +344,7 @@
   var confirmAfterClose = null;
   var confirmationGeneration = 0;
   var activePlayback = null;
-  var mpvEpisodeCoverLoader = null;
+  var episodeCoverLoader = null;
   var detailCache = {};
   var playerOptionsOpen = false;
   var playerOptionsReturn = null;
@@ -2040,6 +2040,7 @@
     if (failed && activePlayback && activePlayback.presentation) activePlayback.presentation.failed = true;
     var preparing = hero.classList.contains('is-preparing-video') || activePlayback && (activePlayback.continuationPending || !activePlayback.started);
     var transition = !!(message && !failed && preparing);
+    if (failed) clearEpisodeCover();
     hero.classList.toggle('is-transition-loading', transition);
     panel.classList.toggle('is-loading', !!(message && !failed));
     // The complete poster provides the title. All normal starts and switches
@@ -3827,7 +3828,7 @@
   function cancelPlaybackPreparation() {
     clearRangeTransitionHint();
     clearRangeStallTimer();
-    clearMpvEpisodeCover();
+    clearEpisodeCover();
     if (playbackInfoRequest) playbackInfoRequest.abort(); playbackInfoRequest = null;
     if (playbackPrefetchHandoff) playbackPrefetchHandoff.cancel(); playbackPrefetchHandoff = null;
     interruptPlaybackPresentation(activePlayback);
@@ -3935,22 +3936,21 @@
     // Release the pixel buffer and reset any origin-tainted canvas state.
     canvas.width = 0; canvas.height = 0;
   }
-  function clearMpvEpisodeCover(playback) {
-    if (playbackEngineName() !== 'mpv') return;
+  function clearEpisodeCover(playback) {
     if (playback && activePlayback && playback !== activePlayback) return;
     var hero = document.getElementById('hero');
     var cover = document.getElementById('hero-episode-cover');
-    mpvEpisodeCoverLoader = null;
+    episodeCoverLoader = null;
     if (cover) {
       cover.__coverLoader = null;
       cover.__coverSource = '';
       cover.style.backgroundImage = 'none';
       cover.classList.remove('is-ready');
     }
-    if (hero) hero.classList.remove('is-mpv-episode-cover');
+    if (hero) hero.classList.remove('is-episode-cover');
   }
-  function setMpvEpisodeCover(target, data) {
-    if (playbackEngineName() !== 'mpv' || !target || !data || !data.episode_cover) return;
+  function setEpisodeCover(target, data) {
+    if (!target || !data || !data.episode_cover) return;
     var playback = activePlayback;
     var hero = document.getElementById('hero');
     var cover = document.getElementById('hero-episode-cover');
@@ -3960,14 +3960,14 @@
         playback.presentation && playback.presentation.rendered) return;
     var source = String(data.episode_cover);
     if (cover.__coverSource === source) {
-      if (cover.__coverLoader === mpvEpisodeCoverLoader && mpvEpisodeCoverLoader) return;
+      if (cover.__coverLoader === episodeCoverLoader && episodeCoverLoader) return;
       if (cover.classList.contains('is-ready')) {
-        hero.classList.add('is-mpv-episode-cover');
+        hero.classList.add('is-episode-cover');
         return;
       }
     }
     var loader = new Image();
-    mpvEpisodeCoverLoader = loader;
+    episodeCoverLoader = loader;
     cover.__coverLoader = loader;
     cover.__coverSource = source;
     loader.onload = function () {
@@ -3976,7 +3976,7 @@
           !hero.classList.contains('is-preparing-video')) return;
       cover.style.backgroundImage = 'url(' + JSON.stringify(loader.src) + ')';
       cover.classList.add('is-ready');
-      hero.classList.add('is-mpv-episode-cover');
+      hero.classList.add('is-episode-cover');
     };
     loader.onerror = function () {
       if (cover.__coverLoader !== loader) return;
@@ -4111,7 +4111,7 @@
     if (!playbackVideoReady(playback, presentation, video)) return;
     clearRangeStallTimer();
     if (!hero.classList.contains('is-preparing-video')) {
-      clearMpvEpisodeCover(playback);
+      clearEpisodeCover(playback);
       releasePresentedAudio(playback, presentation, video);
       finishAutoCinema(playback);
       return;
@@ -4128,7 +4128,7 @@
       if (!painted || !playbackVideoReady(playback, presentation, video)) return;
       if (typeof clearRangeTransitionHint === 'function') clearRangeTransitionHint();
       clearLastPlaybackFrame();
-      clearMpvEpisodeCover(playback);
+      clearEpisodeCover(playback);
       hero.classList.remove('is-preparing-video', 'is-starting-video', 'is-episode-transition', 'is-range-transition', 'is-range-source-reset');
       setPlayerStatus('');
       releasePresentedAudio(playback, presentation, video);
@@ -7091,7 +7091,7 @@
       return { abort: function () { controller.abort(); }, promise: fetchData('/api/v1/player/stats?' + new URLSearchParams(target), { signal: controller.signal }) };
     },
     render: function (target, data) {
-      setMpvEpisodeCover(target, data);
+      setEpisodeCover(target, data);
       ['like', 'favorite', 'comment'].forEach(function (kind) {
         var field = { like: 'likes', favorite: 'favorites', comment: 'comments' }[kind];
         var text = window.HongguoEngagement.countText(data && data[field]);

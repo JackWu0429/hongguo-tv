@@ -12,10 +12,10 @@ function fixture(options) {
   panel.querySelector=selector=>{assert.equal(selector,'.player-spinner');return spinner};
   const nodes={'hero':hero,'player-status':panel,'player-status-title':title,'player-status-text':text,'player-retry':retry,'player-failure-diagnostics':diagnostics};
   const frames=[];
-  const context={document:{getElementById:id=>nodes[id]},activePlayback:null,autoCinemaCandidate:false,featuredItem:{title:'新剧名称'},reveals:0,focused:null,zoneOf:()=> 'feed'};
+  const context={document:{getElementById:id=>nodes[id]},activePlayback:null,autoCinemaCandidate:false,featuredItem:{title:'新剧名称'},reveals:0,focused:null,coverClears:0,zoneOf:()=> 'feed'};
   if(options&&options.frameScheduler)context.requestAnimationFrame=callback=>{frames.push(callback)};
   const c=vm.createContext(context);
-  vm.runInContext('function clearLastPlaybackFrame(){}function cancelPendingAutoCinema(){autoCinemaCandidate=false}function revealControls(){reveals++}function goFocus(node){focused=node}'+functions,c);
+  vm.runInContext('function clearLastPlaybackFrame(){}function clearEpisodeCover(){coverClears++}function cancelPendingAutoCinema(){autoCinemaCandidate=false}function revealControls(){reveals++}function goFocus(node){focused=node}'+functions,c);
   return {c,hero,title,text,spinner,retry,diagnostics,panel,frames,paint(){const pending=frames.splice(0);pending.forEach(callback=>callback())}};
 }
 test('first start shows only the spinner until the real target episode resolves, without a title or loading panel',()=>{
@@ -63,6 +63,7 @@ test('ordinary buffering and failure do not retain a stale incoming title or tra
   assert.equal(f.spinner.classList.contains('is-hidden'),false);
   assert.equal(f.panel.classList.contains('is-loading'),true);
   f.hero.classList.add('is-preparing-video');f.c.setPlayerStatus('暂时无法播放这集',true);
+  assert.equal(f.c.coverClears,1);
   assert.equal(f.hero.classList.contains('is-transition-loading'),false);assert.equal(f.title.classList.contains('is-hidden'),true);
   assert.equal(f.spinner.classList.contains('is-hidden'),true);assert.equal(f.retry.classList.contains('is-hidden'),false);
   assert.equal(f.diagnostics.classList.contains('is-hidden'),false);
