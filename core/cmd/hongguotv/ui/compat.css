@@ -15,13 +15,46 @@
 .legacy-grid .list-empty, .legacy-grid .search-result-empty, .legacy-grid .calendar-empty { width: 100%; }
 .legacy-grid .rank-row { display: flex; }
 .legacy-grid .rank-row-rank { flex: 0 0 42px; }
-.legacy-grid .rank-row-image { flex: 0 0 116px; margin-left: 18px; }
-.legacy-grid .rank-row > .drama-poster { flex: 0 0 116px; width: 116px; margin-left: 18px; }
+.legacy-grid .rank-row-image { flex: 0 0 116px; margin-left: 0; }
+.legacy-grid .rank-row > .drama-poster { flex: 0 0 116px; width: 116px; margin-left: 0; }
 .legacy-grid .rank-row .drama-poster > .rank-row-image { margin-left: 0; }
-.legacy-grid .rank-row-copy { flex: 1; margin: 0 18px; }
+.legacy-grid .rank-row-copy { flex: 1; margin: 0; }
 .legacy-grid .rank-row-side { flex: 0 0 94px; }
+.legacy-grid .rank-row > * + * { margin-left: 18px; }
 .legacy-grid #player-options-list { display: flex; flex-wrap: wrap; margin-right: -12px; }
 .legacy-grid #player-options-list > .player-option { width: calc(50% - 12px); margin: 0 12px 12px 0; }
+.legacy-grid .follow-grid { display: flex; flex-wrap: wrap; margin-right: -16px; }
+.legacy-grid .follow-grid > .follow-card { flex: 0 0 calc(100% / 6 - 16px); margin: 0 16px 22px 0; }
+.legacy-grid .detail-related-list { display: flex; flex-wrap: wrap; margin: 0 -14px -14px 0; }
+.legacy-grid .detail-related-list > .related-card { flex: 0 0 calc(100% / 5 - 14px); margin: 0 14px 14px 0; }
+.legacy-grid .detail-cast-all { display: flex; flex-wrap: wrap; margin: 0 -8px -8px 0; }
+.legacy-grid .detail-cast-all > .detail-cast-modal-item { flex: 0 0 calc(25% - 8px); margin: 0 8px 8px 0; }
+.legacy-grid .actor-works-list { display: flex; flex-wrap: wrap; margin-right: -18px; }
+.legacy-grid .actor-works-list > .actor-work-card { flex: 0 0 calc(100% / 6 - 18px); margin: 0 18px 18px 0; }
+.legacy-grid .rank-filter-options { display: flex; flex-wrap: wrap; margin: 22px -9px 13px 0; }
+.legacy-grid .rank-filter-options > .rank-filter-group-title { flex: 0 0 calc(100% - 9px); margin: 8px 9px 9px 0; }
+.legacy-grid .rank-filter-options > .rank-filter-option { flex: 0 0 calc(100% / 3 - 9px); margin: 0 9px 9px 0; }
+.legacy-grid .radar-table-head, .legacy-grid .radar-row { display: flex; }
+.legacy-grid .radar-official-table .radar-table-head, .legacy-grid .radar-official-table .radar-row { min-width: 902px; }
+.legacy-grid .radar-growth-table .radar-table-head, .legacy-grid .radar-growth-table .radar-row { min-width: 931px; }
+.legacy-grid .radar-official-table .radar-table-head > :nth-child(1), .legacy-grid .radar-official-table .radar-row > :nth-child(1) { flex: 0 0 46px; }
+.legacy-grid .radar-official-table .radar-table-head > :nth-child(2), .legacy-grid .radar-official-table .radar-row > :nth-child(2) { flex: 0 0 76px; }
+.legacy-grid .radar-official-table .radar-table-head > :nth-child(3), .legacy-grid .radar-official-table .radar-row > :nth-child(3) { flex: 1 1 190px; min-width: 190px; }
+.legacy-grid .radar-official-table .radar-table-head > :nth-child(4), .legacy-grid .radar-official-table .radar-row > :nth-child(4) { flex: 0 0 58px; }
+.legacy-grid .radar-official-table .radar-table-head > :nth-child(5), .legacy-grid .radar-official-table .radar-row > :nth-child(5) { flex: 0 0 92px; }
+.legacy-grid .radar-official-table .radar-table-head > :nth-child(6), .legacy-grid .radar-official-table .radar-row > :nth-child(6),
+.legacy-grid .radar-official-table .radar-table-head > :nth-child(7), .legacy-grid .radar-official-table .radar-row > :nth-child(7) { flex: 0 0 100px; }
+.legacy-grid .radar-official-table .radar-table-head > :nth-child(8), .legacy-grid .radar-official-table .radar-row > :nth-child(8),
+.legacy-grid .radar-official-table .radar-table-head > :nth-child(9), .legacy-grid .radar-official-table .radar-row > :nth-child(9) { flex: 0 0 54px; }
+.legacy-grid .radar-growth-table .radar-table-head > :nth-child(1), .legacy-grid .radar-growth-table .radar-row > :nth-child(1) { flex: 0 0 46px; }
+.legacy-grid .radar-growth-table .radar-table-head > :nth-child(2), .legacy-grid .radar-growth-table .radar-row > :nth-child(2) { flex: 1 1 210px; min-width: 210px; }
+.legacy-grid .radar-growth-table .radar-table-head > :nth-child(3), .legacy-grid .radar-growth-table .radar-row > :nth-child(3) { flex: 0 0 58px; }
+.legacy-grid .radar-growth-table .radar-table-head > :nth-child(4), .legacy-grid .radar-growth-table .radar-row > :nth-child(4) { flex: 0 0 92px; }
+.legacy-grid .radar-growth-table .radar-table-head > :nth-child(5), .legacy-grid .radar-growth-table .radar-row > :nth-child(5) { flex: 0 0 100px; }
+.legacy-grid .radar-growth-table .radar-table-head > :nth-child(6), .legacy-grid .radar-growth-table .radar-row > :nth-child(6) { flex: 0 0 88px; }
+.legacy-grid .radar-growth-table .radar-table-head > :nth-child(7), .legacy-grid .radar-growth-table .radar-row > :nth-child(7) { flex: 0 0 100px; }
+.legacy-grid .radar-growth-table .radar-table-head > :nth-child(8), .legacy-grid .radar-growth-table .radar-row > :nth-child(8) { flex: 0 0 118px; }
+.legacy-flex-gap .radar-table-head > :nth-child(n+2), .legacy-flex-gap .radar-row > :nth-child(n+2) { margin-left: 13px; }
 /* Intrinsic images may be landscape or vary in size. Reserve a 2:3 box. */
 .legacy-aspect .drama-poster { padding-top: 150%; }
 .legacy-aspect .drama-poster > img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
@@ -29,16 +62,17 @@
 .legacy-aspect .new-card-poster > img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 .legacy-aspect .rank-row > .drama-poster { padding-top: 0; height: 150px; }
 
-.legacy-flex-gap .brand-mark { margin-right: 11px; }
-.legacy-flex-gap .side-nav { gap: 0; }
+.legacy-flex-gap .brand > * + * { margin-left: 11px; }
 .legacy-flex-gap .side-item + .side-item { margin-top: 5px; }
-.legacy-flex-gap .side-icon { margin-right: 15px; }
+.legacy-flex-gap .side-item > * + * { margin-left: 15px; }
 .legacy-flex-gap .app-shell.sidebar-icons .brand-mark,
-.legacy-flex-gap .app-shell.sidebar-icons .side-icon { margin-right: 0; }
+.legacy-flex-gap .app-shell.sidebar-icons .brand > * + *,
+.legacy-flex-gap .app-shell.sidebar-icons .side-item > * + * { margin-left: 0; }
 .legacy-flex-gap .channel-tab + .channel-tab { margin-left: 4px; }
-.legacy-flex-gap .hero-top-copy > * + *, .legacy-flex-gap .hero-top-right > * + * { margin-top: 6px; }
+.legacy-flex-gap .hero-top-copy > * + * { margin-top: 6px; }
+.legacy-flex-gap .hero-top-right > * + * { margin-top: 5px; }
 .legacy-flex-gap .catalog-card + .catalog-card { margin-left: 10px; }
-.legacy-flex-gap .round-action + .round-action { margin-top: 18px; }
+.legacy-flex-gap .right-actions .round-action + .round-action { margin-top: 12px; }
 .legacy-flex-gap .round-action > * + * { margin-top: 3px; }
 .legacy-flex-gap .bottom-controls > * + * { margin-top: 12px; }
 .legacy-flex-gap .playback-timeline > * + *, .legacy-flex-gap .playback-buttons > * + * { margin-left: 13px; }
@@ -47,58 +81,117 @@
 .legacy-flex-gap .playback-utility-group [data-action="fullscreen"] { margin-left: 13px; }
 .legacy-flex-gap .is-discussion-open .playback-buttons > * { margin: 0 8px 8px 0; }
 .legacy-flex-gap .player-status > * + * { margin-top: 15px; }
+.legacy-flex-gap .player-status-actions { margin: -6px; }
+.legacy-flex-gap .player-status-actions > * { margin: 6px; }
+.legacy-flex-gap .discussion-head > * + * { margin-left: 14px; }
+.legacy-flex-gap .discussion-main > * + * { margin-left: 12px; }
+.legacy-flex-gap .discussion-actions { margin: 8px -3px -3px; }
+.legacy-flex-gap .discussion-actions > * { margin: 3px; }
+.legacy-flex-gap .player-compose-actions > * + * { margin-left: 10px; }
+.legacy-flex-gap .player-compose-scan > * + * { margin-left: 7px; }
 .legacy-flex-gap .search-heading-row > .search-box { margin-left: 28px; }
 .legacy-flex-gap .search-box > * + * { margin-left: 10px; }
-.legacy-flex-gap .filter-row > strong { margin-right: 17px; }
+.legacy-flex-gap .search-suggestion-copy > * + * { margin-top: 3px; }
+.legacy-flex-gap .filter-panel-heading > * + * { margin-left: 16px; }
+.legacy-flex-gap .filter-row > * + * { margin-left: 17px; }
 .legacy-flex-gap .filter-options > * + * { margin-left: 14px; }
 .legacy-flex-gap .list-status > * + * { margin-left: 18px; }
 .legacy-flex-gap .list-status[aria-busy="true"]:before { margin-right: 18px; }
+.legacy-flex-gap .rank-filter-heading > * + * { margin-left: 16px; }
 .legacy-flex-gap .search-result-head > * + * { margin-left: 12px; }
-.legacy-flex-gap .publication-row > img { margin-right: 20px; }
-.legacy-flex-gap .publication-action { margin-left: 20px; }
+.legacy-flex-gap .publication-row > * + * { margin-left: 20px; }
 .legacy-flex-gap .rank-tabs > * + *, .legacy-flex-gap .new-tabs > * + * { margin-left: 28px; }
-.legacy-flex-gap .rank-heading-row > * + *, .legacy-flex-gap .new-heading-row > * + * { margin-left: 34px; }
+.legacy-flex-gap .rank-heading-row > * + * { margin-left: 24px; }
+.legacy-flex-gap .new-heading-row > * + * { margin-left: 34px; }
 .legacy-flex-gap .new-heading-row .new-filters { margin-left: auto; }
+.legacy-flex-gap .rank-layout > * + * { margin-left: 32px; }
+.legacy-flex-gap .rank-subnav > * + * { margin-top: 6px; }
 .legacy-flex-gap .rank-list-heading > * + * { margin-left: 13px; }
 .legacy-flex-gap .rank-list-heading .rank-period { margin-left: auto; }
 .legacy-flex-gap .rank-main { margin-left: 32px; }
+.legacy-flex-gap .rank-subnav + .rank-main { margin-left: 32px; }
 .legacy-flex-gap .rank-subtab + .rank-subtab { margin-top: 6px; }
 .legacy-flex-gap .rank-row + .rank-row { margin-top: 2px; }
 .legacy-flex-gap .rank-row-copy > * + * { margin-top: 7px; }
 .legacy-flex-gap .rank-row-side > * + * { margin-top: 13px; }
 .legacy-flex-gap .library-heading-row > * + * { margin-left: 22px; }
+.legacy-flex-gap .follow-heading > * + * { margin-left: 20px; }
+.legacy-flex-gap .follow-actions > * + * { margin-left: 10px; }
 .legacy-flex-gap .library-toolbar > * + * { margin-left: 12px; }
 .legacy-flex-gap .library-empty > * + * { margin-top: 14px; }
 .legacy-flex-gap .new-filter + .new-filter { margin-left: 10px; }
+.legacy-flex-gap .new-date-strip > * + * { margin-left: 10px; }
 .legacy-flex-gap .calendar-day + .calendar-day { margin-left: 10px; }
-.legacy-flex-gap .publication-row + .publication-row { margin-top: 14px; }
+.legacy-flex-gap .calendar-list > * + *, .legacy-flex-gap .reservation-list > * + * { margin-top: 14px; }
 .legacy-flex-gap .reservation-tab + .reservation-tab { margin-left: 12px; }
+.legacy-flex-gap .confirm-actions > * + * { margin-left: 14px; }
+.legacy-flex-gap .detail-header > * + * { margin-left: 16px; }
+.legacy-flex-gap .detail-title-row > * + * { margin-left: 18px; }
+.legacy-flex-gap .detail-header-actions > * + * { margin-left: 8px; }
+.legacy-flex-gap .detail-header-action > * + * { margin-left: 7px; }
+.legacy-flex-gap .detail-cast > * + * { margin-left: 13px; }
+.legacy-flex-gap .detail-cast-strip > * + * { margin-left: 8px; }
+.legacy-flex-gap .detail-cast-item > * + * { margin-left: 7px; }
+.legacy-flex-gap .detail-cast-heading > * + * { margin-left: 12px; }
+.legacy-flex-gap .detail-cast-modal-item > * + * { margin-left: 9px; }
+.legacy-flex-gap .actor-works-header > * + * { margin-left: 20px; }
+.legacy-flex-gap .actor-works-person > * + * { margin-left: 15px; }
 .legacy-flex-gap .detail-tab + .detail-tab { margin-left: 16px; }
 .legacy-flex-gap .detail-episode { margin: 4px; }
 .legacy-flex-gap .detail-episodes { padding: 8px 20px 18px; }
 .legacy-flex-gap .series-row + .series-row { margin-top: 12px; }
-.legacy-flex-gap .account-card + .account-card { margin-left: 1.5rem; }
+.legacy-flex-gap .account-layout > * + * { margin-left: 1.5rem; }
+.legacy-flex-gap .account-phone-row > * + * { margin-left: 10px; }
+.legacy-flex-gap .account-country-button > * + * { margin-left: 8px; }
+.legacy-flex-gap .account-country-item > * + * { margin-left: 18px; }
 .legacy-flex-gap .account-form-actions > * { margin: 0 .8rem .8rem 0; }
 .legacy-flex-gap .confirm-button + .confirm-button { margin-left: 14px; }
 .legacy-flex-gap .discussion-close { margin-left: 14px; }
 .legacy-flex-gap .discussion-avatar { margin-right: 12px; }
 .legacy-flex-gap .discussion-like > * + * { margin-top: 4px; }
-.legacy-flex-gap .discussion-actions > * { margin: 0 6px 6px 0; }
 .legacy-flex-gap .discussion-compose-actions > * + * { margin-left: 12px; }
+.legacy-flex-gap .detail-series-list > * + * { margin-top: 12px; }
+.legacy-flex-gap .follow-notification-heading > * + * { margin-left: 16px; }
+.legacy-flex-gap .follow-notification-heading > div > * + * { margin-left: 14px; }
+.legacy-flex-gap .follow-notification-list > * + * { margin-top: 10px; }
+.legacy-flex-gap .follow-notification-row > * + * { margin-left: 18px; }
+.legacy-flex-gap .library-type-filters > * + * { margin-left: 10px; }
+.legacy-flex-gap .detail-reviews-list > * + * { margin-top: 10px; }
+.legacy-flex-gap .rank-heading-actions > * + * { margin-left: 12px; }
+.legacy-flex-gap .rank-view-switch > * + * { margin-left: 4px; }
+.legacy-flex-gap .rank-filter-header > * + *, .legacy-flex-gap .rank-filter-actions > * + * { margin-left: 12px; }
+.legacy-flex-gap .radar-view-switch > * + * { margin-left: 4px; }
+.legacy-flex-gap .radar-heading > * + * { margin-left: 18px; }
+.legacy-flex-gap .radar-section-heading > * + * { margin-left: 13px; }
+.legacy-flex-gap .radar-filter-row { margin: -4px -4px 7px 0; }
+.legacy-flex-gap .radar-filter-row > * { margin: 4px; }
 @media (max-width: 1400px) {
   .legacy-grid .search-results > .search-result-card,
   .legacy-grid .new-grid > .new-card, .legacy-grid .library-grid > .library-tile { width: calc(100% / 5 - 20px); }
   .legacy-grid .rank-row-rank { flex-basis: 34px; }
-  .legacy-grid .rank-row-image { flex-basis: 98px; margin-left: 12px; }
-  .legacy-grid .rank-row > .drama-poster { flex-basis: 98px; width: 98px; margin-left: 12px; }
+  .legacy-grid .rank-row-image { flex-basis: 98px; margin-left: 0; }
+  .legacy-grid .rank-row > .drama-poster { flex-basis: 98px; width: 98px; margin-left: 0; }
   .legacy-aspect .rank-row > .drama-poster { height: 132px; }
-  .legacy-grid .rank-row-copy { margin: 0 12px; }
+  .legacy-grid .rank-row-copy { margin: 0; }
   .legacy-grid .rank-row-side { flex-basis: 82px; }
-  .legacy-flex-gap .rank-main { margin-left: 18px; }
+  .legacy-grid .rank-row > * + * { margin-left: 12px; }
+  .legacy-flex-gap .rank-main, .legacy-flex-gap .rank-subnav + .rank-main { margin-left: 18px; }
   .legacy-flex-gap .bottom-controls > * + * { margin-top: 6px; }
+  .legacy-grid .follow-grid > .follow-card { flex-basis: calc(100% / 5 - 16px); }
+  .legacy-grid .detail-related-list > .related-card { flex-basis: calc(100% / 5 - 14px); }
 }
 @media (max-width: 1080px) {
   .legacy-flex-gap .search-heading-row > .search-box { margin-left: 0; }
+  .legacy-flex-gap .rank-heading-row { margin: 0 -14px -14px 0; }
+  .legacy-flex-gap .rank-heading-row > * { margin: 0 14px 14px 0; }
+  .legacy-flex-gap .rank-heading-row > * + * { margin-left: 0; }
+  .legacy-grid .follow-grid > .follow-card { flex-basis: calc(25% - 16px); }
+  .legacy-grid .detail-related-list > .related-card { flex-basis: calc(25% - 14px); }
+}
+@media (max-width: 700px) {
+  .legacy-flex-gap .radar-heading > * + * { margin-left: 0; margin-top: 18px; }
+  .legacy-flex-gap .follow-heading > * + * { margin-left: 0; margin-top: 20px; }
+  .legacy-flex-gap .follow-notification-heading > * + * { margin-left: 0; margin-top: 16px; }
 }
 
 .legacy-grid .reservation-login { flex-direction: column; }
@@ -108,14 +201,12 @@
 .legacy-flex-gap .follow-title-line > * + * { margin-left: 34px; }
 .legacy-flex-gap .library-tabs > * + *,
 .legacy-flex-gap .follow-tabs > * + * { margin-left: 28px; }
-/* This rail uses margins on old WebViews without flex gap. */
-.legacy-flex-gap .round-action + .round-action { margin-top: 12px; }
 
 /* Keep the complete sidebar visible on short TV viewports while retaining scroll as a fallback. */
 @media (max-height: 850px) {
   .sidebar { padding-top: calc(10px + 1vh); padding-bottom: calc(8px + 1vh); }
   .brand { height: calc(36px + 1.5vh); font-size: 18px; }
-  .side-nav { gap: 3px; margin-top: calc(8px + 1vh); padding-top: 8px; padding-bottom: 8px; }
+  .side-nav { margin-top: calc(8px + 1vh); padding-top: 8px; padding-bottom: 8px; }
   .side-item { min-height: calc(36px + 1vh); padding-left: 12px; padding-right: 12px; font-size: 18px; }
   .side-icon { flex-basis: 28px; width: 28px; height: 28px; }
   .sidebar-bottom { margin-top: 6px; padding-top: calc(6px + 1vh); }
@@ -128,7 +219,7 @@
 @media (max-height: 680px) {
   .sidebar { padding-top: 8px; padding-bottom: 8px; }
   .brand { height: 38px; font-size: 18px; }
-  .side-nav { gap: 2px; margin-top: 6px; padding-top: 6px; padding-bottom: 6px; }
+  .side-nav { margin-top: 6px; padding-top: 6px; padding-bottom: 6px; }
   .side-item { min-height: 38px; padding-left: 10px; padding-right: 10px; font-size: 18px; }
   .side-icon { flex-basis: 28px; width: 28px; height: 28px; }
   .sidebar-bottom { margin-top: 4px; padding-top: 4px; }
@@ -148,7 +239,7 @@
 @media (max-height: 560px) {
   .sidebar { padding-top: 8px; padding-bottom: 8px; }
   .brand { height: 34px; font-size: 17px; }
-  .side-nav { gap: 2px; margin-top: 6px; padding-top: 8px; padding-bottom: 8px; }
+  .side-nav { margin-top: 6px; padding-top: 8px; padding-bottom: 8px; }
   .side-item { min-height: 36px; font-size: 17px; }
   .side-icon { flex-basis: 26px; width: 26px; height: 26px; }
   .sidebar-bottom { margin-top: 4px; padding-top: 4px; }
@@ -161,7 +252,7 @@
 /* TV text stays readable at every resolution; short screens only tighten gaps. */
 @media (max-height: 850px) {
   html.tv-shell .brand { height: 48px; font-size: 21px; }
-  html.tv-shell .side-nav { gap: 3px; margin-top: 8px; padding-top: 6px; padding-bottom: 6px; }
+  html.tv-shell .side-nav { margin-top: 8px; padding-top: 6px; padding-bottom: 6px; }
   html.tv-shell .side-item { min-height: 54px; padding-left: 16px; padding-right: 16px; font-size: 20px; }
   html.tv-shell .side-icon { flex-basis: 32px; width: 32px; height: 32px; }
   html.tv-shell .sidebar-bottom { margin-top: 4px; padding-top: 6px; }
@@ -169,6 +260,7 @@
   html.tv-shell .app-shell.sidebar-icons .side-item { min-height: 54px; padding: 9px 0; }
   html.tv-shell .app-shell.sidebar-icons .side-icon { flex-basis: 36px; width: 36px; height: 36px; }
 }
+.legacy-flex-gap.tv-shell .side-nav .side-item + .side-item { margin-top: 3px; }
 
 html.tv-shell .page-context { font-size: 18px; }
 html.tv-shell .channel-tab { font-size: 18px; }

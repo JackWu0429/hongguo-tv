@@ -9,8 +9,10 @@ assert.notEqual(start, -1);
 assert.notEqual(end, -1);
 const supportPage = index.slice(start, end);
 
-test('support page exposes only the WeChat donation card', () => {
-  assert.equal((supportPage.match(/class="support-card"/g) || []).length, 1);
+test('support page exposes both donation cards with the cleaned QR assets', () => {
+  assert.equal((supportPage.match(/class="support-card"/g) || []).length, 2);
   assert.match(supportPage, /data-focus="support-wechat"/);
-  assert.doesNotMatch(supportPage, /support-alipay|support-alipay\.png|支付宝打赏/);
+  assert.match(supportPage, /data-focus="support-alipay"/);
+  assert.match(supportPage, /src="\/images\/support-wechat\.png"/);
+  assert.match(supportPage, /src="\/images\/support-alipay\.png"/);
 });

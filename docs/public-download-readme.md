@@ -89,7 +89,7 @@ AppImage 已在 Ubuntu 24.04 和 Debian 12 容器中通过真实红果数据及�
 
 macOS 解压后打开 **红果短剧.app**；Windows 请**完整解压整个文件夹**，打开 `红果短剧.exe`，保留 `hongguo-tv-core.exe` 在同一目录，不要单独启动核心程序。Windows 缺少 WebView2 时，请从 [微软官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装 Runtime。
 
-桌面版使用系统 HTML5 播放，HEVC 视频是否能正常显示取决于系统与硬件。macOS 已实测真实播放和自动下一集，Windows 实体播放仍待实测。桌面版支持直接键盘输入和粘贴，不提供扫码输入。
+桌面版使用系统 HTML5 播放，HEVC 视频还需要 Windows 安装相应的系统解码扩展。优先从 Microsoft Store 安装 **HEVC Video Extensions**；商店无法获取时，可参考用户提供的[第三方离线扩展仓库](https://github.com/Ayx03/HEVCVideoExtension)。macOS 已实测真实播放和自动下一集，Windows 实体播放仍待实测。桌面版支持直接键盘输入和粘贴，不提供扫码输入。
 
 ### 桌面版怎么更新？
 

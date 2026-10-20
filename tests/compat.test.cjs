@@ -87,6 +87,19 @@ test('legacy WebViews retain library and follow tab spacing without flex gap', (
   assert.match(css, /@media \(max-width: 700px\)\s*\{\s*\.legacy-flex-gap \.library-title-line > \* \+ \*,\s*\.legacy-flex-gap \.follow-title-line > \* \+ \*\s*\{\s*margin-left:\s*0;\s*margin-top:\s*8px;/);
   assert.match(css, /\.legacy-flex-gap \.library-tabs > \* \+ \*,\s*\.legacy-flex-gap \.follow-tabs > \* \+ \*\s*\{\s*margin-left:\s*18px;/);
 });
+test('legacy WebViews preserve radar table columns and responsive heading spacing', () => {
+  const css = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/compat.css'), 'utf8');
+  assert.match(css, /\.legacy-flex-gap \.radar-table-head > :nth-child\(n\+2\), \.legacy-flex-gap \.radar-row > :nth-child\(n\+2\) \{ margin-left: 13px; \}/);
+  assert.match(css, /\.legacy-grid \.radar-official-table \.radar-table-head, \.legacy-grid \.radar-official-table \.radar-row \{ min-width: 902px; \}/);
+  assert.match(css, /\.legacy-grid \.radar-growth-table \.radar-table-head, \.legacy-grid \.radar-growth-table \.radar-row \{ min-width: 931px; \}/);
+  assert.match(css, /\.legacy-flex-gap \.rank-heading-row > \* \+ \* \{ margin-left: 0; \}/);
+});
+test('standalone diagnostic page uses margin spacing supported by old WebViews', () => {
+  const css = fs.readFileSync(require.resolve('../android/wasm-diagnostic/src/main/assets/www/diagnostic.css'), 'utf8');
+  assert.doesNotMatch(css, /\b(?:gap|row-gap|column-gap)\s*:/);
+  assert.match(css, /\.capability-row \{ display: flex; flex-wrap: wrap; margin: -4px; \}/);
+  assert.match(css, /\.test-buttons > button \{ margin: 5px; \}/);
+});
 test('remote focus uses nearest scrolling rather than old boolean scrollIntoView alignment', () => {
   const c=oldWebView();
   const result=vm.runInContext(`(function(){

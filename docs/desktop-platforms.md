@@ -43,6 +43,8 @@ macOS 为系统 WKWebView，Windows 为 WebView2。桌面端不包含 MPV/Media3
 - macOS universal：窗口与核心均为 x86_64/arm64，ZIP 内为 .app，最低 macOS 11。
 - Windows x64：ZIP 根目录为窗口 EXE、Go 核心 EXE、安装说明；核心不弹控制台。
   需要 Microsoft Edge WebView2 Runtime，缺失时引导访问微软下载页。
+- Windows 播放红果的 HEVC 视频需要系统 HEVC 解码扩展。优先从 Microsoft Store 安装
+  Microsoft HEVC Video Extensions；若商店不可用，可参考用户提供的[第三方离线扩展仓库](https://github.com/Ayx03/HEVCVideoExtension)。
 - 普通 push/PR 只运行验证；正式 `vX.Y.Z` 标签或 workflow_dispatch 会构建两包、校验
   内容并发布私人 Release，再同步公共下载仓库。两平台都成功、包内容及校验和正确才
   发布，失败保留 draft。

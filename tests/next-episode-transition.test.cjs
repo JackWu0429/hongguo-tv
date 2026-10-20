@@ -233,7 +233,7 @@ test('a captured frame covers source replacement until the new picture is presen
   assert.equal(f.canvas.width*f.canvas.height,0);
   assert.equal(f.hero.classList.contains('is-preparing-video'),false);
 });
-test('capture failure, a native player or missing video data keeps the existing protected transition',async()=>{
+test('standard playback falls back to its poster when the previous frame cannot be captured',async()=>{
   for(const options of [{captureFailure:true},{captureFailure:'read'},{native:true},{noFrame:true}]){
     const f=fixture({engine:'range',...options});f.gate.resolve();f.video.src='/media/current.mp4';
     if(options.noFrame)f.video.readyState=0;
@@ -242,9 +242,19 @@ test('capture failure, a native player or missing video data keeps the existing 
     assert.equal(f.video.src,'/media/next.mp4');
     assert.equal(f.canvas.classList.contains('is-visible'),false);
     assert.equal(f.canvas.width*f.canvas.height,0);
-    assert.equal(f.hero.classList.contains('is-range-source-reset'),true);
+    assert.equal(f.hero.classList.contains('is-range-transition'),false);
+    assert.equal(f.hero.classList.contains('is-range-source-reset'),false);
     assert.equal(f.hero.classList.contains('is-preparing-video'),true);
   }
+});
+test('MPV keeps its episode-cover transition when canvas capture is unavailable',async()=>{
+  const f=fixture({engine:'mpv',native:true});f.gate.resolve();f.video.src='/media/current.mp4';
+  f.c.playFeedItem(0,2,0);
+  assert.equal(f.hero.classList.contains('is-range-transition'),true);
+  f.paint();f.paint();await tick();await tick();f.paint();f.paint();await tick();
+  assert.equal(f.video.src,'/media/next.mp4');
+  assert.equal(f.hero.classList.contains('is-range-source-reset'),true);
+  assert.equal(f.hero.classList.contains('is-preparing-video'),true);
 });
 test('rapid selections retain the last displayed frame and stale presentation cannot clear it',async()=>{
   const f=fixture({engine:'range'});f.gate.resolve();f.video.src='/media/current.mp4';

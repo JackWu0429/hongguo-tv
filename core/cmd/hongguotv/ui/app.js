@@ -4321,7 +4321,13 @@
     var video = document.getElementById('hero-video');
     var placeholder = document.getElementById('hero-placeholder');
     var keepRangeFrame = sameSeries && playbackMode === 'range' && !!video.getAttribute('src');
-    if (keepRangeFrame) captureLastPlaybackFrame(item); else clearLastPlaybackFrame();
+    if (keepRangeFrame) {
+      var capturedLastFrame = captureLastPlaybackFrame(item);
+      // The standard Media3 Surface is not readable by the HTML canvas. Only
+      // use the transparent frame transition when the previous frame really
+      // was captured; otherwise keep the poster/episode cover over the reset.
+      if (playbackEngineName() !== 'mpv' && !capturedLastFrame) keepRangeFrame = false;
+    } else clearLastPlaybackFrame();
     var generation = ++feedGeneration;
     if (autoCinemaCandidate && autoCinemaGeneration && generation !== autoCinemaGeneration) cancelPendingAutoCinema();
     holdPlaybackAudio(generation);

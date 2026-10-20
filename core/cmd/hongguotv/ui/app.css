@@ -818,7 +818,7 @@ button:focus { outline: none; }
 .support-kicker { display: block; margin-bottom: 10px; color: #f58ca2; font-size: 14px; letter-spacing: .12em; }
 .support-heading h1 { font-size: 34px; }
 .support-heading p { margin: 14px 0 0; color: #b9bac6; font-size: 17px; line-height: 1.75; }
-.support-methods { display: flex; align-items: stretch; width: 100%; max-width: 470px; margin-top: 28px; }
+.support-methods { display: flex; align-items: stretch; width: 100%; max-width: 940px; margin-top: 28px; }
 .support-card { display: flex; flex: 1 1 0; flex-direction: column; align-items: center; min-width: 0; padding: 20px; text-align: center; background: #1d1e27; border: 1px solid #33343f; border-radius: 22px; }
 .support-card + .support-card { margin-left: 26px; }
 .support-card.is-focused, .support-card:focus:not(.pointer-focus-muted) { box-shadow: 0 0 0 3px #fff, 0 16px 36px rgba(0,0,0,.25); background: #272832; }
@@ -844,7 +844,7 @@ button:focus { outline: none; }
   .support-page { padding-top: 18px; }
   .support-heading h1 { font-size: 28px; }
   .support-heading p { margin-top: 10px; font-size: 15px; }
-  .support-methods { margin-top: 20px; max-width: 470px; }
+  .support-methods { margin-top: 20px; max-width: 810px; }
   .support-card { padding: 15px 18px; border-radius: 18px; }
   .support-card-head { margin-bottom: 12px; }
   .support-qr-frame { height: 266px; }
