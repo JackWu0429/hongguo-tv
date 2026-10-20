@@ -20,9 +20,30 @@
   var MAX_JSON = 5 * 1024 * 1024;
   var MAX_MEDIA = 512 * 1024 * 1024;
   var jobs = Object.create(null);
+  var mediaStatus = Object.create(null);
   var cacheRoot = '';
 
   function fail(message) { var error = new Error(message); error.code = 'PROVIDER_ERROR'; return error; }
+  function parseExactJSON(text) {
+    var out = '', inString = false, escaped = false, i = 0;
+    while (i < text.length) {
+      var ch = text.charAt(i);
+      if (inString) { out += ch; if (escaped) escaped = false; else if (ch === '\\') escaped = true; else if (ch === '"') inString = false; i++; continue; }
+      if (ch === '"') { inString = true; out += ch; i++; continue; }
+      if (ch === '-' || ch >= '0' && ch <= '9') { var start = i; while (i < text.length && /[0-9eE+.-]/.test(text.charAt(i))) i++; var token = text.slice(start, i); out += /^-?\d{16,}$/.test(token) ? JSON.stringify(token) : token; continue; }
+      out += ch; i++;
+    }
+    return JSON.parse(out);
+  }
+  function mkdirp(directory, mode) {
+    try { fs.mkdirSync(directory, mode); }
+    catch (error) {
+      if (error.code === 'EEXIST') { if (!fs.statSync(directory).isDirectory()) throw error; return; }
+      if (error.code !== 'ENOENT') throw error;
+      var parent = path.dirname(directory); if (parent === directory) throw error;
+      mkdirp(parent, mode); fs.mkdirSync(directory, mode);
+    }
+  }
   function trim(value) { return String(value == null ? '' : value).replace(/^\s+|\s+$/g, ''); }
   function validID(value) { return /^[0-9]{1,32}$/.test(trim(value)); }
   function first() { var i; for (i = 0; i < arguments.length; i++) { if (trim(arguments[i])) return trim(arguments[i]); } return ''; }
@@ -85,7 +106,68 @@
       if (response.status < 200 || response.status >= 300) throw fail('红果接口 HTTP ' + response.status);
       var text = response.body.toString('utf8');
       if (!trim(text)) throw fail('红果接口返回空响应');
-      try { return JSON.parse(text); } catch (error) { throw fail('红果接口响应不是有效 JSON'); }
+      try { return parseExactJSON(text); } catch (error) { throw fail('红果接口响应不是有效 JSON'); }
+    });
+  }
+
+  // Signed JSON calls shared by the public metadata endpoints.  The webOS
+  // service has no account manager, but public catalogue/metadata APIs still
+  // use the same Passport envelope as video_model.  Keep the device identity
+  // one-shot for every request, matching the upstream anti-replay behavior.
+  function signedJSON(pathName, method, values, body) {
+    var device = freshDevice();
+    var stamp = Date.now();
+    var params = appQuery(device);
+    Object.keys(values || {}).forEach(function (key) { params[key] = String(values[key]); });
+    params._rticket = String(stamp);
+    var raw = body == null ? Buffer.alloc(0) : Buffer.from(JSON.stringify(body), 'utf8');
+    var signed = passportSign.sign(params, raw, stamp, device.deviceID);
+    var headers = signed.headers;
+    headers['User-Agent'] = APP_UA;
+    headers.Accept = 'application/json';
+    headers['Accept-Encoding'] = 'identity';
+    if (raw.length) {
+      headers['Content-Type'] = 'application/json; charset=utf-8';
+      headers['Content-Length'] = raw.length;
+    }
+    headers['X-XS-From-Web'] = '0'; headers['Sdk-Version'] = '2'; headers['X-SS-DP'] = '8662';
+    headers['X-Tt-Store-Region'] = 'cn'; headers['X-Tt-Store-Region-Src'] = 'did';
+    return requestBuffer(API_BASE + pathName + '?' + signed.query, method || 'GET', headers, raw.length ? raw : null, MAX_JSON).then(function (response) {
+      if (response.status < 200 || response.status >= 300) throw fail('红果接口 HTTP ' + response.status);
+      var text = response.body.toString('utf8');
+      if (!trim(text)) throw fail('红果接口返回空响应');
+      try { return parseExactJSON(text); } catch (error) { throw fail('红果接口响应不是有效 JSON'); }
+    });
+  }
+
+  function publicJSON(pathName, values) {
+    var query = [];
+    Object.keys(values || {}).forEach(function (key) { query.push(querystring.escape(key) + '=' + querystring.escape(String(values[key]))); });
+    return requestBuffer(WEB_BASE + pathName + (query.length ? '?' + query.join('&') : ''), 'GET', { 'User-Agent': 'Googlebot', Accept: 'application/json' }, null, MAX_JSON).then(function (response) {
+      if (response.status < 200 || response.status >= 300) throw fail('官网 HTTP ' + response.status);
+      var text = response.body.toString('utf8');
+      if (!trim(text)) throw fail('官网接口返回空响应');
+      try { return parseExactJSON(text); } catch (error) { throw fail('官网接口响应不是有效 JSON'); }
+    });
+  }
+
+  function miniJSON(pathName, values) {
+    var device = freshDevice();
+    var stamp = Date.now();
+    var params = appQuery(device);
+    delete params._rticket;
+    Object.keys(values || {}).forEach(function (key) { params[key] = String(values[key]); });
+    params._rticket = String(stamp);
+    var query = sortedQuery(params);
+    var headers = miniSign(query, Buffer.alloc(0), stamp);
+    headers['User-Agent'] = APP_UA;
+    headers['X-XS-From-Web'] = '0'; headers['Sdk-Version'] = '2';
+    headers.Accept = 'application/json';
+    return requestBuffer(API_BASE + pathName + '?' + query, 'GET', headers, null, MAX_JSON).then(function (response) {
+      if (response.status < 200 || response.status >= 300) throw fail('红果接口 HTTP ' + response.status);
+      var text = response.body.toString('utf8');
+      if (!trim(text)) throw fail('红果接口返回空响应');
+      try { return parseExactJSON(text); } catch (error) { throw fail('红果接口响应不是有效 JSON'); }
     });
   }
 
@@ -177,7 +259,7 @@
 
   function decodeModel(value) {
     if (typeof value === 'string') {
-      try { return JSON.parse(value); } catch (ignored) {}
+      try { return parseExactJSON(value); } catch (ignored) {}
     }
     return value;
   }
@@ -206,7 +288,7 @@
         if (response.status < 200 || response.status >= 300) throw fail('video_model HTTP ' + response.status);
         if (!response.body.length) { if (attempt < 3) return next(); throw fail('video_model 返回空响应'); }
         var envelope;
-        try { envelope = JSON.parse(response.body.toString('utf8')); } catch (error) { throw fail('video_model 响应不是有效 JSON'); }
+        try { envelope = parseExactJSON(response.body.toString('utf8')); } catch (error) { throw fail('video_model 响应不是有效 JSON'); }
         var data = envelope && envelope.data;
         var model = decodeModel(data && data.video_model);
         if (!model || typeof model !== 'object') throw fail('video_model 缺少视频数据');
@@ -262,7 +344,7 @@
     candidates.push('/var/palm/data/com.aston314.hongguo.webos.service/media');
     candidates.push(path.join(process.cwd(), 'media-cache'));
     for (var i = 0; i < candidates.length; i++) {
-      try { fs.mkdirSync(candidates[i], { recursive: true, mode: 448 }); cacheRoot = candidates[i]; return cacheRoot; } catch (ignored) {}
+      try { mkdirp(candidates[i], 448); cacheRoot = candidates[i]; return cacheRoot; } catch (ignored) {}
     }
     throw fail('webOS 媒体缓存目录不可写');
   }
@@ -377,7 +459,7 @@
     if (jobs[token]) return jobs[token];
     jobs[token] = videoOptions(vid).then(function (options) {
       var selected = choose(options, quality, fallback);
-      fs.mkdirSync(dir, { recursive: true, mode: 448 });
+      mkdirp(dir, 448);
       var temp = file + '.part';
       return downloadFile(selected.url, temp).then(function () {
         if (selected.key) decryptMP4(temp, selected.key);
@@ -396,15 +478,15 @@
     if (!/^[a-f0-9]{24}$/.test(token)) return jsonResponse(res, 400, { ok: false, error: '媒体标识无效' });
     var file = path.join(ensureCacheRoot(), token, token + '.mp4');
     var stat;
-    try { stat = fs.statSync(file); } catch (error) { return jsonResponse(res, 404, { ok: false, error: '媒体尚未准备好' }); }
+    try { stat = fs.statSync(file); } catch (error) { mediaStatus[token] = { status: 404, at: Date.now() }; return jsonResponse(res, 404, { ok: false, error: '媒体尚未准备好' }); }
     var start = 0; var end = stat.size - 1; var range = req.headers.range;
     if (range) {
       var match = /^bytes=(\d*)-(\d*)$/.exec(range);
       if (match) { if (match[1]) start = Number(match[1]); if (match[2]) end = Number(match[2]); else end = stat.size - 1; }
     }
-    if (start < 0 || start >= stat.size || end < start) { res.statusCode = 416; res.setHeader('Content-Range', 'bytes */' + stat.size); return res.end(); }
+    if (start < 0 || start >= stat.size || end < start) { mediaStatus[token] = { status: 416, at: Date.now() }; res.statusCode = 416; res.setHeader('Content-Range', 'bytes */' + stat.size); return res.end(); }
     end = Math.min(end, stat.size - 1);
-    res.statusCode = range ? 206 : 200;
+    res.statusCode = range ? 206 : 200; mediaStatus[token] = { status: res.statusCode, at: Date.now() };
     res.setHeader('Content-Type', 'video/mp4'); res.setHeader('Accept-Ranges', 'bytes'); res.setHeader('Content-Length', end - start + 1); res.setHeader('Cache-Control', 'private, max-age=900');
     res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range'); res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     if (range) res.setHeader('Content-Range', 'bytes ' + start + '-' + end + '/' + stat.size);
@@ -414,7 +496,7 @@
 
   function jsonResponse(res, status, payload) { var body = JSON.stringify(payload); res.statusCode = status; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range'); res.setHeader('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS'); res.end(body); }
   function fetchHTML(target) { return requestBuffer(target, 'GET', { 'User-Agent': 'Googlebot', Accept: 'text/html' }, null, 12 * 1024 * 1024).then(function (response) { if (response.status < 200 || response.status >= 300) throw fail('官网 HTTP ' + response.status); return response.body.toString('utf8'); }); }
-  function routerData(html) { var marker = html.indexOf('_ROUTER_DATA'); if (marker < 0) throw fail('页面缺少 _ROUTER_DATA'); var start = html.indexOf('{', marker); if (start < 0) throw fail('页面数据起点无效'); var depth = 0, string = false, escaped = false, end = start; for (; end < html.length; end++) { var c = html.charAt(end); if (string) { if (escaped) escaped = false; else if (c === '\\') escaped = true; else if (c === '"') string = false; continue; } if (c === '"') string = true; else if (c === '{' || c === '[') depth++; else if (c === '}' || c === ']') { depth--; if (!depth) break; } } try { return JSON.parse(html.slice(start, end + 1)); } catch (error) { throw fail('页面数据解析失败'); } }
+  function routerData(html) { var marker = html.indexOf('_ROUTER_DATA'); if (marker < 0) throw fail('页面缺少 _ROUTER_DATA'); var start = html.indexOf('{', marker); if (start < 0) throw fail('页面数据起点无效'); var depth = 0, string = false, escaped = false, end = start; for (; end < html.length; end++) { var c = html.charAt(end); if (string) { if (escaped) escaped = false; else if (c === '\\') escaped = true; else if (c === '"') string = false; continue; } if (c === '"') string = true; else if (c === '{' || c === '[') depth++; else if (c === '}' || c === ']') { depth--; if (!depth) break; } } try { return parseExactJSON(html.slice(start, end + 1)); } catch (error) { throw fail('页面数据解析失败'); } }
   function findObject(value, key) { if (!value || typeof value !== 'object') return null; if (!Array.isArray(value) && value[key] && typeof value[key] === 'object' && !Array.isArray(value[key])) return value[key]; var keys = Object.keys(value); for (var i = 0; i < keys.length; i++) { var found = findObject(value[keys[i]], key); if (found) return found; } return null; }
   function findArray(value, key) { if (!value || typeof value !== 'object') return null; if (!Array.isArray(value) && Array.isArray(value[key])) return value[key]; var keys = Object.keys(value); for (var i = 0; i < keys.length; i++) { var found = findArray(value[keys[i]], key); if (found) return found; } return null; }
   function normalize(value) {
@@ -427,18 +509,473 @@
     return { series_id: id, title: first(object.series_title, object.series_name, object.title, '未命名短剧'), cover: first(object.series_cover, object.cover, object.cover_url), intro: first(object.series_intro, object.video_desc, object.description), score: first(object.score, object.rating, object.scoreText).replace(/^评分/, ''), play_count: number(object.play_cnt), episode_count: episodeCount, accessible_episode_cnt: number(object.accessible_episode_cnt) || episodeCount, vid: first(object.vid, object.video_id, vids[0]), vid_list: vids, tags: stringArray(object.tags), rank: number(object.rank), heat: first(object.heatText), season_index: number(object.season_index), is_multi_season: bool(object.is_multi_season), followed: bool(object.followed) || bool(object.is_subscribed), following_update: bool(object.following_update), follow_count: number(object.follow_count), series_status: first(object.series_status, object.status) };
   }
   function normalizeRows(rows) { var seen = {}; return (rows || []).map(normalize).filter(function (item) { if (!item || seen[item.series_id]) return false; seen[item.series_id] = true; return true; }); }
-
-  function category(pathName, offset, filters, selectors) {
-    var device = freshDevice(); var selection = { genre: [pathName.indexOf('comic') >= 0 ? 'comic_series' : pathName.indexOf('ai') >= 0 ? 'ai_series' : 'short_play'], sort: [pathName.indexOf('/new/') === 0 ? 'online_time' : 'hot_score'], category_dim_theme: [], category_dim_role: [], category_dim_epoch: [], gender: [], online_time: [], creation_status: [] };
-    Object.keys(filters || {}).forEach(function (key) { if (selection[key]) selection[key] = filters[key] ? [filters[key]] : []; });
-    var query = appQuery(device); delete query._rticket; var endpoint = API_BASE + '/reading/distribution/category/landpage/v/?' + sortedQuery(query);
-    return jsonRequest(endpoint, 'POST', { filter_ids: '', req_scene: pathName.indexOf('comic') >= 0 ? 'comic_series' : pathName.indexOf('ai') >= 0 ? 'ai_series' : 'default', offset: Number(offset) || 0, need_selector_panel: !!selectors, limit: 15, select_items: selection, session_id: '', req_type: selectors ? 'default' : 'only_content', client_req_type: 3 }).then(function (payload) {
-      var data = payload && payload.data || {}; return { items: normalizeRows(data.video_data), has_more: bool(data.has_more), next_offset: number(data.next_offset), session_id: first(data.session_id), filters: selectors ? [] : undefined, source: 'webos-category' };
+  function normalizeSeriesActors(value) {
+    var actors = [], seen = {};
+    function append(raw) {
+      if (!raw || typeof raw !== 'object') return;
+      var person = raw;
+      if (person.user_info && typeof person.user_info === 'object') person = person.user_info;
+      if (person.base_info && typeof person.base_info === 'object') person = person.base_info;
+      var id = first(person.celebrity_id, person.actor_id, person.actor_id_str, person.person_id);
+      var name = first(person.nickname, person.user_name, person.celebrity_name, person.actor_name, person.name);
+      if (!name) return;
+      var key = id || name;
+      if (seen[key]) return;
+      seen[key] = true;
+      actors.push({ id: id, name: name, avatar: first(person.user_avatar, person.avatar, person.avatar_url, person.cover_url) });
+    }
+    function walk(node) {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) { node.forEach(walk); return; }
+      ['celebrities', 'celebrity_list', 'actors', 'actor_list'].forEach(function (key) {
+        if (Array.isArray(node[key])) node[key].forEach(append);
+      });
+      Object.keys(node).forEach(function (key) {
+        if (['celebrities', 'celebrity_list', 'actors', 'actor_list'].indexOf(key) < 0) walk(node[key]);
+      });
+    }
+    walk(value);
+    return actors;
+  }
+  function arraysByKeys(value, names, output) {
+    if (!value || typeof value !== 'object') return output;
+    if (Array.isArray(value)) { value.forEach(function (item) { arraysByKeys(item, names, output); }); return output; }
+    Object.keys(value).forEach(function (key) {
+      var child = value[key];
+      if (names.indexOf(key) >= 0 && Array.isArray(child)) output.push.apply(output, child);
+      else if (child && typeof child === 'object') arraysByKeys(child, names, output);
+    });
+    return output;
+  }
+  function normalizeSeriesReviews(value) {
+    return arraysByKeys(value, ['reviews', 'review_list'], []).map(function (raw) {
+      var review = raw && raw.review && typeof raw.review === 'object' ? raw.review : raw || {};
+      var common = review.common || {}, content = common.content || {};
+      var text = first(review.content, review.text, content.text);
+      if (!text) return null;
+      return { id: first(review.review_id, review.comment_id, review.id), user_name: first(review.user_name, review.username, review.name), avatar: first(review.avatar, review.user_avatar), content: text, rating: number(review.rating), digg_count: number(review.digg_count) || number(review.like_count), reply_count: number(review.reply_count), create_time: number(review.create_time) || number(review.create_timestamp) };
+    }).filter(Boolean);
+  }
+  function normalizeRelatedDramas(value, currentID) {
+    var seen = {};
+    return arraysByKeys(value, ['related_list', 'videoList', 'related', 'detail_page_more_related', 'related_video', 'rawRelatedVideo'], []).map(function (raw) {
+      if (raw && raw.model && typeof raw.model === 'object') raw = raw.model;
+      return normalize(raw);
+    }).filter(function (item) {
+      if (!item || item.series_id === currentID || seen[item.series_id]) return false;
+      seen[item.series_id] = true;
+      return true;
     });
   }
-  function rank(pathName) { return fetchHTML(WEB_BASE + (pathName || '/rank/hot-drama')).then(function (html) { var content = findObject(routerData(html), 'content') || {}; var pagination = content.pagination || {}; return { items: normalizeRows(content.rankList || []), has_more: number(pagination.pageNum) > 0 && number(pagination.totalPages) > number(pagination.pageNum), next_offset: number(pagination.pageNum) + 1, source: 'webos-web' }; }); }
-  function search(query) { return fetchHTML(WEB_BASE + '/search/' + encodeURIComponent(query)).then(function (html) { return { items: normalizeRows(findArray(routerData(html), 'searchList') || []), source: 'webos-web' }; }); }
-  function detail(seriesID) { return fetchHTML(WEB_BASE + '/detail?series_id=' + encodeURIComponent(seriesID)).then(function (html) { var router = routerData(html); var drama = normalize(findObject(router, 'seriesDetail')); if (!drama || drama.series_id !== seriesID) throw fail('详情响应缺少剧集信息'); drama.episodes = (drama.vid_list || []).map(function (vid, index) { return { index: index + 1, video_id: vid, title: '第' + (index + 1) + '集', locked: index >= drama.accessible_episode_cnt }; }); var related = normalizeRows(findArray(router, 'related_list') || findArray(router, 'videoList') || []); return { series_id: drama.series_id, title: drama.title, cover: drama.cover, intro: drama.intro, score: drama.score, play_count: drama.play_count, episode_count: drama.episode_count, accessible_episode_cnt: drama.accessible_episode_cnt, vid: drama.vid, vid_list: drama.vid_list, episodes: drama.episodes, tags: drama.tags, related: related, reviews: [] }; }); }
 
-  module.exports = { prepare: prepare, serveMedia: serveMedia, category: category, recommend: function (offset) { return category('/category/short-drama', offset, {}, false); }, rank: rank, search: search, detail: detail, status: function () { return { playback_verified: false, provider: 'first-party-js-port', media: 'cenc-aes-ctr-local-cache' }; } };
+  var categoryFilterNames = {
+    genre: '体裁', category_dim_theme: '主题', category_dim_role: '设定',
+    category_dim_epoch: '背景', sort: '推荐', gender: '受众',
+    online_time: '时间', creation_status: '状态'
+  };
+  function validCategoryFilter(type, value) {
+    if (!Object.prototype.hasOwnProperty.call(categoryFilterNames, type)) return false;
+    if (!value) return true;
+    if (type === 'genre') return ['short_play', 'comic_series', 'ai_series'].indexOf(value) >= 0;
+    if (type === 'category_dim_theme' || type === 'category_dim_role' || type === 'category_dim_epoch') return /^cate_[0-9]{1,8}$/.test(value);
+    if (type === 'sort') return ['hot_score', 'online_time', 'hot_collect'].indexOf(value) >= 0;
+    if (type === 'gender') return value === '0' || value === '1';
+    if (type === 'online_time') return ['days_7', 'days_14', 'days_30', 'days_90'].indexOf(value) >= 0;
+    if (type === 'creation_status') return value === 'creation_status_0' || value === 'creation_status_1';
+    return false;
+  }
+  function normalizeCategoryFilters(raw) {
+    var result = [], statusIndex = -1;
+    (Array.isArray(raw) ? raw : []).forEach(function (row) {
+      if (!row || !Object.prototype.hasOwnProperty.call(categoryFilterNames, row.type)) return;
+      var options = [], seen = Object.create(null);
+      (Array.isArray(row.items) ? row.items : []).forEach(function (item) {
+        var id = first(item && item.selector_item_id), label = first(item && item.show_name);
+        if (!id || !label || seen[id] || !validCategoryFilter(row.type, id)) return;
+        seen[id] = true; options.push({ id: id, label: label });
+      });
+      if (!options.length) return;
+      if (row.type === 'creation_status') statusIndex = result.length;
+      result.push({ type: row.type, label: categoryFilterNames[row.type], options: options });
+    });
+    var status = { type: 'creation_status', label: categoryFilterNames.creation_status, options: [
+      { id: 'creation_status_0', label: '已完结' }, { id: 'creation_status_1', label: '连载中' }
+    ] };
+    if (statusIndex < 0) {
+      statusIndex = result.findIndex ? result.findIndex(function (row) { return row.type === 'online_time'; }) : -1;
+      if (statusIndex < 0) statusIndex = result.length;
+      result.splice(statusIndex, 0, status);
+    } else {
+      result[statusIndex] = status;
+    }
+    return result;
+  }
+
+  function category(pathName, offset, filters, selectors) {
+    filters = filters || {};
+    var device = freshDevice();
+    var scene = pathName === '/category/comic' ? 'comic' : pathName.indexOf('comic') >= 0 ? 'comic_series' : pathName.indexOf('ai') >= 0 ? 'ai_series' : 'default';
+    var defaultGenre = scene === 'comic_series' ? 'comic_series' : scene === 'ai_series' ? 'ai_series' : scene === 'comic' ? 'comic' : 'short_play';
+    var selection = { genre: [defaultGenre], sort: [pathName.indexOf('/new/') === 0 ? 'online_time' : 'hot_score'], category_dim_theme: [], category_dim_role: [], category_dim_epoch: [], gender: [], online_time: [], creation_status: [] };
+    Object.keys(categoryFilterNames).forEach(function (key) {
+      if (filters[key] === undefined) return;
+      var value = trim(filters[key]);
+      if (!validCategoryFilter(key, value)) throw fail('分类筛选参数无效: ' + key);
+      selection[key] = value ? [value] : [];
+    });
+    var query = appQuery(device); delete query._rticket; var endpoint = API_BASE + '/reading/distribution/category/landpage/v/?' + sortedQuery(query);
+    var pageOffset = Number(offset) || 0;
+    return jsonRequest(endpoint, 'POST', { filter_ids: first(filters.shown), req_scene: scene, offset: pageOffset, need_selector_panel: !!selectors, limit: 15, select_items: selection, session_id: first(filters.session_id), req_type: selectors ? 'default' : 'only_content', client_req_type: 3 }).then(function (payload) {
+      var data = payload && payload.data || {};
+      var items = normalizeRows(data.video_data);
+      var hasMore = bool(data.has_more);
+      var nextOffset = number(data.next_offset);
+      if (!nextOffset && hasMore) nextOffset = pageOffset + items.length;
+      return { items: items, has_more: hasMore, next_offset: nextOffset, session_id: first(data.session_id), filters: selectors ? normalizeCategoryFilters(data.selector_rows) : undefined, source: 'webos-category' };
+    });
+  }
+  function rankOptions(selector) {
+    var outer = selector && selector.outer_row || {};
+    return (outer.items || []).map(function (row) {
+      var item = { id: first(row.selector_item_id), label: first(row.show_name), selected: !!row.is_selected, children: rankOptions(row.sub_cell_selector), panels: [] };
+      var panelRows = row.panel_selector && row.panel_selector.inner_rows || [];
+      item.panels = panelRows.map(function (panel) { return { type: first(panel.type), label: first(panel.row_name), options: (panel.items || []).map(function (option) { return { id: first(option.selector_item_id), label: first(option.show_name) }; }).filter(function (option) { return option.label; }) }; });
+      return item;
+    }).filter(function (item) { return item.label; });
+  }
+  function rank(query) {
+    query = query || {};
+    var offset = Number(query.offset) || 0;
+    var params = { tab_type: offset > 0 ? '18' : '26', client_req_type: '2', client_template: '2', background_selected_items: '', category_id: '0', limit: '20', cell_sub_id: '0', gender: '2', cell_id: '7470092475068071998', selected_items: query.rank || '', sub_selected_items: query.rank_sub || '', panel_selected_items: query.rank_panel || '', offset: String(offset), session_id: query.session_id || '', filter_ids: query.shown || '', unlimited_selector_change_type: '0' };
+    return signedJSON('/reading/bookapi/bookmall/cell/change/v', 'GET', params, null).then(function (payload) {
+      var data = payload && payload.data || {}; var view = data.cell_view || {}; var items = [];
+      (view.cell_data || []).forEach(function (cell) {
+        var videos = cell && cell.video_data;
+        if (videos && !Array.isArray(videos)) videos = [videos];
+        (videos || []).forEach(function (video) { var item = normalize(video); if (item) items.push(item); });
+        (cell && cell.ugc_user_data || []).forEach(function (actor) {
+          var user = actor.user_info || {}; var base = user.base_info || {}; var id = first(base.actor_id_str, base.actor_id);
+          if (!validID(id)) return;
+          var rec = actor.rec_text_item || {};
+          items.push({ series_id: 'actor-' + id, actor_id: id, title: first(base.user_name), cover: first(base.user_avatar), intro: first(actor.intro), heat: first(rec.RecommendText), tags: stringArray(actor.sub_title_list) });
+        });
+      });
+      var hasMore = payload && data.next_offset != null ? bool(data.has_more) : bool(view.has_more);
+      var nextOffset = data.next_offset == null ? number(view.next_offset) : number(data.next_offset);
+      var sessionID = first(data.session_id, view.session_id);
+      if (nextOffset <= offset) hasMore = false;
+      return { items: items, has_more: hasMore, next_offset: nextOffset, session_id: sessionID, ranks: rankOptions(view.cell_selector), source: 'webos-rank-api' };
+    });
+  }
+
+  function newSeries(query) {
+    query = query || {};
+    var offset = Number(query.offset) || 0;
+    var params = { change_type: '1', selected_items: 'firstonlinetime_new', client_req_type: '1', cell_id: '7431550523368554558', limit: '20', offset: String(offset), cell_gender: query.gender || '2', session_id: query.session_id || '' };
+    return signedJSON('/reading/bookapi/bookmall/cell/change/v1/', 'GET', params, null).then(function (payload) {
+      var data = payload && payload.data || {}; var view = data.cell_view || {};
+      var items = normalizeRows(view.video_data || []);
+      return { items: items, has_more: bool(data.has_more), next_offset: number(data.next_offset), session_id: first(data.session_id), source: 'webos-new-api' };
+    });
+  }
+
+  function feedRows(cells) {
+    var items = [], seen = {};
+    function append(raw, disabled) {
+      var value = raw && raw.video_detail || raw;
+      var item = normalize(value);
+      if (!item || disabled || !validID(item.series_id) || !item.episode_count || seen[item.series_id]) return;
+      item.vid = first(raw && raw.first_vid, item.vid);
+      if (!validID(item.vid)) return;
+      seen[item.series_id] = true; items.push(item);
+    }
+    function walk(rows) {
+      (rows || []).forEach(function (cell) {
+        if (!cell) return;
+        if (cell.video_detail) append(cell.video_detail, cell.disable_play);
+        (cell.video_data || []).forEach(function (video) { if (!video || !video.video_detail) return; append(video.video_detail, video.disable_play); });
+        walk(cell.cell_data);
+      });
+    }
+    walk(cells); return items;
+  }
+
+  function recommend(query) {
+    query = query || {};
+    var tab = first(query.channel, '16');
+    if (['16', '36', '39', '45'].indexOf(tab) < 0) return Promise.reject(fail('推荐频道无效'));
+    var cell = first(query.feed_cell), plan = first(query.feed_plan);
+    if (tab === '16') { cell = '7294257141911650341'; plan = '7294257258253254693'; }
+    if (!cell || !plan) {
+      var init = { bottom_tab_type: '7', landing_bottom_tab_type: '7', need_personal_recommend: '1', device_level: '3', screen_width_px: '1078', is_horizontal_screen: 'false', disable_digg_stat: 'false', auth_aweme: 'true', auth_backward: 'true', has_video_cache: 'false', last_tab_type: '0', last_tab_index: '0', tab_index: '0', req_rank_category_id: '0', video_type_preferences_str: '[]', tab_type: tab, offset: '0', session_id: '', client_req_type: '1' };
+      return signedJSON('/reading/bookapi/bookmall/tab/v', 'GET', init, null).then(function (payload) {
+        var data = payload && payload.data || {}; var tabs = data.tab_item || [];
+        var selected = tabs.filter(function (item) { return String(item.tab_type) === tab; })[0];
+        if (!selected) throw fail('推荐响应没有对应频道');
+        var cells = selected.cell_data || [];
+        var foundCell = '';
+        cells.some(function (item) { var id = first(item.cell_id_str, item.cell_id); if (validID(id) && id !== '0') { foundCell = id; return true; } return false; });
+        return { items: feedRows(cells), has_more: bool(selected.bottom_unlimited), next_offset: 0, session_id: first(selected.session_id), feed_cell: foundCell, feed_plan: first(data.bookstore_id), source: 'webos-recommend-api' };
+      });
+    }
+    if (!validID(cell) || !validID(plan)) return Promise.reject(fail('推荐分页标识无效'));
+    var params = { bottom_tab_type: '7', client_req_type: '2', client_template: '7', change_type: '0', category_id: '0', cell_sub_id: '0', limit: '0', need_personal_recommend: '1', video_type_preferences_str: '[]', cell_id: cell, plan_id: plan, tab_type: tab, offset: String(Number(query.offset) || 0), session_id: query.session_id || '', filter_ids: query.shown || '' };
+    return signedJSON('/reading/bookapi/bookmall/cell/change/v', 'GET', params, null).then(function (payload) {
+      var data = payload && payload.data || {}; var view = data.cell_view || {};
+      return { items: feedRows(view.cell_data || []), has_more: bool(data.has_more), next_offset: number(data.next_offset), session_id: first(data.session_id), feed_cell: cell, feed_plan: plan, source: 'webos-recommend-api' };
+    });
+  }
+
+  function publicationItem(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    var sub = raw.subscribe_data || {};
+    var item = normalize(sub);
+    if (!item && validID(String(raw.item_id || ''))) item = { series_id: String(raw.item_id), title: first(raw.name), cover: first(raw.cover), intro: first(raw.item_desc), episode_count: 0, vid: '' };
+    if (!item || !item.title) return null;
+    item.reservation_id = validID(String(raw.item_id || '')) && String(raw.item_id) !== '0' ? String(raw.item_id) : '';
+    item.upcoming = !(raw.is_online === true || raw.is_online === 1);
+    item.reserved = !!(raw.has_subscribed === true || raw.has_subscribed === 1);
+    item.publish_time = number(raw.schedule_publish_time) || number(raw.expected_publish_time);
+    item.publish_text = first(raw.sub_info, raw.expected_rec_text);
+    if (!item.tags.length) item.tags = stringArray(raw.categories).length ? stringArray(raw.categories) : stringArray(raw.sub_title_list);
+    return item;
+  }
+
+  function calendar(query) {
+    query = query || {};
+    var offset = Number(query.offset) || 0;
+    var params = { offset: String(offset), session_id: query.session_id || '', tab_type: '5', tab_style: '2', active_panel: '6', gender_type: '2', need_calendar_schema: 'true' };
+    if (query.subscribe_offset != null && query.subscribe_offset !== '') params.subscribe_offset = String(query.subscribe_offset);
+    if (query.date) params.target_date = String(query.date);
+    return signedJSON('/reading/user/subscribe/list/v1/', 'GET', params, null).then(function (payload) {
+      var data = payload && payload.data || {}; var loc = data.calendar_loc_info || {}; var schema = data.calendar_schema || {};
+      var next = number(data.next_offset); var subOffset = loc.subscribe_offset == null ? null : number(loc.subscribe_offset);
+      var advances = next > offset || subOffset != null && (query.subscribe_offset == null || subOffset > Number(query.subscribe_offset));
+      return { items: (data.subscribe_items || []).map(publicationItem).filter(Boolean), has_more: (bool(data.has_more) || bool(loc.down_has_more)) && advances, next_offset: next, session_id: first(data.session_id), next_subscribe_offset: subOffset, calendar: { dates: stringArray(schema.date_list), default_date: first(schema.default_date), current_date: first(schema.current_date) }, source: 'webos-calendar-api' };
+    });
+  }
+  function search(query) { return fetchHTML(WEB_BASE + '/search/' + encodeURIComponent(query)).then(function (html) { return { items: normalizeRows(findArray(routerData(html), 'searchList') || []), source: 'webos-web' }; }); }
+  function detail(seriesID) { return fetchHTML(WEB_BASE + '/detail?series_id=' + encodeURIComponent(seriesID)).then(function (html) { var router = routerData(html); var raw = findObject(router, 'seriesDetail'); var drama = normalize(raw); if (!drama || drama.series_id !== seriesID) throw fail('详情响应缺少剧集信息'); drama.episodes = (drama.vid_list || []).map(function (vid, index) { return { index: index + 1, video_id: vid, title: '第' + (index + 1) + '集', locked: index >= drama.accessible_episode_cnt }; }); var actors = normalizeSeriesActors(raw); if (!actors.length) actors = normalizeSeriesActors(router); return { series_id: drama.series_id, title: drama.title, cover: drama.cover, intro: drama.intro, score: drama.score, play_count: drama.play_count, episode_count: drama.episode_count, accessible_episode_cnt: drama.accessible_episode_cnt, vid: drama.vid, vid_list: drama.vid_list, episodes: drama.episodes, tags: drama.tags, actors: actors, related: normalizeRelatedDramas(router, seriesID), reviews: normalizeSeriesReviews(router) }; }); }
+
+  function fallbackSeason(seriesID, error) {
+    return detail(seriesID).then(function (item) {
+      item.season_index = Number(item.season_index) || 1;
+      item.label = '第' + item.season_index + '季';
+      item.playable = true;
+      item.upcoming = false;
+      item.is_multi_season = false;
+      return { items: [item], source: 'webos-detail-fallback', fallback_reason: String(error && error.message || error || '官方系列剧列表为空') };
+    });
+  }
+
+  function seriesSeasons(seriesID) {
+    if (!validID(seriesID)) return Promise.reject(fail('series_id 无效'));
+    var params = { scene: '10', from: 'single_col_same_ip_series', offset: '0', limit: '0', total_chapter_num: '0', current_chapter_num: '0', post_id: '0', is_horizontal_screen: 'false', bookstore_tab: '0', bookstore_tab_type: '0', book_id: seriesID, filter_ids: seriesID };
+    params.from = 'series_short_play_info';
+    return miniJSON('/reading/bookapi/plan/v', params).then(function (payload) {
+      if (!payload || String(payload.code) !== '0') throw fail('官方系列剧未确认请求成功');
+      var blocks = payload.data;
+      if (!Array.isArray(blocks)) throw fail('官方系列剧响应缺少列表');
+      var seen = {};
+      var items = [];
+      blocks.forEach(function (block) {
+        (block && Array.isArray(block.video_data) ? block.video_data : []).forEach(function (row) {
+          var item = normalize(row);
+          if (!item || seen[item.series_id]) return;
+          seen[item.series_id] = true;
+          var labels = stringArray(row.secondary_info_list);
+          item.label = labels.filter(function (x) { return /^第[1-9][0-9]*季$/.test(x); })[0] || '';
+          item.subtitle = stringArray(row.sub_title_list).join(' · ');
+          item.is_multi_season = true;
+          var subscribe = row.subscribe_item && typeof row.subscribe_item === 'object' ? row.subscribe_item : null;
+          item.upcoming = !!subscribe || !item.vid || !item.episode_count;
+          item.playable = !item.upcoming && !row.disable_play;
+          item.reservation_id = item.upcoming && subscribe ? item.series_id : '';
+          item.reserved = !!(subscribe && (subscribe.is_subscribed === true || subscribe.is_subscribed === 1));
+          if (item.upcoming) item.vid = '';
+          items.push(item);
+        });
+      });
+      if (!items.length) return fallbackSeason(seriesID, fail('官方系列剧列表为空'));
+      return { items: items, source: 'webos-plan' };
+    }).catch(function (error) {
+      // Some webOS networks receive an empty plan response even though the
+      // public detail page is available. Keep the season selector truthful by
+      // exposing the confirmed current season instead of inventing siblings.
+      return fallbackSeason(seriesID, error);
+    });
+  }
+
+  function suggestions(query) {
+    query = trim(query);
+    if (!query) return Promise.resolve({ items: [] });
+    if (query.length > 100) return Promise.reject(fail('搜索关键词过长'));
+    return publicJSON('/incent_resource/suggestion', { app_id: '8662', query: query, count: '10' }).then(function (payload) {
+      var rows = payload && (payload.suggest_list || payload.suggestions) || [];
+      return { items: rows.map(function (row) {
+        row = row || {};
+        var name = first(row.name, Array.isArray(row.display_words) && row.display_words[0]);
+        if (!name) return null;
+        var kind = first(row.word_type, 'common_query');
+        var item = { kind: kind, key: first(row.keyword, name), name: name };
+        if (kind === 'short_play_actor') item.actor_id = item.key;
+        if (row.video_data && typeof row.video_data === 'object') {
+          item.drama = normalize(row.video_data);
+          item.meta = stringArray(row.video_data.category_list).slice(0, 3).join(' · ');
+        }
+        return item;
+      }).filter(Boolean) };
+    });
+  }
+
+  function actorWorks(actorID) {
+    if (!validID(actorID)) return Promise.reject(fail('actor_id 无效'));
+    return fetchHTML(WEB_BASE + '/character/' + encodeURIComponent(actorID)).then(function (html) {
+      var router = routerData(html); var root = router && router.loaderData || {};
+      var page = root['character_(id)/page'] || {};
+      var user = page.userInfo || {};
+      var id = first(user.actor_id, user.actor_id_str, user.person_id);
+      if (id && id !== actorID) throw fail('演员作品响应与请求不一致');
+      var rows = Array.isArray(page.videoList) ? page.videoList : [];
+      return { actor: { id: actorID, name: first(user.user_name, user.name, '未知演员'), avatar: first(user.user_avatar, user.avatar), description: first(user.description, user.intro) }, items: normalizeRows(rows) };
+    });
+  }
+
+  function engagement(seriesID, vid) {
+    if (!validID(seriesID) || !validID(vid)) return Promise.reject(fail('短剧或视频 ID 无效'));
+    return signedJSON('/novel/player/multi_video_detail/preload/v1', 'POST', {}, { dr_scene: 'preload', series_id: seriesID, biz_param: { detail_page_version: 0, disable_digg_stat: false, disable_video_relate_book: false, need_all_video_definition: false, need_mp4_align: false, source: 7, use_os_player: false, use_server_dns: false } }).then(function (payload) {
+      var data = payload && payload.data || {}; var series = data[seriesID] || {}; var video = series.video_data || {};
+      var out = { series_id: seriesID, vid: vid, likes: null, favorites: number(video.followed_cnt), comments: null, episode_cover: '' };
+      (Array.isArray(video.video_list) ? video.video_list : []).forEach(function (row) { if (String(row.vid) === vid) { out.likes = number(row.digged_count); out.comments = number(row.comment_count); out.episode_cover = first(row.episode_cover); } });
+      return out;
+    });
+  }
+
+  function discussion(seriesID, vid, query, danmaku) {
+    query = query || {};
+    if (!validID(seriesID) || !validID(vid)) return Promise.reject(fail('缺少短剧或集的视频 ID'));
+    var cursor = first(query.cursor, '0');
+    var params = { comment_source: danmaku ? '601' : '4', server_channel: danmaku ? '1000' : '18', group_id: vid, group_type: '30', comment_type: danmaku ? '20' : '4', sort: '1', need_count: 'true', book_id: seriesID, req_type: '0', count: danmaku ? '90' : '20', cursor: danmaku ? '0' : cursor, aid: '8662', compliance_status: '0' };
+    if (danmaku) {
+      var start = Number(query.start || 0), duration = Number(query.duration || 600000);
+      if (!isFinite(start) || start < 0 || start > 86400000 || !isFinite(duration) || duration < 1 || duration > 86400000) return Promise.reject(fail('弹幕时间无效'));
+      params.start_offset_time = String(start); params.playlet_item_duration = String(duration); params.need_danmaku_guide_type = '24';
+    }
+    params.business_param = JSON.stringify({ need_count: true, book_id: seriesID, req_type: 0 });
+    return signedJSON('/novel/commentapi/comment/list/' + encodeURIComponent(vid) + '/v1/', 'GET', params, null).then(function (payload) {
+      var data = payload && payload.data || {}, info = data.common_list_info || {};
+      var rows = Array.isArray(data.data_list) ? data.data_list : [];
+      return { items: rows.map(function (row) {
+        var comment = row && (row.comment || row) || {}, common = comment.common || comment.Common || {}, content = common.content || {}, expand = comment.expand || {}, stat = comment.stat || {};
+        var user = common.user_info || {}, base = user.base_info || {};
+        return { comment_id: first(comment.comment_id), text: first(content.text), author: first(base.user_name), avatar: first(base.expand_user_avatar, base.user_avatar), created: number(common.create_timestamp), likes: number(stat.digg_count), replies: number(stat.reply_count), offset_ms: number(expand.offset_time), liked: !!(comment.user_action && comment.user_action.user_digg) };
+      }).filter(function (item) { return validID(item.comment_id) && item.text; }), has_more: bool(info.has_more), next_cursor: first(info.cursor), total: number(info.total), window_end: 0 };
+    });
+  }
+
+  function replies(seriesID, vid, commentID, query) {
+    query = query || {};
+    if (!validID(seriesID) || !validID(vid) || !validID(commentID)) return Promise.reject(fail('回复参数无效'));
+    var body = { comment_source: 504, server_channel: 18, comment_id: commentID, comment_type: 4, group_id: vid, group_type: 30, business_param: { need_count: true, book_id: seriesID }, count: 10, cursor: first(query.cursor, '0'), aid: 8662, compliance_status: 0 };
+    return signedJSON('/novel/commentapi/reply/list/' + encodeURIComponent(commentID) + '/v1/', 'POST', {}, body).then(function (payload) {
+      var data = payload && payload.data || {}, info = data.comment_list_info || {}, rows = Array.isArray(data.reply_list) ? data.reply_list : [];
+      return { items: rows.map(function (row) { var reply = row && (row.reply || row) || {}, common = reply.common || reply.Common || {}, content = common.content || {}, user = common.user_info || {}, base = user.base_info || {}; return { comment_id: first(reply.reply_id), text: first(content.text), author: first(base.user_name), avatar: first(base.expand_user_avatar, base.user_avatar), created: number(common.create_timestamp), likes: number((reply.stat || {}).digg_count), replies: number((reply.stat || {}).reply_count), offset_ms: 0, liked: !!(reply.user_action && reply.user_action.user_digg) }; }).filter(function (item) { return validID(item.comment_id) && item.text; }), has_more: bool(info.has_more), next_cursor: first(info.cursor), total: number(info.total) };
+    });
+  }
+
+  function mediaDiagnostics(mediaPath) {
+    var result = { version: 'webos-service', os: 'webos', arch: 'unknown', media_prepared: false, media_bytes: 0, media_http_status: 0, media_age_seconds: 0, media_state: 'none' };
+    var match = /^\/minireel-proxy\/media\/([a-f0-9]{24})\.mp4$/.exec(String(mediaPath || ''));
+    if (!match) return result;
+    var token = match[1], file = path.join(ensureCacheRoot(), token, token + '.mp4'), stat;
+    try { stat = fs.statSync(file); result.media_prepared = stat.isFile(); result.media_bytes = stat.size; result.media_state = result.media_prepared ? 'ready' : 'missing'; } catch (ignored) { result.media_state = jobs[token] ? 'preparing' : 'missing'; }
+    var status = mediaStatus[token];
+    if (status) { result.media_http_status = status.status; result.media_age_seconds = Math.max(0, Math.floor((Date.now() - status.at) / 1000)); }
+    return result;
+  }
+
+  function radar() {
+    function remote(name) {
+      var targets = ['https://ghfast.top/https://raw.githubusercontent.com/2252399314-cyber/hongguo-radar/main/data/derived/' + name + '.json', 'https://raw.githubusercontent.com/2252399314-cyber/hongguo-radar/main/data/derived/' + name + '.json'];
+      var index = 0;
+      function next() {
+        if (index >= targets.length) return Promise.reject(fail('榜单雷达数据源不可用'));
+        return requestBuffer(targets[index++], 'GET', { Accept: 'application/json', 'User-Agent': 'HongguoTV-Radar/1.0' }, null, 5 * 1024 * 1024).then(function (response) {
+          if (response.status < 200 || response.status >= 300 || !response.body.length) throw fail('榜单雷达响应无效');
+          try { return parseExactJSON(response.body.toString('utf8')); } catch (error) { throw fail('榜单雷达 JSON 无效'); }
+        }).catch(next);
+      }
+      return next();
+    }
+    return Promise.all([remote('ranks_latest'), remote('growth_latest')]).then(function (values) {
+      return { ranks: values[0], growth: values[1], ranks_stale: false, growth_stale: false };
+    });
+  }
+
+  var dataRoot = '';
+  function ensureDataRoot() {
+    if (dataRoot) return dataRoot;
+    var candidates = [];
+    if (process.env.HONGGUO_WEBOS_DATA_DIR) candidates.push(process.env.HONGGUO_WEBOS_DATA_DIR);
+    candidates.push('/var/palm/data/com.aston314.hongguo.webos.service/data');
+    candidates.push(path.join(process.cwd(), 'data'));
+    for (var i = 0; i < candidates.length; i++) { try { mkdirp(candidates[i], 448); dataRoot = candidates[i]; return dataRoot; } catch (ignored) {} }
+    throw fail('webOS 数据目录不可写');
+  }
+  function dataDirectory() { return ensureDataRoot(); }
+  function readData(name, fallback) {
+    var file = path.join(ensureDataRoot(), name);
+    try { return parseExactJSON(fs.readFileSync(file, 'utf8')); }
+    catch (error) { if (error && error.code === 'ENOENT') return fallback; throw fail('本地数据文件损坏，未覆盖原记录'); }
+  }
+  function writeData(name, value) { var file = path.join(ensureDataRoot(), name); var temp = file + '.tmp'; fs.writeFileSync(temp, JSON.stringify(value), { mode: 384 }); fs.renameSync(temp, file); }
+
+  function library() { var value = readData('library.json', { version: 1, entries: [], owner_id: '' }); if (!Array.isArray(value.entries)) value.entries = []; return value; }
+  function changeLibrary(change) {
+    change = change || {};
+    var data = library(); var id = String(change.series_id || change.drama && change.drama.series_id || ''); var index = -1; data.entries.forEach(function (entry, i) { if (entry.drama && String(entry.drama.series_id) === id) index = i; });
+    function clearEntry(entry, kind) {
+      if (!kind || kind === 'history') { entry.last_played_at = 0; entry.episode = 0; entry.position = 0; entry.duration = 0; entry.video_id = ''; entry.completed = false; }
+      if (!kind || kind === 'favorites') entry.favorite_at = 0;
+      if (!kind || kind === 'likes') { entry.liked_at = 0; entry.liked_videos = []; }
+    }
+    if (change.action === 'clear' || change.action === 'remove') {
+      if (['history', 'favorites', 'likes'].indexOf(change.kind) < 0) throw fail('记录类型无效');
+      if (change.action === 'remove' && !validID(id)) throw fail('series_id 无效');
+      if (change.action === 'clear') data.entries.forEach(function (entry) { clearEntry(entry, change.kind); });
+      else if (index >= 0) clearEntry(data.entries[index], change.kind);
+    } else {
+      if (['progress', 'favorite', 'like'].indexOf(change.action) < 0) throw fail('记录操作无效');
+      if (!change.drama || !validID(String(change.drama.series_id || '')) || !change.drama.title) throw fail('短剧信息无效');
+      if (change.action !== 'progress' && typeof change.value !== 'boolean') throw fail('缺少收藏/点赞状态');
+      if (index < 0) { data.entries.push({ drama: change.drama || {}, liked_videos: [] }); index = data.entries.length - 1; }
+      var entry = data.entries[index]; entry.drama = change.drama || entry.drama;
+      var now = Date.now();
+      if (change.action === 'progress') {
+        entry.episode = Number(change.episode) || 0; entry.video_id = String(change.video_id || ''); entry.position = Number(change.position) || 0; entry.duration = Number(change.duration) || 0; entry.completed = !!change.completed; entry.last_played_at = now;
+        if (entry.episode < 1 || !validID(entry.video_id) || entry.position < 0 || entry.position > 86400 || entry.duration < 0 || entry.duration > 86400) throw fail('播放进度无效');
+      }
+      if (change.action === 'favorite') entry.favorite_at = change.value ? now : 0;
+      if (change.action === 'like') throw fail('webOS 未接入账号点赞');
+    }
+    data.entries = data.entries.filter(function (entry) { return entry.last_played_at || entry.favorite_at || entry.liked_at || entry.liked_videos && entry.liked_videos.length; });
+    writeData('library.json', data); return data;
+  }
+  function searchHistory(method, query) {
+    var data = readData('search-history.json', { items: [] }); if (!Array.isArray(data.items)) data.items = [];
+    if (method === 'GET') return { items: data.items, limit: 10 };
+    if (method === 'DELETE') { data.items = []; writeData('search-history.json', data); return { items: [], limit: 10 }; }
+    query = trim(query); if (!query || query.length > 100 || /[\u0000-\u001f\u007f]/.test(query)) throw fail('请输入不超过100字的剧名或关键词'); data.items = [query].concat(data.items.filter(function (item) { return item !== query; })).slice(0, 10); writeData('search-history.json', data); return { items: data.items, limit: 10 };
+  }
+
+  module.exports = {
+    prepare: prepare, serveMedia: serveMedia, category: category,
+    recommend: recommend, newSeries: newSeries, calendar: calendar,
+    rank: rank, search: search, detail: detail, seasons: seriesSeasons,
+    suggestions: suggestions, actorWorks: actorWorks, engagement: engagement, discussion: discussion, replies: replies,
+    radar: radar, library: library, changeLibrary: changeLibrary,
+    dataDirectory: dataDirectory,
+    searchHistory: searchHistory, mediaDiagnostics: mediaDiagnostics,
+    status: function () { return { playback_verified: false, provider: 'first-party-js-port', media: 'cenc-aes-ctr-local-cache', data: 'real-public-metadata-plus-local-library' }; }
+  };
 }());

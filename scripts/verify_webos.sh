@@ -53,6 +53,10 @@ console.log('webOS verify: PASS');
 console.log(JSON.stringify({ appId: app.id, version: app.version, serviceId: service.services[0].name, sharedUiAssets: scripts.length, playbackVerified: false }, null, 2));
 NODE
 
+"$node_bin" "$repo_dir/webos/service/passport-sign.test.js"
+"$node_bin" "$repo_dir/webos/service/provider.test.js"
+"$node_bin" "$repo_dir/webos/service/account.test.js"
+
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/hongguo-webos-verify.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT INT TERM
 WEBOS_OUTPUT_DIR="$tmp" "$repo_dir/scripts/build_webos.sh" --check-only >/dev/null
