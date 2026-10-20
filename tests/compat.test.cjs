@@ -76,6 +76,10 @@ test('compatibility bootstrap is idempotent and leaves existing APIs in place', 
   vm.runInContext(compat,c);
   assert.equal(c.fetch,fetch);assert.equal(vm.runInContext('Object.assign',c),assign);
 });
+test('legacy playback utility group stays docked to the right of the controls', () => {
+  const css = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/compat.css'), 'utf8');
+  assert.match(css, /\.legacy-flex-gap \.playback-buttons > \.playback-utility-group\s*\{\s*margin-left:\s*auto;/);
+});
 test('remote focus uses nearest scrolling rather than old boolean scrollIntoView alignment', () => {
   const c=oldWebView();
   const result=vm.runInContext(`(function(){
