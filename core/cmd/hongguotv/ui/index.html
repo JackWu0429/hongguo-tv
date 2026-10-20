@@ -55,9 +55,7 @@
         <button class="side-item" data-page="new" data-focus="sidebar-new" aria-label="新剧" data-i18n-aria-label="nav.new"><svg class="side-icon"><use href="#icon-new" xlink:href="#icon-new"></use></svg><span data-i18n="nav.new">新剧</span></button>
         <button class="side-item" data-page="history" data-focus="sidebar-history" aria-label="历史" data-i18n-aria-label="nav.history"><svg class="side-icon"><use href="#icon-history" xlink:href="#icon-history"></use></svg><span data-i18n="nav.history">历史</span></button>
         <button class="side-item" data-page="favorites" data-focus="sidebar-favorites" aria-label="收藏" data-i18n-aria-label="nav.favorites"><svg class="side-icon"><use href="#icon-favorite" xlink:href="#icon-favorite"></use></svg><span data-i18n="nav.favorites">收藏</span></button>
-        <button class="side-item" data-page="likes" data-focus="sidebar-likes" aria-label="点赞" data-i18n-aria-label="nav.likes"><svg class="side-icon"><use href="#icon-like" xlink:href="#icon-like"></use></svg><span data-i18n="nav.likes">点赞</span></button>
         <button class="side-item" data-page="follows" data-focus="sidebar-follows" aria-label="追更" data-i18n-aria-label="nav.follow"><svg class="side-icon"><use href="#icon-bell" xlink:href="#icon-bell"></use></svg><span data-i18n="nav.follow">追更</span></button>
-        <button class="side-item" data-page="reservations" data-focus="sidebar-reservations" aria-label="预约" data-i18n-aria-label="nav.reservations"><svg class="side-icon"><use href="#icon-reservation" xlink:href="#icon-reservation"></use></svg><span data-i18n="nav.reservations">预约</span></button>
         <button class="side-item" data-page="support" data-focus="sidebar-support" aria-label="打赏" data-i18n-aria-label="nav.support"><svg class="side-icon"><use href="#icon-heart" xlink:href="#icon-heart"></use></svg><span data-i18n="nav.support">打赏</span></button>
       </nav>
       <div class="sidebar-bottom">
@@ -204,18 +202,20 @@
         <div id="calendar-pagination" class="list-status is-hidden" role="status"></div>
       </section>
 
-      <section class="reservation-page page-workspace is-hidden" id="reservation-page" aria-label="我的预约" data-i18n-aria-label="reservation.title">
-        <h1 data-i18n="reservation.title">我的预约</h1>
-        <div class="reservation-tabs" data-focus-zone="reservationTabs">
-          <button class="reservation-tab is-active" data-reservation-mode="online" data-focus="reservation-online" data-i18n="common.online">已上线</button>
-          <button class="reservation-tab" data-reservation-mode="upcoming" data-focus="reservation-upcoming" data-i18n="common.upcoming">待上线</button>
-        </div>
-        <div class="calendar-list" id="reservation-list" data-focus-zone="reservationItems"></div>
-        <div id="reservation-pagination" class="list-status" role="status"></div>
-      </section>
-
       <section class="follow-page page-workspace is-hidden" id="follow-page" aria-label="追更" data-i18n-aria-label="nav.follow">
-        <div class="follow-heading"><div><h1 data-i18n="nav.follow">追更</h1><p data-i18n="follow.description">关注正在更新的短剧，看到新集会继续出现在这里。</p></div><div class="follow-actions" data-focus-zone="followActions"><button class="library-toolbar-button follow-action" id="follow-notifications-open" data-focus="follow-notifications-open" data-i18n="follow.notifications">更新提醒<span class="follow-notification-badge is-hidden" id="follow-notifications-badge"></span></button><button class="library-toolbar-button follow-action" id="follow-refresh" data-focus="follow-refresh" data-i18n="common.refresh">刷新</button></div></div>
+        <div class="follow-heading">
+          <div class="follow-heading-main">
+            <div class="follow-title-line">
+              <h1 data-i18n="nav.follow">追更</h1>
+              <div class="follow-tabs" id="follow-tabs" data-focus-zone="followTabs" role="tablist" aria-label="追更与预约" data-i18n-aria-label="follow.sections">
+                <button type="button" class="follow-tab is-active" data-follow-view="follow" data-focus="follow-tab-follow" role="tab" aria-selected="true" data-i18n="nav.follow">追更</button>
+                <button type="button" class="follow-tab" data-follow-view="reservations" data-focus="follow-tab-reservations" role="tab" aria-selected="false" data-i18n="nav.reservations">预约</button>
+              </div>
+            </div>
+            <p data-i18n="follow.description">关注正在更新的短剧，看到新集会继续出现在这里。</p>
+          </div>
+          <div class="follow-actions" data-focus-zone="followActions"><button class="library-toolbar-button follow-action" id="follow-notifications-open" data-focus="follow-notifications-open" data-i18n="follow.notifications">更新提醒<span class="follow-notification-badge is-hidden" id="follow-notifications-badge"></span></button><button class="library-toolbar-button follow-action" id="follow-refresh" data-focus="follow-refresh" data-i18n="common.refresh">刷新</button></div>
+        </div>
         <div id="follow-list-view">
           <div class="follow-grid" id="follow-grid" data-focus-zone="followItems" aria-live="polite"></div>
           <div id="follow-pagination" class="list-status" role="status"></div>
@@ -225,11 +225,28 @@
           <p class="follow-notification-copy" data-i18n="follow.notificationCopy">追更更新和预约上线会保留在这里，关闭右下角提示也不会丢失。</p>
           <div class="follow-notification-list" id="follow-notification-list" data-focus-zone="followNotifications" aria-live="polite"></div>
         </div>
+        <div class="reservations-view is-hidden" id="reservations-view">
+          <div class="reservation-tabs" data-focus-zone="reservationTabs" role="tablist" aria-label="预约状态" data-i18n-aria-label="reservation.status">
+            <button type="button" class="reservation-tab is-active" data-reservation-mode="online" data-focus="reservation-online" role="tab" aria-selected="true" data-i18n="common.online">已上线</button>
+            <button type="button" class="reservation-tab" data-reservation-mode="upcoming" data-focus="reservation-upcoming" role="tab" aria-selected="false" data-i18n="common.upcoming">待上线</button>
+          </div>
+          <div class="calendar-list" id="reservation-list" data-focus-zone="reservationItems"></div>
+          <div id="reservation-pagination" class="list-status" role="status"></div>
+        </div>
       </section>
 
       <section class="library-page page-workspace is-hidden" id="library-page" aria-label="我的短剧" data-i18n-aria-label="library.title">
         <div class="library-heading-row">
-          <div><h1 id="library-title" data-i18n="nav.history">历史</h1><p id="library-hint" data-i18n="library.localHistory">保存在本机的观看记录</p></div>
+          <div class="library-heading-copy">
+            <div class="library-title-line">
+              <h1 id="library-title" data-i18n="nav.history">历史</h1>
+              <div class="library-tabs is-hidden" id="library-tabs" data-focus-zone="libraryTabs" role="tablist" aria-label="收藏与点赞" data-i18n-aria-label="library.sections">
+                <button type="button" class="library-tab is-active" data-library-view="favorites" data-focus="library-tab-favorites" role="tab" aria-selected="true" data-i18n="nav.favorites">收藏</button>
+                <button type="button" class="library-tab" data-library-view="likes" data-focus="library-tab-likes" role="tab" aria-selected="false" data-i18n="nav.likes">点赞</button>
+              </div>
+            </div>
+            <p id="library-hint" data-i18n="library.localHistory">保存在本机的观看记录</p>
+          </div>
           <div class="library-toolbar">
             <button class="library-toolbar-button" id="library-manage" data-focus="library-manage" data-i18n="common.manage">管理</button>
             <button class="library-toolbar-button" id="library-clear" data-focus="library-clear" data-i18n="common.clear">清空</button>

@@ -44,6 +44,8 @@
     calendarDays: '.calendar-day',
     calendarItems: '.calendar-row',
     reservationTabs: '.reservation-tab',
+    libraryTabs: '.library-tab',
+    followTabs: '.follow-tab',
     libraryActions: '.library-toolbar-button',
     historyFilters: '.history-filter',
     libraryItems: '.library-card',
@@ -263,7 +265,6 @@
   var newGrid = document.getElementById('new-grid');
   var calendarList = document.getElementById('calendar-list');
   var dateStrip = document.getElementById('new-date-strip');
-  var reservationPage = document.getElementById('reservation-page');
   var rankItems = [];
   var newItems = [];
   var newMode = 'recommend';
@@ -287,6 +288,7 @@
   var radarRequest = null;
   var radarGeneration = 0;
   var reservationMode = 'online';
+  var followView = 'follow';
   var reservationCounts = { online: null, upcoming: null };
   var activeSearchQuery = '';
   var searchSuggestionTimer = null;
@@ -552,8 +554,7 @@
     if (pageMode() === 'search') return searchPager;
     if (pageMode() === 'rank') return rankPager;
     if (pageMode() === 'new') return newMode === 'calendar' ? calendarPager : newPager;
-    if (pageMode() === 'reservations') return reservationPager;
-    if (pageMode() === 'follows') return followPager;
+    if (pageMode() === 'follows') return followView === 'reservations' ? reservationPager : followPager;
     if (isLibraryPage()) return libraryPager;
     return null;
   }
@@ -931,6 +932,8 @@
     if (element.classList.contains('calendar-day')) return 'calendarDays';
     if (element.classList.contains('calendar-row')) return 'calendarItems';
     if (element.classList.contains('reservation-tab')) return 'reservationTabs';
+    if (element.classList.contains('library-tab')) return 'libraryTabs';
+    if (element.classList.contains('follow-tab')) return 'followTabs';
     if (element.classList.contains('library-toolbar-button')) return 'libraryActions';
     if (element.classList.contains('history-filter')) return 'historyFilters';
     if (element.classList.contains('library-card')) return 'libraryItems';
@@ -1002,6 +1005,8 @@
     // restoring a previously focused data row would hide the view switch on
     // TV remotes and make the Radar view appear unreachable.
     if (pageMode() === 'rank') return firstRankView();
+    if (['favorites', 'likes'].indexOf(pageMode()) >= 0) return firstVisible('.library-tab.is-active') || firstVisible('.library-tab');
+    if (pageMode() === 'follows') return firstVisible('.follow-tab.is-active') || firstVisible('.follow-tab');
     var remembered = lastPageFocus[pageMode()];
     if (remembered && focusables().indexOf(remembered) >= 0) return remembered;
     if (pageMode() === 'search') return searchInput || document.querySelector('.search-submit');
@@ -1010,8 +1015,7 @@
     if (pageMode() === 'support') return firstVisible('.support-card');
     if (isLibraryPage()) return firstVisible('.library-card') || firstVisible('.history-filter.is-active') || firstVisible('[data-action="library-discover"]') || firstVisible('.library-toolbar-button');
     if (pageMode() === 'new') return firstVisible('.new-tab.is-active') || firstNewTab();
-    if (pageMode() === 'reservations') return firstVisible('.reservation-tab.is-active');
-    if (pageMode() === 'follows') return followNotificationViewOpen ? firstVisible('.follow-notification-row') || firstVisible('#follow-notifications-back') : firstVisible('.follow-card') || firstVisible('#follow-notifications-open') || firstVisible('#follow-refresh');
+    if (pageMode() === 'follows') return followView === 'reservations' ? firstVisible('.reservation-tab.is-active') : followNotificationViewOpen ? firstVisible('.follow-notification-row') || firstVisible('#follow-notifications-back') : firstVisible('.follow-card') || firstVisible('#follow-notifications-open') || firstVisible('#follow-refresh');
     return document.querySelector('.page-placeholder-action');
   }
 
@@ -1070,7 +1074,7 @@
   function firstCalendarRow() { return firstVisible('.calendar-row'); }
 
   function hideWorkspacePages() {
-    [rankPage, newPage, reservationPage, followPage, libraryPage, accountPage, settingsPage, supportPage].forEach(function (page) {
+    [rankPage, newPage, followPage, libraryPage, accountPage, settingsPage, supportPage].forEach(function (page) {
       if (page) page.classList.add('is-hidden');
     });
   }
@@ -1398,34 +1402,34 @@
       return null;
     }
     if (zone === 'libraryActions') {
-      if (current.dataset.action === 'library-discover' && direction === 'up') return firstVisible('.history-filter.is-active') || activeSidebar();
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'down') return firstVisible('.history-filter.is-active') || firstVisible('.library-card') || firstVisible('[data-action="library-discover"]');
-      if (direction === 'up') return firstVisible('.history-filter.is-active') || firstVisible('.library-card') || activeSidebar();
+      if (current.dataset.action === 'library-discover' && direction === 'up') return firstVisible('.history-filter.is-active') || firstVisible('.library-tab.is-active') || activeSidebar();
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? firstVisible('.library-tab.is-active') || activeSidebar() : null);
+      if (direction === 'down') return firstVisible('.history-filter.is-active') || firstVisible('.library-type-filter.is-active') || firstVisible('.library-card') || firstVisible('[data-action="library-discover"]');
+      if (direction === 'up') return firstVisible('.history-filter.is-active') || firstVisible('.library-tab.is-active') || firstVisible('.library-card') || activeSidebar();
       return null;
     }
     if (zone === 'historyFilters') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : firstVisible('#library-manage'));
-      if (direction === 'up') return firstVisible('#library-manage') || activeSidebar();
+      if (direction === 'up') return firstVisible('#library-manage') || firstVisible('.library-tab.is-active') || activeSidebar();
       if (direction === 'down') return firstVisible('.library-card') || firstVisible('[data-action="library-discover"]');
       return null;
     }
     if (zone === 'libraryTypeFilters') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstVisible('#library-manage') || activeSidebar();
+      if (direction === 'up') return firstVisible('.library-tab.is-active') || firstVisible('#library-manage') || activeSidebar();
       if (direction === 'down') return firstVisible('.library-card') || firstVisible('[data-action="library-discover"]');
       return null;
     }
     if (zone === 'followActions') {
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return activeSidebar();
-      if (direction === 'down') return followNotificationViewOpen ? firstVisible('.follow-notification-row') || firstVisible('#follow-notifications-back') : firstVisible('.follow-card') || firstVisible('#follow-pagination .list-retry');
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? firstVisible('.follow-tab.is-active') || activeSidebar() : null);
+      if (direction === 'up') return firstVisible('.follow-tab.is-active') || activeSidebar();
+      if (direction === 'down') return followView === 'reservations' ? firstVisible('.reservation-tab.is-active') : followNotificationViewOpen ? firstVisible('.follow-notification-row') || firstVisible('#follow-notifications-back') : firstVisible('.follow-card') || firstVisible('#follow-pagination .list-retry');
       return null;
     }
     if (zone === 'followNotifications') {
       if (current.classList.contains('follow-notification-action')) {
         if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-        if (direction === 'up') return firstVisible('.follow-action') || activeSidebar();
+        if (direction === 'up') return firstVisible('.follow-action') || firstVisible('.follow-tab.is-active') || activeSidebar();
         if (direction === 'down') return firstVisible('.follow-notification-row') || current;
         return null;
       }
@@ -1437,7 +1441,7 @@
     }
     if (zone === 'followItems') {
       if (direction === 'left' || direction === 'right') return moveGrid('.follow-card', current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return moveGrid('.follow-card', current, direction) || firstVisible('.follow-action') || activeSidebar();
+      if (direction === 'up') return moveGrid('.follow-card', current, direction) || firstVisible('.follow-action') || firstVisible('.follow-tab.is-active') || activeSidebar();
       if (direction === 'down') return moveGrid('.follow-card', current, direction) || listBoundary(followPager, current, direction);
       return null;
     }
@@ -1495,7 +1499,7 @@
     }
     if (zone === 'libraryItems') {
       if (direction === 'left' || direction === 'right') return moveGrid('.library-card', current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return moveGrid('.library-card', current, direction) || firstVisible('.history-filter.is-active') || firstVisible('.library-toolbar-button');
+      if (direction === 'up') return moveGrid('.library-card', current, direction) || firstVisible('.history-filter.is-active') || firstVisible('.library-type-filter.is-active') || firstVisible('.library-tab.is-active') || firstVisible('.library-toolbar-button');
       if (direction === 'down') return libraryEditing ? current.parentElement.querySelector('.library-remove') : moveGrid('.library-card', current, direction) || listBoundary(libraryPager, current, direction);
       return null;
     }
@@ -1620,9 +1624,21 @@
       return null;
     }
     if (zone === 'reservationTabs') {
-      if (direction === 'down') return firstVisible('.reservation-row') || firstVisible('#reservation-page .publication-action') || firstVisible('#reservation-page .list-retry');
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'down') return firstVisible('.reservation-row') || firstVisible('#reservations-view .publication-action') || firstVisible('#reservation-pagination .list-retry');
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? firstVisible('.follow-tab.is-active') || activeSidebar() : null);
+      if (direction === 'up') return firstVisible('.follow-tab.is-active') || activeSidebar();
+      return null;
+    }
+    if (zone === 'libraryTabs') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : firstVisible('#library-manage'));
       if (direction === 'up') return activeSidebar();
+      if (direction === 'down') return firstVisible('.library-type-filter.is-active') || firstVisible('.library-card') || firstVisible('.library-toolbar-button');
+      return null;
+    }
+    if (zone === 'followTabs') {
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : firstVisible('#follow-notifications-open'));
+      if (direction === 'up') return activeSidebar();
+      if (direction === 'down') return followView === 'reservations' ? firstVisible('.reservation-tab.is-active') : firstVisible('.follow-action') || firstVisible('.follow-card') || firstVisible('#follow-pagination .list-retry');
       return null;
     }
     return direction === 'right' ? firstContentFocus() : activeSidebar();
@@ -2792,7 +2808,7 @@
         currentDetail.followed = enabled;
         updateDetailActions();
       }
-      followPager.loaded = false; if (pageMode() === 'follows') followPager.reset({});
+      followPager.loaded = false; if (pageMode() === 'follows' && followView === 'follow') followPager.reset({});
       showNotice(enabled ? uiText('ui.followAdded', '已加入追更') : uiText('ui.followRemoved', '已取消追更'));
     }).catch(function (error) { showNotice(uiText('ui.followFailed', '追更操作未完成：{error}', { error: localizedError(error, 'common.operationFailed', '操作未完成，请重试。') })); }).then(function () { button.disabled = false; button.removeAttribute('aria-busy'); });
   }
@@ -2847,6 +2863,16 @@
     if (!isLibraryPage()) return;
     var label = ({ history: uiText('ui.history', '历史'), favorites: uiText('ui.favorite', '收藏'), likes: uiText('ui.likes', '点赞') })[kind];
     document.getElementById('library-title').textContent = kind === 'history' ? uiText('ui.watchHistory', '观看历史') : label;
+    var libraryTabs = document.getElementById('library-tabs');
+    if (libraryTabs) {
+      var libraryTabbed = kind === 'favorites' || kind === 'likes';
+      libraryTabs.classList.toggle('is-hidden', !libraryTabbed);
+      libraryTabs.querySelectorAll('.library-tab').forEach(function (tab) {
+        var selected = tab.dataset.libraryView === kind;
+        tab.classList.toggle('is-active', selected);
+        tab.setAttribute('aria-selected', String(selected));
+      });
+    }
     var storageLabel = libraryData.owner_id ? uiText('ui.accountCloud', '当前账号 · 云同步') : uiText('ui.localOnly', '保存在本机');
     document.getElementById('library-hint').textContent = storageLabel + (kind === 'history' ? uiText('ui.autoSaveProgress', ' · 自动记住集数和进度') : '');
     var filter = kind === 'history' ? historyFilter : 'all';
@@ -3010,7 +3036,11 @@
       closeDiscussion(false); resetDanmaku();
       discussionDrafts = {}; danmakuDrafts = {};
       calendarSchema = null;
-      if (pageMode() === 'reservations') renderReservations(reservationMode);
+      if (pageMode() === 'follows' && followView === 'reservations') renderReservations(reservationMode);
+      else if (pageMode() === 'follows') {
+        if (data.logged_in) followPager.reset({});
+        else renderMessage(followGrid, 'list-empty', uiText('ui.followLogin', '登录红果账号后查看追更。'));
+      }
       else if (pageMode() === 'new') { if (newMode === 'calendar') loadCalendar(); else loadNew(); }
       else if (pageMode() === 'rank') loadRank();
       else if (pageMode() === 'search') { if (searchKind === 'keyword') submitSearch(); else loadBrowse(false, !filterRows.length); }
@@ -3520,7 +3550,7 @@
         if (featuredItem && featuredItem.series_id === playback.item.series_id) { featuredItem.following_update = true; featuredItem.followed = true; }
         if (currentDetail && currentDetail.series_id === playback.item.series_id) { currentDetail.following_update = true; currentDetail.followed = true; updateDetailActions(); }
         followPager.loaded = false;
-        if (pageMode() === 'follows') followPager.reset({});
+        if (pageMode() === 'follows' && followView === 'follow') followPager.reset({});
         showNotice(uiText('ui.followAdded', '已加入追更'));
         return true;
       }).catch(function (error) {
@@ -5658,7 +5688,7 @@
         rememberReservationOverride(item, reserve);
         if (reservationCounts.upcoming !== null && item.upcoming) { reservationCounts.upcoming = Math.max(0, reservationCounts.upcoming + (reserve ? 1 : -1)); updateReservationCounts({}); }
         document.querySelectorAll('.publication-row').forEach(function (row) { if (row.__item && row.__item.reservation_id === item.reservation_id) { row.__item.reserved = reserve; var b = row.querySelector('.publication-action'); if (b) b.textContent = reserve ? uiText('ui.cancelReservation', '取消预约') : uiText('ui.reserve', '预约'); } });
-        if (!reserve && originPage === 'reservations' && pageMode() === 'reservations' && reservationMode === 'upcoming' && document.contains(button)) {
+        if (!reserve && originPage === 'follows' && pageMode() === 'follows' && followView === 'reservations' && reservationMode === 'upcoming' && document.contains(button)) {
           var row = button.closest('.publication-row'); var next = row.nextElementSibling || row.previousElementSibling;
           var focused = hadFocus && (document.activeElement === button || document.activeElement === document.body);
           reservationPager.items = reservationPager.items.filter(function (x) { return x.reservation_id !== item.reservation_id; });
@@ -5750,7 +5780,11 @@
   function renderReservations(mode, restoring) {
     reservationMode = mode || reservationMode;
     document.getElementById('reservation-list').className = reservationMode === 'online' ? 'new-grid reservation-grid' : 'calendar-list';
-    document.querySelectorAll('.reservation-tab').forEach(function (node) { node.classList.toggle('is-active', node.dataset.reservationMode === reservationMode); });
+    document.querySelectorAll('.reservation-tab').forEach(function (node) {
+      var selected = node.dataset.reservationMode === reservationMode;
+      node.classList.toggle('is-active', selected);
+      node.setAttribute('aria-selected', String(selected));
+    });
     if (restoring && reservationPager.loaded) { queueTailCheck(); return; }
     if (!accountData || !accountData.logged_in) {
       reservationPager.cancel(); reservationPager.items = []; reservationPager.loaded = false;
@@ -5762,6 +5796,46 @@
     }
     resetReservationOverrideVisibility();
     reservationPager.reset({ mode: reservationMode });
+  }
+
+  function switchLibraryView(kind) {
+    if (['favorites', 'likes'].indexOf(kind) < 0 || pageMode() === kind) return;
+    var item = document.querySelector('.side-item[data-page="favorites"]');
+    if (!item) return;
+    libraryEditing = false;
+    shell.dataset.mode = kind;
+    document.querySelectorAll('.side-item').forEach(function (node) { node.classList.toggle('is-active', node === item); });
+    renderLibrary(false);
+    goFocus(firstVisible('.library-tab[data-library-view="' + kind + '"]'));
+  }
+
+  function switchFollowView(view, shouldFocus, restoring) {
+    followView = view === 'reservations' ? 'reservations' : 'follow';
+    var reservations = followView === 'reservations';
+    if (reservations && followNotificationViewOpen) {
+      followNotificationViewOpen = false;
+      followNotificationReturnFocus = null;
+    }
+    document.querySelectorAll('.follow-tab').forEach(function (tab) {
+      var selected = tab.dataset.followView === followView;
+      tab.classList.toggle('is-active', selected);
+      tab.setAttribute('aria-selected', String(selected));
+    });
+    var showNotifications = !reservations && followNotificationViewOpen;
+    followListView.classList.toggle('is-hidden', reservations || showNotifications);
+    followNotificationView.classList.toggle('is-hidden', !showNotifications);
+    if (followActions) followActions.classList.toggle('is-hidden', reservations || showNotifications);
+    document.getElementById('reservations-view').classList.toggle('is-hidden', !reservations);
+    if (reservations) {
+      renderReservations(reservationMode, restoring);
+    } else if (!accountData || !accountData.logged_in) {
+      renderMessage(followGrid, 'list-empty', uiText('ui.followLogin', '登录红果账号后查看追更。'));
+    } else if (!followPager.loaded) {
+      followPager.reset({});
+    } else {
+      queueTailCheck();
+    }
+    if (shouldFocus !== false) goFocus(firstVisible('.follow-tab.is-active'));
   }
 
   function submitSearch() {
@@ -6400,17 +6474,10 @@
       mainSurface.classList.add('has-workspace');
       newPage.classList.remove('is-hidden');
       renderNewMode(); if (newMode === 'recommend' && !newPager.loaded) loadNew(); else if (newMode === 'calendar' && !calendarPager.loaded) loadCalendar(); else queueTailCheck();
-    } else if (item.dataset.page === 'reservations') {
-      mainSurface.classList.add('has-workspace');
-      reservationPage.classList.remove('is-hidden');
-      var reservationTab = document.querySelector('.reservation-tab.is-active');
-      renderReservations(reservationTab ? reservationTab.dataset.reservationMode : 'online', restoring);
     } else if (item.dataset.page === 'follows') {
       mainSurface.classList.add('has-workspace');
       followPage.classList.remove('is-hidden');
-      if (!followNotificationViewOpen) { followListView.classList.remove('is-hidden'); followNotificationView.classList.add('is-hidden'); }
-    if (!accountData || !accountData.logged_in) renderMessage(followGrid, 'list-empty', uiText('ui.followLogin', '登录红果账号后查看追更。'));
-      else if (!followPager.loaded) followPager.reset({}); else queueTailCheck();
+      switchFollowView(followView, false, restoring);
       notificationCheck(false);
     } else if (['history', 'favorites', 'likes'].indexOf(item.dataset.page) >= 0) {
       mainSurface.classList.add('has-workspace');
@@ -6573,7 +6640,13 @@
     });
   });
   document.querySelectorAll('.reservation-tab').forEach(function (item) {
-    item.addEventListener('click', function () { renderReservations(item.dataset.reservationMode); });
+    item.addEventListener('click', function () { renderReservations(item.dataset.reservationMode); goFocus(item); });
+  });
+  document.querySelectorAll('.library-tab').forEach(function (item) {
+    item.addEventListener('click', function () { switchLibraryView(item.dataset.libraryView); });
+  });
+  document.querySelectorAll('.follow-tab').forEach(function (item) {
+    item.addEventListener('click', function () { switchFollowView(item.dataset.followView); });
   });
   if (searchInput) {
     searchInput.addEventListener('input', function () {

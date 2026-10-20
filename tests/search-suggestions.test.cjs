@@ -39,6 +39,14 @@ test('suggestion refresh preserves a focused item across DOM replacement', () =>
 test('suggestion list keeps focus rings clear of its scroll clipping edge', () => {
   const css = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8');
   assert.match(css, /\.search-suggestions\s*\{[^}]*padding:\s*10px 6px/);
+  assert.match(css, /@media\s*\(min-width:\s*1500px\)\s*\{[\s\S]*?\.search-suggestions\s*\{[^}]*top:\s*calc\(100%\s*-\s*2px\);[^}]*right:\s*0;[^}]*left:\s*auto;[^}]*width:\s*720px;[^}]*max-width:\s*calc\(100vw\s*-\s*260px\)/);
+});
+
+test('reservation status tabs retain their previous compact pill appearance', () => {
+  const css = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8');
+  assert.match(css, /\.reservation-tabs\s*\{[^}]*gap:\s*12px/);
+  assert.match(css, /\.reservation-tab\s*\{[^}]*min-width:\s*94px;[^}]*min-height:\s*42px;[^}]*background:\s*#20212a;[^}]*border-radius:\s*22px/);
+  assert.match(css, /\.reservation-tab\.is-active\s*\{[^}]*background:\s*#f35d7b/);
 });
 
 test('search suggestion requests are debounced and stale responses are ignored', () => {
