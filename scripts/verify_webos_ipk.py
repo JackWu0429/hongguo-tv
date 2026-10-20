@@ -46,29 +46,39 @@ def read_tar_member(archive, suffix):
 
 
 def main():
-    if len(sys.argv) != 2:
-        fail("usage: verify_webos_ipk.py path/to/app.ipk")
-    members = ar_members(sys.argv[1])
+    staging = len(sys.argv) == 3 and sys.argv[1] == "--staging"
+    package_arg = sys.argv[2] if staging else sys.argv[1] if len(sys.argv) == 2 else None
+    if package_arg is None:
+        fail("usage: verify_webos_ipk.py [--staging] path/to/app.ipk")
+    members = ar_members(package_arg)
     if "data.tar.gz" not in members:
         fail("IPK has no data.tar.gz")
     appinfo_raw, _, appinfo_path = read_tar_member(members["data.tar.gz"], "/appinfo.json")
     packageinfo_raw, _, packageinfo_path = read_tar_member(members["data.tar.gz"], "/packageinfo.json")
-    service_package_raw, _, service_package_path = read_tar_member(members["data.tar.gz"], "/services/com.aston314.hongguo.webos.service/package.json")
-    services_raw, _, services_path = read_tar_member(members["data.tar.gz"], "/services/com.aston314.hongguo.webos.service/services.json")
     appinfo = json.loads(appinfo_raw)
+    app_id = appinfo.get("id", "")
+    if staging:
+        suffix = app_id[len("com.aston314.hongguo.webos") :] if app_id.startswith("com.aston314.hongguo.webos") else ""
+        if re.fullmatch(r"\.[a-z0-9-]{1,24}", suffix) is None:
+            fail("staging app id must use an isolated suffix")
+        expected_service_id = app_id + ".service"
+    else:
+        if app_id != "com.aston314.hongguo.webos":
+            fail("unexpected app id")
+        expected_service_id = "com.aston314.hongguo.webos.service"
+    service_package_raw, _, service_package_path = read_tar_member(members["data.tar.gz"], "/services/" + expected_service_id + "/package.json")
+    services_raw, _, services_path = read_tar_member(members["data.tar.gz"], "/services/" + expected_service_id + "/services.json")
     packageinfo = json.loads(packageinfo_raw)
     service_package = json.loads(service_package_raw)
     services_manifest = json.loads(services_raw)
-    if appinfo.get("id") != "com.aston314.hongguo.webos":
-        fail("unexpected app id")
-    if service_package.get("name") != "com.aston314.hongguo.webos.service":
+    if service_package.get("name") != expected_service_id:
         fail("service package id mismatch")
     if service_package.get("main") != "service.js":
         fail("service package main must be service.js")
     if service_package.get("version") != appinfo.get("version"):
         fail("service package version must match app version")
     service_definitions = services_manifest.get("services", [])
-    service_definition = next((entry for entry in service_definitions if entry.get("name") == "com.aston314.hongguo.webos.service"), None)
+    service_definition = next((entry for entry in service_definitions if entry.get("name") == expected_service_id), None)
     if service_definition is None:
         fail("services.json does not define the app service")
     commands = {entry.get("name"): entry for entry in service_definition.get("commands", [])}
@@ -111,11 +121,45 @@ def main():
             fail("packaged adapter app version must match appinfo.json")
         if 'id="core-connection-modal"' not in index or 'id="core-connection-retry"' not in index or 'id="core-connection-close"' not in index:
             fail("packaged UI must include the connection diagnostic modal and actions")
+        if staging:
+            manifest_path = app_root + "/webos-stage-manifest.json"
+            if manifest_path not in names:
+                fail("staging manifest is missing")
+            manifest_stream = package.extractfile(manifest_path)
+            manifest = json.loads(manifest_stream.read().decode("utf-8")) if manifest_stream else {}
+            mode = manifest.get("connection_mode")
+            expected_base = "http://127.0.0.1:7655" if mode == "luna" else manifest.get("service_base", "")
+            if mode not in ("luna", "http-direct") or manifest.get("staging_only") is not True:
+                fail("staging manifest is invalid")
+            if manifest.get("app_id") != app_id or manifest.get("service_id") != expected_service_id:
+                fail("staging manifest identity mismatch")
+            report_url = manifest.get("report_url", "")
+            if report_url:
+                report_config = app_root + "/webos-simulator-config.js"
+                if report_config not in names:
+                    fail("staging report URL config is missing")
+                report_stream = package.extractfile(report_config)
+                if not report_stream or report_url not in report_stream.read().decode("utf-8"):
+                    fail("staging report URL does not match its manifest")
+                if "webos-simulator-config.js" not in index or index.find("webos-simulator-config.js") > index.find("webos-simulator-probe.js"):
+                    fail("staging report config must load before the playback probe")
+            if expected_base not in adapter:
+                fail("staging adapter mode or base does not match its manifest")
+            if mode == "http-direct" and not re.fullmatch(r"http://(?:10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.)[0-9.]+:\d{1,5}", expected_base):
+                fail("HTTP staging base must be a private IPv4 address")
+            if mode == "http-direct" and ("http-direct" not in adapter or "Luna Service 未验证" not in adapter):
+                fail("HTTP staging mode must identify itself and state that Luna is unverified")
+            if mode == "luna" and "Luna ping 与本机 HTTP 健康检查均成功" not in adapter:
+                fail("Luna staging adapter is missing its Luna readiness diagnostic")
+            if any(name.endswith(".test.js") for name in names):
+                fail("test harness files must not be packaged")
+        elif app_root + "/webos-stage-manifest.json" in names or "192.168.2.124" in adapter:
+            fail("staging configuration leaked into the production package")
     services = packageinfo.get("services", [])
-    if "com.aston314.hongguo.webos.service" not in services:
+    if expected_service_id not in services:
         fail("package does not register the HTTP service")
     print("webOS IPK verify: PASS")
-    print(json.dumps({"appId": appinfo["id"], "version": appinfo["version"], "serviceMain": service_package["main"], "serviceCommands": sorted(commands), "members": len(names)}, ensure_ascii=False))
+    print(json.dumps({"appId": app_id, "version": appinfo["version"], "serviceId": expected_service_id, "staging": staging, "serviceMain": service_package["main"], "serviceCommands": sorted(commands), "members": len(names)}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

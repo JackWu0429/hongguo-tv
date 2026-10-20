@@ -4,6 +4,8 @@ set -eu
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 node_bin=${NODE:-node}
 
+"$node_bin" --check "$repo_dir/scripts/run_webos_http_direct_service.js"
+
 "$node_bin" - "$repo_dir" <<'NODE'
 var fs = require('fs');
 var path = require('path');
@@ -39,6 +41,7 @@ var adapter = read(path.join(root, 'webos', 'app', 'webos-adapter.js'));
 if (adapter.indexOf("appVersion: ''") < 0) fail('webOS adapter is missing the build version placeholder');
 if (adapter.indexOf('playbackVerified: false') < 0 || adapter.indexOf('isAvailable: function () { return false; }') < 0) fail('adapter must keep native playback disabled');
 if (adapter.indexOf('PalmServiceBridge') < 0 || adapter.indexOf('wakeService') < 0 || adapter.indexOf('XMLHttpRequest') < 0 || adapter.indexOf('method: method') < 0 || adapter.indexOf('/api/v1/health') < 0 || adapter.indexOf('getDiagnostic') < 0) fail('adapter must expose compatible Luna and HTTP health diagnostics before fetch and XHR calls');
+if (adapter.indexOf("var SERVICE_BASE = 'http://127.0.0.1:7655';") < 0 || adapter.indexOf("var SERVICE_MODE = 'luna';") < 0) fail('production adapter must keep loopback Luna defaults');
 var serviceJs = read(path.join(root, 'webos', 'service', 'service.js'));
 ['webos-service', '127.0.0.1', 'WEBOS_PROVIDER_NOT_IMPLEMENTED', '/api/v1/status', '/api/v1/health', '/api/v1/diagnostics', 'http_bind', 'manager.create', 'manager.complete', 'Access-Control-Allow-Private-Network'].forEach(function (term) { if (serviceJs.indexOf(term) < 0) fail('service missing ' + term); });
 var providerJs = read(path.join(root, 'webos', 'service', 'provider.js'));
@@ -47,6 +50,7 @@ var signerJs = read(path.join(root, 'webos', 'service', 'passport-sign.js'));
 ['X-Medusa', 'X-Helios', 'passportF13', 'aesV3'].forEach(function (term) { if (signerJs.indexOf(term) < 0) fail('passport signer missing ' + term); });
 if (serviceJs.indexOf("require('./provider')") < 0) fail('service does not load first-party provider');
 if (/127\.0\.0\.1:(?:8787|8797|57828)/.test(adapter + serviceJs)) fail('developer-only port leaked into webOS adapter/service');
+if (fs.existsSync(path.join(root, 'webos', 'service', 'number-input.test.js'))) require(path.join(root, 'webos', 'service', 'number-input.test.js'));
 if (fs.existsSync(path.join(root, 'webos', 'app', 'webos-adapter.test.js'))) require(path.join(root, 'webos', 'app', 'webos-adapter.test.js'));
 if (fs.existsSync(path.join(root, 'webos', 'service', 'service.test.js'))) require(path.join(root, 'webos', 'service', 'service.test.js'));
 console.log('webOS verify: PASS');
@@ -61,3 +65,26 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/hongguo-webos-verify.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT INT TERM
 WEBOS_OUTPUT_DIR="$tmp" "$repo_dir/scripts/build_webos.sh" --check-only >/dev/null
 echo "webOS verify: staging command PASS"
+
+stage_parent=$(mktemp -d "$HOME/.webos-verify.XXXXXX")
+stage_test="$stage_parent/stage"
+WEBOS_STAGE_OUTPUT="$stage_test" WEBOS_STAGE_APP_ID_SUFFIX=.verify \
+  WEBOS_STAGE_CONNECTION_MODE=http-direct WEBOS_STAGE_SERVICE_BASE=http://192.168.2.124:7655 \
+  WEBOS_SIMULATOR_REPORT_URL=http://127.0.0.1:17658/report \
+  WEBOS_SIMULATOR_PROBE="$repo_dir/scripts/webos_simulator_probe.js" \
+  "$repo_dir/scripts/build_webos.sh" --check-only >/dev/null
+node - "$stage_test" <<'NODE'
+var fs = require('fs');
+var path = require('path');
+var root = process.argv[2];
+var app = JSON.parse(fs.readFileSync(path.join(root, 'app', 'appinfo.json'), 'utf8'));
+var adapter = fs.readFileSync(path.join(root, 'app', 'webos-adapter.js'), 'utf8');
+var service = JSON.parse(fs.readFileSync(path.join(root, 'service', 'services.json'), 'utf8'));
+if (app.id !== 'com.aston314.hongguo.webos.verify') throw new Error('staging app id was not isolated');
+if (service.id !== 'com.aston314.hongguo.webos.verify.service') throw new Error('staging service id was not isolated');
+if (adapter.indexOf("var SERVICE_MODE = \"http-direct\";") < 0 || adapter.indexOf("var SERVICE_BASE = \"http://192.168.2.124:7655\";") < 0) throw new Error('staging HTTP configuration was not injected');
+if (fs.existsSync(path.join(root, 'app', 'webos-stage-manifest.json')) === false) throw new Error('staging manifest missing');
+if (fs.readFileSync(path.join(root, 'app', 'webos-simulator-config.js'), 'utf8').indexOf('http://127.0.0.1:17658/report') < 0) throw new Error('staging report URL was not injected');
+console.log('webOS staged configuration: PASS');
+NODE
+rm -rf "$stage_parent"

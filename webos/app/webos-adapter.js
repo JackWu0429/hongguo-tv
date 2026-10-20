@@ -6,6 +6,7 @@
   // service boundary instead of changing product code for this platform.
   var SERVICE_BASE = 'http://127.0.0.1:7655';
   var SERVICE_URI = 'luna://com.aston314.hongguo.webos.service';
+  var SERVICE_MODE = 'luna';
   var LUNA_REQUEST_TIMEOUT_MS = 8000;
   var LUNA_TIMEOUT_RETRIES = 1;
   var rawFetch = window.fetch;
@@ -39,6 +40,7 @@
   window.HongguoWebOS = {
     platform: 'webos',
     serviceBase: SERVICE_BASE,
+    serviceMode: SERVICE_MODE,
     appVersion: '',
     experimental: true,
     playbackVerified: false,
@@ -82,12 +84,12 @@
       if (!response || !response.ok) throw diagnosticError('http_health', 'HEALTH_HTTP_FAILED', 'HTTP 健康检查失败，状态码 ' + (response && response.status || 0));
       return response.json().then(function (payload) {
         if (!payload || payload.ok !== true || payload.ready !== true) throw diagnosticError('http_health', 'HEALTH_NOT_READY', '本机服务 HTTP 健康检查未就绪');
-        serviceDiagnostic = { stage: 'ready', code: 'READY', message: 'Luna ping 与 HTTP 健康检查均成功', port: payload.port || 7655, timestamp: Date.now() };
+        serviceDiagnostic = { stage: 'ready', code: 'READY', message: SERVICE_MODE === 'http-direct' ? '开发机 HTTP 直连健康检查成功；Luna Service 未验证' : 'Luna ping 与本机 HTTP 健康检查均成功', port: payload.port || 7655, timestamp: Date.now(), mode: SERVICE_MODE };
         return payload;
       }, function () { throw diagnosticError('http_health', 'HEALTH_INVALID_JSON', '本机服务健康检查响应不是有效 JSON'); });
     }, function (error) {
       if (error && error.stage) throw error;
-      throw diagnosticError('http_health', 'HEALTH_UNREACHABLE', error && error.message || '无法连接 127.0.0.1:7655');
+      throw diagnosticError('http_health', 'HEALTH_UNREACHABLE', error && error.message || '无法连接 ' + SERVICE_BASE);
     });
   }
   function requestService(method, complete) {
@@ -133,6 +135,11 @@
   function wakeService() {
     if (serviceWake) return serviceWake;
     serviceWake = new Promise(function (resolve, reject) {
+      if (SERVICE_MODE === 'http-direct') {
+        serviceDiagnostic = { stage: 'http_direct', code: 'HTTP_DIRECT', message: '临时测试模式：仅验证开发机 HTTP 直连，不验证 Luna Service', port: Number(SERVICE_BASE.split(':').pop().split('/')[0]) || 0 };
+        checkHealth().then(resolve, reject);
+        return;
+      }
       var attempt = 0;
       function ping() {
         attempt += 1;

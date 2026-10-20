@@ -22,8 +22,9 @@
   var jobs = Object.create(null);
   var mediaStatus = Object.create(null);
   var cacheRoot = '';
+  var lastVideoModelDiagnostic = null;
 
-  function fail(message) { var error = new Error(message); error.code = 'PROVIDER_ERROR'; return error; }
+  function fail(message, status, code, stage) { var error = new Error(message); error.code = code || 'PROVIDER_ERROR'; if (status) error.status = status; if (stage) error.stage = stage; return error; }
   function parseExactJSON(text) {
     var out = '', inString = false, escaped = false, i = 0;
     while (i < text.length) {
@@ -115,29 +116,40 @@
   // use the same Passport envelope as video_model.  Keep the device identity
   // one-shot for every request, matching the upstream anti-replay behavior.
   function signedJSON(pathName, method, values, body) {
-    var device = freshDevice();
-    var stamp = Date.now();
-    var params = appQuery(device);
-    Object.keys(values || {}).forEach(function (key) { params[key] = String(values[key]); });
-    params._rticket = String(stamp);
     var raw = body == null ? Buffer.alloc(0) : Buffer.from(JSON.stringify(body), 'utf8');
-    var signed = passportSign.sign(params, raw, stamp, device.deviceID);
-    var headers = signed.headers;
-    headers['User-Agent'] = APP_UA;
-    headers.Accept = 'application/json';
-    headers['Accept-Encoding'] = 'identity';
-    if (raw.length) {
-      headers['Content-Type'] = 'application/json; charset=utf-8';
-      headers['Content-Length'] = raw.length;
+    var attempt = 0;
+    function next() {
+      attempt++;
+      var device = freshDevice();
+      var stamp = Date.now();
+      var params = appQuery(device);
+      Object.keys(values || {}).forEach(function (key) { params[key] = String(values[key]); });
+      params._rticket = String(stamp);
+      var signed = passportSign.sign(params, raw, stamp, device.deviceID);
+      var headers = signed.headers;
+      headers['User-Agent'] = APP_UA;
+      headers.Accept = 'application/json';
+      headers['Accept-Encoding'] = 'identity';
+      if (raw.length) {
+        headers['Content-Type'] = 'application/json; charset=utf-8';
+        headers['Content-Length'] = raw.length;
+      }
+      headers['X-XS-From-Web'] = '0'; headers['Sdk-Version'] = '2'; headers['X-SS-DP'] = '8662';
+      headers['X-Tt-Store-Region'] = 'cn'; headers['X-Tt-Store-Region-Src'] = 'did';
+      return requestBuffer(API_BASE + pathName + '?' + signed.query, method || 'GET', headers, raw.length ? raw : null, MAX_JSON).then(function (response) {
+        if (response.status < 200 || response.status >= 300) throw fail('红果接口 HTTP ' + response.status);
+        var text = response.body.toString('utf8');
+        if (!trim(text)) {
+          if (attempt < 3) return next();
+          throw fail('红果接口返回空响应');
+        }
+        try { return parseExactJSON(text); } catch (error) { throw fail('红果接口响应不是有效 JSON'); }
+      }).catch(function (error) {
+        if (attempt < 3 && /返回空响应/.test(String(error && error.message || error))) return next();
+        throw error;
+      });
     }
-    headers['X-XS-From-Web'] = '0'; headers['Sdk-Version'] = '2'; headers['X-SS-DP'] = '8662';
-    headers['X-Tt-Store-Region'] = 'cn'; headers['X-Tt-Store-Region-Src'] = 'did';
-    return requestBuffer(API_BASE + pathName + '?' + signed.query, method || 'GET', headers, raw.length ? raw : null, MAX_JSON).then(function (response) {
-      if (response.status < 200 || response.status >= 300) throw fail('红果接口 HTTP ' + response.status);
-      var text = response.body.toString('utf8');
-      if (!trim(text)) throw fail('红果接口返回空响应');
-      try { return parseExactJSON(text); } catch (error) { throw fail('红果接口响应不是有效 JSON'); }
-    });
+    return next();
   }
 
   function publicJSON(pathName, values) {
@@ -268,6 +280,7 @@
 
   function videoOptions(vid) {
     var attempt = 0;
+    var startedAt = Date.now();
     function next() {
       attempt++;
       var device = freshDevice();
@@ -285,13 +298,21 @@
       headers['X-XS-From-Web'] = '0'; headers['Sdk-Version'] = '2'; headers['X-SS-DP'] = '8662';
       headers['X-Tt-Store-Region'] = 'cn'; headers['X-Tt-Store-Region-Src'] = 'did';
       return requestBuffer(API_BASE + API_PATH + '?' + query, 'POST', headers, Buffer.from(body), MAX_JSON).then(function (response) {
-        if (response.status < 200 || response.status >= 300) throw fail('video_model HTTP ' + response.status);
-        if (!response.body.length) { if (attempt < 3) return next(); throw fail('video_model 返回空响应'); }
+        lastVideoModelDiagnostic = { stage: 'video_model', video_id: String(vid), attempt: attempt, http_status: response.status, response_bytes: response.body.length, elapsed_ms: Date.now() - startedAt, code: 'VIDEO_MODEL_RESPONSE' };
+        if (response.status < 200 || response.status >= 300) {
+          lastVideoModelDiagnostic.code = 'VIDEO_MODEL_HTTP';
+          throw fail('video_model HTTP ' + response.status, response.status, 'VIDEO_MODEL_HTTP', 'video_model');
+        }
+        if (!response.body.length) {
+          lastVideoModelDiagnostic.code = 'VIDEO_MODEL_EMPTY';
+          if (attempt < 3) return next();
+          throw fail('video_model 返回空响应', 502, 'VIDEO_MODEL_EMPTY', 'video_model');
+        }
         var envelope;
-        try { envelope = parseExactJSON(response.body.toString('utf8')); } catch (error) { throw fail('video_model 响应不是有效 JSON'); }
+        try { envelope = parseExactJSON(response.body.toString('utf8')); } catch (error) { lastVideoModelDiagnostic.code = 'VIDEO_MODEL_INVALID_JSON'; throw fail('video_model 响应不是有效 JSON', 502, 'VIDEO_MODEL_INVALID_JSON', 'video_model'); }
         var data = envelope && envelope.data;
         var model = decodeModel(data && data.video_model);
-        if (!model || typeof model !== 'object') throw fail('video_model 缺少视频数据');
+        if (!model || typeof model !== 'object') { lastVideoModelDiagnostic.code = 'VIDEO_MODEL_MISSING'; throw fail('video_model 缺少视频数据', 502, 'VIDEO_MODEL_MISSING', 'video_model'); }
         var options = [];
         modelRows(model.video_list).forEach(function (row) {
           var meta = row && row.video_meta || {};
@@ -312,10 +333,19 @@
           if (definition) height = Number(definition[1]);
           options.push({ url: mediaURL, key: key, height: height, quality: height > 0 ? String(height) + 'P' : '', duration: number(model.video_duration) });
         });
-        if (!options.length) throw fail('video_model 没有可播放清晰度');
+        if (!options.length) { lastVideoModelDiagnostic.code = 'VIDEO_MODEL_NO_QUALITY'; throw fail('video_model 没有可播放清晰度', 502, 'VIDEO_MODEL_NO_QUALITY', 'video_model'); }
+        lastVideoModelDiagnostic.code = 'VIDEO_MODEL_OK';
+        lastVideoModelDiagnostic.quality_count = options.length;
+        lastVideoModelDiagnostic.qualities = options.map(function (option) { return option.quality; }).filter(Boolean);
+        lastVideoModelDiagnostic.elapsed_ms = Date.now() - startedAt;
         return options;
       }).catch(function (error) {
         if (attempt < 3 && /空响应/.test(String(error.message || error))) return next();
+        if (lastVideoModelDiagnostic && lastVideoModelDiagnostic.video_id === String(vid) && lastVideoModelDiagnostic.code === 'VIDEO_MODEL_RESPONSE') {
+          lastVideoModelDiagnostic.code = error && error.code || 'VIDEO_MODEL_NETWORK';
+          lastVideoModelDiagnostic.stage = error && error.stage || 'video_model_transport';
+          lastVideoModelDiagnostic.elapsed_ms = Date.now() - startedAt;
+        }
         throw error;
       });
     }
@@ -613,7 +643,6 @@
 
   function category(pathName, offset, filters, selectors) {
     filters = filters || {};
-    var device = freshDevice();
     var scene = pathName === '/category/comic' ? 'comic' : pathName.indexOf('comic') >= 0 ? 'comic_series' : pathName.indexOf('ai') >= 0 ? 'ai_series' : 'default';
     var defaultGenre = scene === 'comic_series' ? 'comic_series' : scene === 'ai_series' ? 'ai_series' : scene === 'comic' ? 'comic' : 'short_play';
     var selection = { genre: [defaultGenre], sort: [pathName.indexOf('/new/') === 0 ? 'online_time' : 'hot_score'], category_dim_theme: [], category_dim_role: [], category_dim_epoch: [], gender: [], online_time: [], creation_status: [] };
@@ -623,9 +652,12 @@
       if (!validCategoryFilter(key, value)) throw fail('分类筛选参数无效: ' + key);
       selection[key] = value ? [value] : [];
     });
-    var query = appQuery(device); delete query._rticket; var endpoint = API_BASE + '/reading/distribution/category/landpage/v/?' + sortedQuery(query);
     var pageOffset = Number(offset) || 0;
-    return jsonRequest(endpoint, 'POST', { filter_ids: first(filters.shown), req_scene: scene, offset: pageOffset, need_selector_panel: !!selectors, limit: 15, select_items: selection, session_id: first(filters.session_id), req_type: selectors ? 'default' : 'only_content', client_req_type: 3 }).then(function (payload) {
+    // Category is an app API endpoint, so it needs the same one-shot device
+    // identity and Passport envelope as the other catalogue calls. An
+    // unsigned POST may return an empty body even though the endpoint exists.
+    var body = { filter_ids: first(filters.shown), req_scene: scene, offset: pageOffset, need_selector_panel: !!selectors, limit: 15, select_items: selection, session_id: first(filters.session_id), req_type: selectors ? 'default' : 'only_content', client_req_type: 3 };
+    return signedJSON('/reading/distribution/category/landpage/v/', 'POST', {}, body).then(function (payload) {
       var data = payload && payload.data || {};
       var items = normalizeRows(data.video_data);
       var hasMore = bool(data.has_more);
@@ -737,6 +769,7 @@
     item.reserved = !!(raw.has_subscribed === true || raw.has_subscribed === 1);
     item.publish_time = number(raw.schedule_publish_time) || number(raw.expected_publish_time);
     item.publish_text = first(raw.sub_info, raw.expected_rec_text);
+    item.tags = stringArray(item.tags);
     if (!item.tags.length) item.tags = stringArray(raw.categories).length ? stringArray(raw.categories) : stringArray(raw.sub_title_list);
     return item;
   }
@@ -894,6 +927,19 @@
     return result;
   }
 
+  function videoModelDiagnostics() {
+    if (!lastVideoModelDiagnostic) return { stage: 'idle', code: 'NOT_RUN' };
+    return JSON.parse(JSON.stringify(lastVideoModelDiagnostic));
+  }
+
+  function inspectVideoModel(vid) {
+    return videoOptions(String(vid || '')).then(function () {
+      return { ok: true, diagnostic: videoModelDiagnostics() };
+    }, function (error) {
+      return { ok: false, diagnostic: videoModelDiagnostics(), error: { status: Number(error && error.status) || 502, code: String(error && error.code || 'VIDEO_MODEL_ERROR'), stage: String(error && error.stage || 'video_model'), message: String(error && error.message || 'video_model 请求失败') } };
+    });
+  }
+
   function radar() {
     function remote(name) {
       var targets = ['https://ghfast.top/https://raw.githubusercontent.com/2252399314-cyber/hongguo-radar/main/data/derived/' + name + '.json', 'https://raw.githubusercontent.com/2252399314-cyber/hongguo-radar/main/data/derived/' + name + '.json'];
@@ -956,7 +1002,19 @@
         if (entry.episode < 1 || !validID(entry.video_id) || entry.position < 0 || entry.position > 86400 || entry.duration < 0 || entry.duration > 86400) throw fail('播放进度无效');
       }
       if (change.action === 'favorite') entry.favorite_at = change.value ? now : 0;
-      if (change.action === 'like') throw fail('webOS 未接入账号点赞');
+      if (change.action === 'like') {
+        var videoID = String(change.video_id || '');
+        if (videoID) {
+          var episode = Number(change.episode) || 0;
+          if (!validID(videoID) || videoID === '0' || episode < 1 || episode > 10000) throw fail('缺少当前播放集');
+          entry.liked_videos = Array.isArray(entry.liked_videos) ? entry.liked_videos : [];
+          entry.liked_videos = entry.liked_videos.filter(function (item) { return String(item.video_id) !== videoID; });
+          if (change.value) entry.liked_videos.push({ video_id: videoID, episode: episode, liked_at: now });
+          entry.liked_at = entry.liked_videos.reduce(function (latest, item) { return Math.max(latest, Number(item.liked_at) || 0); }, 0);
+        } else {
+          entry.liked_at = change.value ? now : 0;
+        }
+      }
     }
     data.entries = data.entries.filter(function (entry) { return entry.last_played_at || entry.favorite_at || entry.liked_at || entry.liked_videos && entry.liked_videos.length; });
     writeData('library.json', data); return data;
@@ -976,6 +1034,7 @@
     radar: radar, library: library, changeLibrary: changeLibrary,
     dataDirectory: dataDirectory,
     searchHistory: searchHistory, mediaDiagnostics: mediaDiagnostics,
+    videoModelDiagnostics: videoModelDiagnostics, inspectVideoModel: inspectVideoModel,
     status: function () { return { playback_verified: false, provider: 'first-party-js-port', media: 'cenc-aes-ctr-local-cache', data: 'real-public-metadata-plus-local-library' }; }
   };
 }());

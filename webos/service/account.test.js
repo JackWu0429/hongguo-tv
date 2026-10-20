@@ -19,6 +19,11 @@ function transport(target, method, headers, body) {
   if (pathname === '/reading/bookapi/read_history/list/v') return response({ code: 0, data: { data_list: [], has_more: false } });
   if (pathname === '/reading/bookapi/bookshelf/video/list/v') return response({ code: 0, data: { video_shelf_info: [] } });
   if (pathname === '/reading/ugc/action/mget/v') return response({ code: 0, data: { mixed_data_list: null, has_more: false } });
+  if (pathname === '/reading/bookapi/bookmall/tab/v') return response({ code: 0, data: { bookstore_id: '7650476689721409598', tab_item: [{ tab_type: 45, session_id: 'follow-session', cell_data: [
+    { show_type: 647, cell_id_str: '8650476176527343678', cell_data: [{ video_detail: { series_id: '9001', series_title: '演员推荐', episode_cnt: 12, first_vid: '9002' } }] },
+    { show_type: 648, cell_id_str: '7650476176527343678', has_more: true, next_offset: 0, cell_data: [{ video_data: [{ video_detail: { series_id: '1234567890123456789', series_title: '追更剧', episode_cnt: 12, first_vid: '2234567890123456789' } }] }] }
+  ] }] } });
+  if (pathname === '/reading/bookapi/bookmall/cell/change/v') return response({ code: 0, data: { has_more: false, next_offset: 6, session_id: 'follow-session', cell_view: { cell_data: [{ video_detail: { series_id: '3234567890123456789', series_title: '第二页追更剧', episode_cnt: 8, first_vid: '4234567890123456789' } }] } } });
   if (pathname === '/reading/bookapi/search/uncover_subscribe/v') return response({ code: 0, data: {} });
   if (pathname === '/novel/articleapi/do_action/v1/') return response({ code: 0, data: {} });
   return response({ code: 0, data: {} }, { 'set-cookie': ['sessionid=next-session; Path=/'], 'x-tt-token': 'next-token' });
@@ -72,6 +77,27 @@ async function run() {
   assert.strictEqual(account.state.session.token, 'next-token');
   assert.strictEqual(calls[calls.length - 1].headers.Cookie.indexOf('old-session') >= 0, true);
 
+  var followRecommendations = await account.recommend({ channel: '45' });
+  assert.strictEqual(followRecommendations.items.length, 1, 'only the follow cell is parsed');
+  assert.strictEqual(followRecommendations.items[0].title, '追更剧', 'actor recommendations are not mixed into follow content');
+  assert.strictEqual(followRecommendations.items[0].vid, '2234567890123456789');
+  assert.strictEqual(followRecommendations.feed_cell, '7650476176527343678');
+  assert.strictEqual(followRecommendations.feed_plan, '7650476689721409598');
+  assert.strictEqual(followRecommendations.session_id, 'follow-session');
+  var firstRecommendCall = calls[calls.length - 1];
+  assert(firstRecommendCall.target.indexOf('/reading/bookapi/bookmall/tab/v?') >= 0, 'first request discovers the signed account follow cell');
+  assert(firstRecommendCall.headers['X-Gorgon'], 'follow recommendations use a signed account request');
+  assert.strictEqual(require('url').parse(firstRecommendCall.target, true).query.tab_type, '45');
+  var followPage = await account.recommend({ channel: '45', feed_cell: followRecommendations.feed_cell, feed_plan: followRecommendations.feed_plan, session_id: followRecommendations.session_id, offset: '0', shown: 'seen-id' });
+  assert.strictEqual(followPage.items[0].title, '第二页追更剧');
+  assert.strictEqual(followPage.has_more, false);
+  var pageCall = calls[calls.length - 1];
+  var pageQuery = require('url').parse(pageCall.target, true).query;
+  assert.strictEqual(pageQuery.cell_id, '7650476176527343678');
+  assert.strictEqual(pageQuery.plan_id, '7650476689721409598');
+  assert.strictEqual(pageQuery.session_id, 'follow-session');
+  assert.strictEqual(pageQuery.filter_ids, 'seen-id');
+
   var reserveResult = await account.reserve('1234567890123456789', true);
   assert.deepStrictEqual(reserveResult, { accepted: true, confirmed: false });
   assert.strictEqual(calls[calls.length - 1].method, 'POST');
@@ -84,6 +110,7 @@ async function run() {
 
   var loggedOut = createAccount({ dataDir: path.join(root, 'guest'), requestBuffer: transport });
   assert.throws(function () { loggedOut.notifications(); }, /请先登录/);
+  await assert.rejects(loggedOut.recommend({ channel: '45' }), /请先登录/);
   console.log('webOS account storage, ownership, transport, reservation, and cloud sync: PASS');
 }
 

@@ -4,8 +4,16 @@ var assert = require('assert');
 var EventEmitter = require('events');
 var PassThrough = require('stream').PassThrough;
 var https = require('https');
+var fs = require('fs');
+var os = require('os');
+var path = require('path');
 var originalRequest = https.request;
+var dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hongguo-webos-provider-'));
+process.env.HONGGUO_WEBOS_DATA_DIR = dataRoot;
 var seriesID = '1234567890123456789';
+var categoryRequest = null;
+var calendarRequest = null;
+var engagementRequests = [];
 var html = '<script>window._ROUTER_DATA=' + JSON.stringify({ loaderData: { detail_page: {
   seriesDetail: {
     series_id: seriesID,
@@ -32,10 +40,28 @@ var html = '<script>window._ROUTER_DATA=' + JSON.stringify({ loaderData: { detai
 
 https.request = function (options) {
   var req = new EventEmitter();
-  req.write = function () {};
+  var requestChunks = [];
+  req.write = function (chunk) { requestChunks.push(Buffer.from(chunk)); };
   req.destroy = function (error) { if (error) process.nextTick(function () { req.emit('error', error); }); };
   req.end = function () {
-    var body = options.path.indexOf('/reading/bookapi/plan/v') >= 0 ? '{"code":0,"data":[]}' : html;
+    var body = html;
+    if (options.path.indexOf('/reading/bookapi/plan/v') >= 0) body = '{"code":0,"data":[]}';
+    if (options.path.indexOf('/reading/distribution/category/landpage/v/') >= 0) {
+      categoryRequest = { options: options, query: Object.fromEntries(new URL('https://fixture.test' + options.path).searchParams), body: Buffer.concat(requestChunks).toString('utf8') };
+      body = JSON.stringify({ code: 0, data: { has_more: true, next_offset: 15, session_id: 'category-session', video_data: [{ series_id: seriesID, series_title: '真实分类剧', episode_cnt: 12, vid: '2234567890123456789', tags: ['悬疑'] }], selector_rows: [] } });
+    }
+    if (options.path.indexOf('/reading/user/subscribe/list/v1/') >= 0) {
+      calendarRequest = { options: options, query: Object.fromEntries(new URL('https://fixture.test' + options.path).searchParams) };
+      body = JSON.stringify({ code: 0, data: { has_more: false, next_offset: 0, subscribe_items: [{ item_id: '4234567890123456789', name: '待上线剧', cover: 'https://example.test/cover.jpg', item_desc: '简介', categories: ['都市'] }] } });
+    }
+    if (options.path.indexOf('/novel/player/multi_video_detail/preload/v1') >= 0) {
+      var parsedRequest = new URL('https://fixture.test' + options.path);
+      engagementRequests.push({ options: options, query: Object.fromEntries(parsedRequest.searchParams), body: Buffer.concat(requestChunks).toString('utf8') });
+      body = engagementRequests.length === 1 ? '' : JSON.stringify({ code: 0, data: {} });
+      var engagementData = {};
+      engagementData[seriesID] = { video_data: { series_id_str: seriesID, followed_cnt: 19, video_list: [{ vid: '2234567890123456789', digged_count: 7, comment_count: 4, episode_cover: 'https://example.test/episode.jpg' }] } };
+      if (engagementRequests.length > 1) body = JSON.stringify({ code: 0, data: engagementData });
+    }
     process.nextTick(function () {
       var response = new PassThrough();
       response.statusCode = 200;
@@ -61,14 +87,55 @@ async function run() {
     assert.strictEqual(detail.reviews[0].content, '真实剧评');
     assert.strictEqual(detail.reviews[0].rating, 9);
 
+    var category = await provider.category('/category/real-drama', 0, {}, false);
+    assert.strictEqual(category.items.length, 1);
+    assert.strictEqual(category.items[0].title, '真实分类剧');
+    assert.strictEqual(category.has_more, true);
+    assert(categoryRequest, 'category endpoint was requested');
+    assert.strictEqual(categoryRequest.options.method, 'POST');
+    assert(categoryRequest.options.headers['X-Gorgon'], 'category request is signed');
+    assert(categoryRequest.options.headers['X-Medusa'], 'category request includes Passport signature');
+    assert(categoryRequest.query.device_id && categoryRequest.query.iid, 'category uses a fresh device identity');
+    var categoryBody = JSON.parse(categoryRequest.body);
+    assert.strictEqual(categoryBody.req_scene, 'default');
+    assert.strictEqual(categoryBody.req_type, 'only_content');
+
+    var calendar = await provider.calendar({ offset: 0 });
+    assert.strictEqual(calendar.items.length, 1);
+    assert.strictEqual(calendar.items[0].title, '待上线剧');
+    assert.deepStrictEqual(calendar.items[0].tags, ['都市']);
+    assert(calendarRequest, 'calendar endpoint was requested');
+    assert(calendarRequest.options.headers['X-Gorgon'], 'calendar request is signed');
+    assert(calendarRequest.query.device_id && calendarRequest.query.iid, 'calendar uses a fresh device identity');
+    assert.notStrictEqual(categoryRequest.query.device_id, calendarRequest.query.device_id, 'each API request gets a one-shot device identity');
+
+    var stats = await provider.engagement(seriesID, '2234567890123456789');
+    assert.strictEqual(stats.likes, 7);
+    assert.strictEqual(stats.favorites, 19);
+    assert.strictEqual(stats.comments, 4);
+    assert.strictEqual(stats.episode_cover, 'https://example.test/episode.jpg');
+    assert.strictEqual(engagementRequests.length, 2, 'an empty upstream response is retried');
+    assert(engagementRequests[0].options.headers['X-Gorgon'] && engagementRequests[1].options.headers['X-Gorgon'], 'both attempts are signed');
+    assert.notStrictEqual(engagementRequests[0].query.device_id, engagementRequests[1].query.device_id, 'retry uses a fresh device identity');
+
     var seasons = await provider.seasons(seriesID);
     assert.strictEqual(seasons.source, 'webos-detail-fallback');
     assert.strictEqual(seasons.items.length, 1);
     assert.strictEqual(seasons.items[0].series_id, seriesID);
     assert.strictEqual(seasons.items[0].playable, true);
-    console.log('webOS provider detail actors/social and empty-season fallback: PASS');
+
+    var drama = { series_id: seriesID, title: '接口回归短剧' };
+    var liked = provider.changeLibrary({ action: 'like', drama: drama, video_id: '2234567890123456789', episode: 1, value: true });
+    assert.strictEqual(liked.entries[0].liked_videos[0].video_id, '2234567890123456789');
+    assert.strictEqual(liked.entries[0].liked_at, liked.entries[0].liked_videos[0].liked_at);
+    var unliked = provider.changeLibrary({ action: 'like', drama: drama, video_id: '2234567890123456789', episode: 1, value: false });
+    assert.strictEqual(unliked.entries.length, 0);
+    var dramaLike = provider.changeLibrary({ action: 'like', drama: drama, value: true });
+    assert(dramaLike.entries[0].liked_at > 0, 'guest series-like behavior is retained');
+    console.log('webOS provider signed category/calendar, detail actors/social and empty-season fallback: PASS');
   } finally {
     https.request = originalRequest;
+    fs.rmSync(dataRoot, { recursive: true, force: true });
   }
 }
 

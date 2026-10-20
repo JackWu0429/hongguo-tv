@@ -8,9 +8,16 @@
     options = options || {};
     var http = options.http || require('http');
     var url = options.url || require('url');
+    var serviceID = String(options.serviceID || SERVICE_ID);
+    // Keep staged simulator data/cache isolated when the test package uses a
+    // suffixed Service ID. Production still resolves to the normal webOS
+    // service directory.
+    if (!process.env.HONGGUO_WEBOS_SERVICE_ID) process.env.HONGGUO_WEBOS_SERVICE_ID = serviceID;
     var provider = options.provider || require('./provider');
     var account = options.account || require('./account')({ dataDir: provider.dataDirectory ? provider.dataDirectory() : process.env.HONGGUO_WEBOS_DATA_DIR });
-    var port = options.port === undefined ? DEFAULT_PORT : options.port;
+    var numberInput = options.numberInput || require('./number-input')();
+    var port = options.port === undefined ? Number(process.env.HONGGUO_WEBOS_PORT) || DEFAULT_PORT : options.port;
+    var bindHost = options.bindHost || process.env.HONGGUO_WEBOS_BIND_HOST || '127.0.0.1';
     var server = null;
     var serverStart = null;
     var activity = null;
@@ -19,7 +26,7 @@
     var luna = options.service;
     if (!luna) {
       var Service = options.Service || require('webos-service');
-      luna = new Service(SERVICE_ID);
+      luna = new Service(serviceID);
     }
 
     function cors(res, origin) {
@@ -59,11 +66,11 @@
         implementation: 'experimental-js-service',
         platform: 'webos',
         port: port,
-        capabilities: ['web-ui', 'luna-service', 'html5-video', 'real-video-model-signing', 'cenc-aes-ctr', 'local-media-cache', 'range-media-proxy', 'category', 'rank', 'search', 'search-suggestions', 'series-detail', 'series-seasons', 'actor-works', 'player-stats', 'radar', 'local-library', 'search-history', 'account-login', 'account-mfa', 'follow', 'reservations', 'notifications', 'player-actions', 'cloud-library'],
+        capabilities: ['web-ui', 'luna-service', 'html5-video', 'real-video-model-signing', 'cenc-aes-ctr', 'local-media-cache', 'range-media-proxy', 'category', 'rank', 'search', 'search-suggestions', 'series-detail', 'series-seasons', 'actor-works', 'player-stats', 'radar', 'local-library', 'search-history', 'number-input', 'account-login', 'account-mfa', 'follow', 'reservations', 'notifications', 'player-actions', 'cloud-library'],
         experimental: true,
         playback_verified: false,
         protocol_verified: true,
-        verification_note: '公共目录、详情、搜索、分季、演员作品、榜单雷达、本机记录和账号接口已接入；LG 真机播放尚未验证；登录和云端写入需使用真实账号验收'
+        verification_note: '主应用共享 UI 所需接口均已接入；LG 真机播放尚未验证；登录和云端写入需使用真实账号验收'
       };
     }
 
@@ -88,7 +95,11 @@
     function data(req, res, payload) { json(res, 200, { ok: true, data: payload }, req); }
     function failure(req, res, error) {
       if (!error || Number(error.status) >= 500 || !error.status) console.error('[hongguo-webos] provider error:', error && error.stack || error);
-      json(res, Number(error && error.status) || 502, { ok: false, error: String(error && error.code || 'UPSTREAM_ERROR'), message: String(error && error.message || error || '上游请求失败'), playback_verified: false }, req);
+      var details = { ok: false, error: String(error && error.code || 'UPSTREAM_ERROR'), message: String(error && error.message || error || '上游请求失败'), playback_verified: false };
+      if (error && error.stage) details.stage = String(error.stage);
+      if (error && Number(error.status)) details.upstream_status = Number(error.status);
+      if (provider.videoModelDiagnostics) details.video_model = provider.videoModelDiagnostics();
+      json(res, Number(error && error.status) || 502, details, req);
     }
     function supportedMethod(req) { return req.method === 'GET' || req.method === 'HEAD' || req.method === 'POST' || req.method === 'DELETE'; }
 
@@ -123,23 +134,24 @@
       if (pathName.indexOf('/minireel-proxy/media/') === 0) {
         return provider.serveMedia(req, res, pathName.slice('/minireel-proxy/media/'.length).replace(/\.mp4$/, ''));
       }
-      if (pathName === '/minireel-proxy/resolve' || pathName === '/api/v1/play/info') {
+      if (pathName === '/minireel-proxy/resolve' || pathName === '/api/v1/play/info' || pathName === '/api/v1/PlayInfo') {
         var seriesID = String(q.series_id || ''), vid = String(q.vid || '');
         return provider.prepare(seriesID, vid, String(q.quality || ''), String(q.fallback || '') === '1').then(function (result) { data(req, res, result); }, function (error) { failure(req, res, error); });
       }
-      if (pathName === '/api/v1/category') {
+      if (pathName === '/api/v1/category' || pathName === '/api/v1/Category') {
         return provider.category(String(q.path || '/category/real-drama'), Number(q.offset || 0), q, String(q.selectors || '') === '1').then(function (result) { data(req, res, result); }, function (error) { failure(req, res, error); });
       }
       if (pathName === '/api/v1/lists/recommend') {
+        if (String(q.channel || '16') === '45') return account.recommend(q).then(function (result) { data(req, res, result); }, function (error) { failure(req, res, error); });
         return provider.recommend(q).then(function (result) { data(req, res, result); }, function (error) { failure(req, res, error); });
       }
       if (pathName === '/api/v1/lists/new') {
         return provider.newSeries(q).then(function (result) { data(req, res, result); }, function (error) { failure(req, res, error); });
       }
-      if (pathName === '/api/v1/lists/rank') {
+      if (pathName === '/api/v1/lists/rank' || pathName === '/api/v1/rank' || pathName === '/api/v1/Rank') {
         return provider.rank(q).then(function (result) { data(req, res, result); }, function (error) { failure(req, res, error); });
       }
-      if (pathName === '/api/v1/lists/search') {
+      if (pathName === '/api/v1/lists/search' || pathName === '/api/v1/search' || pathName === '/api/v1/Search') {
         return provider.search(String(q.q || '')).then(function (result) { data(req, res, result); }, function (error) { failure(req, res, error); });
       }
       if (pathName === '/api/v1/lists/reservations') {
@@ -174,7 +186,7 @@
       if (pathName === '/api/v1/lists/calendar') {
         return provider.calendar(q).then(function (result) { data(req, res, result); }, function (error) { failure(req, res, error); });
       }
-      if (pathName === '/api/v1/series/detail') {
+      if (pathName === '/api/v1/series/detail' || pathName === '/api/v1/SeriesDetail') {
         return provider.detail(String(q.series_id || '')).then(function (result) { data(req, res, result); }, function (error) { failure(req, res, error); });
       }
       if (pathName === '/api/v1/series/seasons') {
@@ -211,8 +223,12 @@
         }).then(function (result) { data(req, res, result); }, function (error) { failure(req, res, error); });
       }
       if (pathName === '/api/v1/number-input') {
-        var numberError = new Error('webOS 暂未接入扫码输入，可继续使用页面数字键盘'); numberError.status = 503; numberError.code = 'NUMBER_INPUT_UNAVAILABLE';
-        return failure(req, res, numberError);
+        if (req.method === 'POST') {
+          return bodyJSON(req, 1024).then(function (body) { return numberInput.start(String(body.kind || ''), String(body.country_code || '+86')); }).then(function (result) { data(req, res, result); }, function (error) { failure(req, res, error); });
+        }
+        if (req.method === 'GET' || req.method === 'HEAD') return data(req, res, numberInput.poll(String(q.session || ''), false));
+        if (req.method === 'DELETE') return data(req, res, numberInput.poll(String(q.session || ''), true));
+        return json(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }, req);
       }
       if (pathName === '/api/v1/search-history') {
         if (req.method === 'GET' || req.method === 'HEAD') return data(req, res, provider.searchHistory('GET', ''));
@@ -252,7 +268,7 @@
       var pathName = String(req.url || '/').split('?')[0];
       if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'POST' && req.method !== 'DELETE') return json(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }, req);
       if (pathName === '/api/v1/health') return json(res, 200, { ok: true, ready: !!(server && server.listening), service: 'hongguo-webos-service', port: port }, req);
-      if (pathName === '/api/v1/diagnostics') return json(res, 200, { ok: true, ready: !!(server && server.listening), port: port, lastStartupError: lastStartupError }, req);
+      if (pathName === '/api/v1/diagnostics') return json(res, 200, { ok: true, ready: !!(server && server.listening), port: port, lastStartupError: lastStartupError, video_model: provider.videoModelDiagnostics ? provider.videoModelDiagnostics() : { stage: 'unavailable', code: 'NOT_SUPPORTED' } }, req);
       if (pathName === '/api/v1/status') return json(res, 200, statusPayload(), req);
       if (pathName.indexOf('/api/') === 0 || pathName.indexOf('/minireel-proxy/media/') === 0 || pathName === '/minireel-proxy/resolve') {
         try { return handleProvider(req, res, pathName); } catch (error) { return failure(req, res, error); }
@@ -315,12 +331,12 @@
         function onListening() {
           server.removeListener('error', onError);
           if (server.address() && server.address().port) port = server.address().port;
-          console.log('[hongguo-webos] HTTP service listening on 127.0.0.1:' + port);
+          console.log('[hongguo-webos] HTTP service listening on ' + bindHost + ':' + port);
           resolve(server);
         }
         server.once('error', onError);
         server.once('listening', onListening);
-        server.listen(port, '127.0.0.1');
+        server.listen(port, bindHost);
       }).then(function (value) {
         serverStart = null;
         return value;
@@ -387,10 +403,11 @@
     luna.register('ping', function (message) { respondWhenReady(message, false); });
     luna.register('getDiagnostics', function (message) { respondWhenReady(message, true); });
     luna.register('shutdown', function (message) {
+      numberInput.close();
       stopServer().then(completeActivity).then(function () { message.respond({ returnValue: true }); });
     });
 
-    return { ensureReady: ensureReady, status: statusPayload, address: function () { return server && server.address(); }, shutdown: function () { return stopServer().then(completeActivity); } };
+    return { ensureReady: ensureReady, status: statusPayload, address: function () { return server && server.address(); }, shutdown: function () { numberInput.close(); return stopServer().then(completeActivity); } };
   }
 
   if (typeof module !== 'undefined' && module.exports) module.exports = createService;

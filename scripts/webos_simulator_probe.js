@@ -1,7 +1,7 @@
 (function (window, document) {
   'use strict';
 
-  var endpoint = 'http://127.0.0.1:17656/report';
+  var endpoint = window.HongguoWebOSSimulatorConfig && window.HongguoWebOSSimulatorConfig.reportURL || 'http://127.0.0.1:17656/report';
   var seriesID = '7696023326375808024';
   var episodes = ['7696024766267804697', '7696024585514257433'];
   var video = document.getElementById('hero-video');

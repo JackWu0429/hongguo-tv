@@ -151,7 +151,29 @@
   function canonical(country, local) { country = trim(country || '+86'); if (country.charAt(0) !== '+') country = '+' + country; var c = COUNTRY[country]; local = trim(local); if (!c || !/^\d+$/.test(local) || local.length < c.min || local.length > c.max || country === '+86' && !/^1[3-9]\d{9}$/.test(local)) throw fail(c ? '请输入正确的' + c.name + '手机号' : '暂不支持该国家或地区的手机号', 400, 'ACCOUNT_PHONE'); return country + local; }
   function splitPhone(phone) { var codes = Object.keys(COUNTRY).sort(function (a, b) { return b.length - a.length; }); for (var i = 0; i < codes.length; i++) if (phone.indexOf(codes[i]) === 0) return { code: codes[i], local: phone.slice(codes[i].length) }; return { code: '+86', local: phone }; }
   function mask(phone) { var p = splitPhone(phone), v = p.local; return p.code + (v.length > 4 ? v.slice(0, 2) + '****' + v.slice(-2) : '****'); }
-  function normalizeDrama(raw) { var m = asMap(raw); if (m.video_data && typeof m.video_data === 'object') m = asMap(m.video_data); if (m.common) { var merged = Object.assign({}, asMap(m.common), asMap(m.expand), asMap(asMap(m.expand).extra), asMap(asMap(m.expand).update_info)); if (!merged.series_id && !merged.book_id) merged.series_id = m.video_id || m.video_id_str; m = merged; } var id = str(m.series_id_str || m.series_id || m.book_id || m.book_id_str || m.video_id || m.video_id_str || m.id); var title = str(m.series_title || m.series_name || m.book_name || m.title || m.name); if (!validID(id) || !title) return null; return { series_id: id, title: title, cover: str(m.series_cover || m.book_cover || m.cover || m.thumb_url || m.thumb), intro: str(m.series_intro || m.book_intro || m.intro || m.abstract), episode_count: Number(m.episode_cnt || m.episode_count || m.video_count || 0), season_index: Number(m.season_index || 0), multi_season: !!m.is_multi_season, followed: !!(m.followed || m.has_subscribed || m.following_update), following_update: !!(m.following_update || m.followed), latest_watched_episode: Number(m.latest_watched_index || m.latest_watched_vid_index || 0), follow_update_time: Number(m.follow_update_time || m.update_time || 0), tags: Array.isArray(m.categories) ? m.categories.map(String) : [] }; }
+  function normalizeDrama(raw) { var m = asMap(raw); if (m.video_data && typeof m.video_data === 'object') m = asMap(m.video_data); if (m.common) { var merged = Object.assign({}, asMap(m.common), asMap(m.expand), asMap(asMap(m.expand).extra), asMap(asMap(m.expand).update_info)); if (!merged.series_id && !merged.book_id) merged.series_id = m.video_id || m.video_id_str; m = merged; } var id = str(m.series_id_str || m.series_id || m.book_id || m.book_id_str || m.video_id || m.video_id_str || m.id); var title = str(m.series_title || m.series_name || m.book_name || m.title || m.name); if (!validID(id) || !title) return null; return { series_id: id, title: title, cover: str(m.series_cover || m.book_cover || m.cover || m.thumb_url || m.thumb), intro: str(m.series_intro || m.book_intro || m.intro || m.abstract), episode_count: Number(m.episode_cnt || m.episode_count || m.video_count || 0), vid: str(m.vid || m.first_vid || ''), season_index: Number(m.season_index || 0), multi_season: !!m.is_multi_season, followed: !!(m.followed || m.has_subscribed || m.following_update), following_update: !!(m.following_update || m.followed), latest_watched_episode: Number(m.latest_watched_index || m.latest_watched_vid_index || 0), follow_update_time: Number(m.follow_update_time || m.update_time || 0), tags: Array.isArray(m.categories) ? m.categories.map(String) : [] }; }
+  function feedDramas(cells) {
+    var items = [];
+    function append(detail, disabled) {
+      if (disabled) return;
+      var item = normalizeDrama(detail);
+      if (!item || item.episode_count < 1) return;
+      item.vid = str(detail && detail.first_vid || item.vid);
+      items.push(item);
+    }
+    function walk(rows) {
+      (Array.isArray(rows) ? rows : []).forEach(function (cell) {
+        if (!cell || typeof cell !== 'object') return;
+        if (cell.video_detail) append(cell.video_detail, cell.disable_play === true || cell.disable_play === 1);
+        (Array.isArray(cell.video_data) ? cell.video_data : []).forEach(function (video) {
+          if (video && video.video_detail) append(video.video_detail, video.disable_play === true || video.disable_play === 1);
+        });
+        walk(cell.cell_data);
+      });
+    }
+    walk(cells);
+    return items;
+  }
   function normalizeReservation(raw) { var x = asMap(raw), sub = asMap(x.subscribe_data), drama = normalizeDrama(sub), id = str(x.item_id); if (!drama) { var title = str(x.name || x.item_name); if (!validID(id) || !title) return null; drama = { series_id: id, title: title, cover: str(x.cover), intro: str(x.item_desc), episode_count: 0, tags: [] }; } drama.reservation_id = validID(id) ? id : ''; drama.upcoming = !(x.is_online === true || x.is_online === 1 || x.is_online === '1'); drama.reserved = !!(x.has_subscribed || x.reserved); drama.publish_time = Number(x.schedule_publish_time || x.expected_publish_time || 0); drama.publish_text = str(x.sub_info || x.expected_rec_text); return drama; }
   function formPhone(phone) { return xorHex(wirePhone(phone)); }
   function passportForm(phone) { return { mobile: formPhone(phone), account_sdk_source: 'app', passport_support_flow: 'captcha,verify', mix_mode: '1' }; }
@@ -178,6 +200,40 @@
   Account.prototype.logout = function () { var keep = this.state.session; this.state = { version: 1, session: { device_id: keep.device_id, install_id: keep.install_id, device: keep.device, cookies: {}, registered: keep.registered } }; this.client = new Client(this.state.session, this.save, this.requestBuffer); this.login = null; this.syncing = false; this.syncError = ''; this.save(); return this.status(); };
   Account.prototype.authed = function () { if (!this.state.profile) throw fail('请先登录', 401, 'ACCOUNT_REQUIRED'); return this.client; };
   Account.prototype.call = function (pathname, method, query, body) { return this.authed().request(pathname, method, query, body, false).then(function (p) { var code = str(p && p.code), nested = errorCode(p); if (code !== '0' || nested && nested !== '0') throw fail(safeDescription(p), 502, 'ACCOUNT_UPSTREAM'); return p; }); };
+  Account.prototype.recommend = function (query) {
+    query = query || {};
+    var tab = str(query.channel || '45');
+    if (tab !== '45') return Promise.reject(fail('账号推荐频道无效', 400, 'ACCOUNT_RECOMMEND'));
+    var cellID = str(query.feed_cell || ''), planID = str(query.feed_plan || ''), self = this;
+    try { this.authed(); } catch (error) { return Promise.reject(error); }
+    var ownerID = str(this.state.profile.uid);
+    function verifyOwner() { if (!self.state.profile || str(self.state.profile.uid) !== ownerID) throw fail('账号已切换，请重新读取', 409, 'ACCOUNT_CHANGED'); }
+    if (cellID && planID) {
+      if (!validID(cellID) || !validID(planID)) return Promise.reject(fail('推荐分页标识无效', 400, 'ACCOUNT_RECOMMEND'));
+      var page = { bottom_tab_type: '7', client_req_type: '2', client_template: '7', change_type: '0', category_id: '0', cell_sub_id: '0', limit: '0', need_personal_recommend: '1', video_type_preferences_str: '[]', cell_id: cellID, plan_id: planID, tab_type: tab, offset: String(Number(query.offset) || 0), session_id: str(query.session_id || ''), filter_ids: str(query.shown || '') };
+      return this.call('/reading/bookapi/bookmall/cell/change/v', 'GET', page, null).then(function (payload) {
+        verifyOwner();
+        var data = dataOf(payload), view = asMap(data.cell_view), offset = Number(query.offset) || 0, nextOffset = Number(data.next_offset) || 0;
+        var hasMore = !!data.has_more && nextOffset > offset;
+        return { items: feedDramas(view.cell_data), has_more: hasMore, next_offset: nextOffset, session_id: str(data.session_id), feed_cell: cellID, feed_plan: planID, source: 'webos-account-recommend' };
+      });
+    }
+    var init = { bottom_tab_type: '7', landing_bottom_tab_type: '7', need_personal_recommend: '1', device_level: '3', screen_width_px: '1078', is_horizontal_screen: 'false', disable_digg_stat: 'false', auth_aweme: 'true', auth_backward: 'true', has_video_cache: 'false', last_tab_type: '0', last_tab_index: '0', tab_index: '0', req_rank_category_id: '0', video_type_preferences_str: '[]', tab_type: tab, offset: '0', session_id: '', client_req_type: '1' };
+    return this.call('/reading/bookapi/bookmall/tab/v', 'GET', init, null).then(function (payload) {
+      verifyOwner();
+      var data = dataOf(payload), tabs = Array.isArray(data.tab_item) ? data.tab_item : [], selected = null;
+      tabs.some(function (entry) { if (str(entry && entry.tab_type) === tab) { selected = entry; return true; } return false; });
+      if (!selected) throw fail('推荐响应没有对应频道', 502, 'ACCOUNT_RECOMMEND');
+      var cells = Array.isArray(selected.cell_data) ? selected.cell_data : [], followCell = null;
+      cells.some(function (cell) {
+        var id = str(cell && (cell.cell_id_str || cell.cell_id));
+        if (Number(cell && cell.show_type) === 648 && validID(id) && id !== '0') { followCell = cell; return true; }
+        return false;
+      });
+      if (!followCell) return { items: [], has_more: false, next_offset: 0, session_id: str(selected.session_id), feed_cell: '', feed_plan: str(data.bookstore_id), source: 'webos-account-recommend' };
+      return { items: feedDramas([followCell]), has_more: !!followCell.has_more, next_offset: Number(followCell.next_offset) || 0, session_id: str(selected.session_id), feed_cell: str(followCell.cell_id_str || followCell.cell_id), feed_plan: str(data.bookstore_id), source: 'webos-account-recommend' };
+    });
+  };
   Account.prototype.follow = function (query) { query = query || {}; return this.call('/reading/user/subscribe/list/v1/', 'GET', { cursor: query.cursor || '', count: '20', tab_type: '14' }, null).then(function (p) { var d = dataOf(p), info = asMap(d.follow_list_info), rows = d.mix_data || d.follow_update_list || d.subscribe_items || [], items = []; if (!Array.isArray(rows)) throw fail('追更响应列表格式无效', 502, 'ACCOUNT_FOLLOW'); rows.forEach(function (row) { var item = normalizeDrama(row); if (item) { item.followed = true; item.following_update = true; items.push(item); } }); var cursor = str(d.cursor || d.next_cursor || info.cursor), more = !!(d.has_more || info.has_more || asMap(d.comment_list_info).has_more); return { items: items, has_more: more && !!cursor && cursor !== str(query.cursor), next_cursor: cursor, session_id: str(d.session_id), source: 'webos-account' }; }); };
   Account.prototype.setFollow = function (id, enabled) { if (!validID(id)) return Promise.reject(fail('追更项目无效', 400, 'ACCOUNT_FOLLOW')); return this.call('/reading/user/subscribe/delete/v', 'POST', {}, { series_id: id, book_id: id, book_type: 2, op_type: enabled ? 1 : 2 }).then(function () { return { following_update: !!enabled }; }); };
   Account.prototype.reservations = function (query) { var q = { offset: String(Number(query.offset) || 0), subscribe_offset: '0', tab_type: '13', subscribe_order_type: '0', swipe_type: '0', need_calendar_schema: 'false', limit: '20', is_online: query.mode !== 'upcoming' ? 'true' : 'false' }; if (query.session_id) q.session_id = query.session_id; return this.call('/reading/user/subscribe/list/v1/', 'GET', q, null).then(function (p) { var d = dataOf(p), rows = d.subscribe_items || [], items = []; rows.forEach(function (row) { var item = normalizeReservation(row); if (item) { item.reserved = true; items.push(item); } }); var offset = Number(query.offset) || 0, next = Number(d.next_offset || 0); if (d.has_more && next <= offset && items.length) next = offset + 20; return { items: items, has_more: !!d.has_more && next > offset, next_offset: next, session_id: str(d.session_id), online_total_count: Number(d.online_total_count || 0), offline_total_count: Number(d.offline_total_count || 0) }; }); };
