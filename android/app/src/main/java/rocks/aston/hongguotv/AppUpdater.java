@@ -22,6 +22,7 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import androidx.core.content.ContextCompat;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -80,8 +81,7 @@ final class AppUpdater {
         catch (Exception invalid) { latest = null; }
         if (latest != null && latest.code > BuildConfig.VERSION_CODE && latest.minSdk <= Build.VERSION.SDK_INT) state = "available";
         IntentFilter installResultFilter = new IntentFilter(UpdateInstallReceiver.ACTION_RESULT);
-        if (Build.VERSION.SDK_INT >= 33) activity.registerReceiver(installResultReceiver, installResultFilter, Context.RECEIVER_NOT_EXPORTED);
-        else activity.registerReceiver(installResultReceiver, installResultFilter);
+        ContextCompat.registerReceiver(activity, installResultReceiver, installResultFilter, ContextCompat.RECEIVER_NOT_EXPORTED);
         installResultReceiverRegistered = true;
         publish();
     }
