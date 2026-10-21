@@ -37,4 +37,24 @@ public class InputKeyPolicyTest {
         assertFalse(InputKeyPolicy.routeFallbackNavigationKey(true, true, true));
         assertFalse(InputKeyPolicy.routeSearchKey(false, true, false));
     }
+
+    @Test public void imeFocusLossAfterSearchFieldFocusKeepsSuggestionNavigationRouted() {
+        SearchNavigationState state = new SearchNavigationState();
+
+        // The document can have focus when the input opens; the IME may take
+        // native focus later, after that one-time snapshot was read.
+        state.arm();
+        assertTrue(state.routeSearchKey(true));
+
+        // Moving from the editor to a suggestion ends text editing, but the
+        // app-owned focus graph must continue receiving remote keys.
+        state.setRemoteNavigationTarget(true);
+        assertTrue(state.routeSearchKey(false));
+        assertTrue(state.routeFallbackNavigationKey(false));
+        assertFalse(state.routeFallbackNavigationKey(true));
+
+        state.reset();
+        assertFalse(state.routeSearchKey(false));
+        assertFalse(state.routeFallbackNavigationKey(false));
+    }
 }

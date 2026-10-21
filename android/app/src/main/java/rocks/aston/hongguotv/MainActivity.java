@@ -46,8 +46,7 @@ public class MainActivity extends Activity {
     private boolean keyboardVisible;
     private boolean accountEditing;
     private boolean searchEditing;
-    private boolean searchNavigationFallback;
-    private boolean remoteNavigationTarget;
+    private final SearchNavigationState searchNavigationState = new SearchNavigationState();
     private final SearchInputFocusPolicy searchInputFocusPolicy = new SearchInputFocusPolicy();
     private boolean inputBackPending;
     private LinearLayout startupPanel;
@@ -147,8 +146,7 @@ public class MainActivity extends Activity {
                 pageReady = false;
                 accountEditing = false;
                 searchEditing = false;
-                searchNavigationFallback = false;
-                remoteNavigationTarget = false;
+                searchNavigationState.reset();
                 routedVerticalKeys = 0;
                 routedHorizontalKeys = 0;
                 routedConfirmKeys = 0;
@@ -399,8 +397,7 @@ public class MainActivity extends Activity {
     public boolean dispatchKeyEvent(KeyEvent event) {
         int verticalBit = event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP ? 1 : event.getKeyCode() == KeyEvent.KEYCODE_DPAD_DOWN ? 2 : 0;
         int horizontalBit = event.getKeyCode() == KeyEvent.KEYCODE_DPAD_LEFT ? 1 : event.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT ? 2 : 0;
-        boolean fallbackNavigation = InputKeyPolicy.routeFallbackNavigationKey(
-                searchNavigationFallback, remoteNavigationTarget, searchEditing || accountEditing);
+        boolean fallbackNavigation = searchNavigationState.routeFallbackNavigationKey(searchEditing || accountEditing);
         if (horizontalBit != 0) {
             if (event.getAction() == KeyEvent.ACTION_UP && (routedHorizontalKeys & horizontalBit) != 0) {
                 routedHorizontalKeys &= ~horizontalBit;
@@ -421,7 +418,7 @@ public class MainActivity extends Activity {
             // The account page uses an app-owned HTML numeric keypad, so use
             // the same JS router as browser keys after native editing ends.
             boolean pageFocus = webView != null && webView.hasFocus() ||
-                    InputKeyPolicy.routeSearchKey(searchEditing, searchNavigationFallback, remoteNavigationTarget);
+                    searchNavigationState.routeSearchKey(searchEditing);
             if (event.getAction() == KeyEvent.ACTION_DOWN && pageReady && pageFocus &&
                     InputKeyPolicy.routeVerticalKey(accountEditing, isKeyboardVisible())) {
                 routedVerticalKeys |= verticalBit;
@@ -499,10 +496,7 @@ public class MainActivity extends Activity {
             if (destroyed || !pageReady || !activityForeground || webView == null) return;
             if (searchInputFocusPolicy.shouldIgnoreFocusRequest(SystemClock.uptimeMillis())) return;
             searchEditing = true;
-            // Keep Android remote navigation on the app-owned focus graph
-            // after the IME changes WebView focus, even if the initial DOM
-            // focus snapshot was true.
-            searchNavigationFallback = true;
+            searchNavigationState.arm();
             accountEditing = false;
             inputBackPending = false;
             routedVerticalKeys = 0;
@@ -515,7 +509,7 @@ public class MainActivity extends Activity {
         public void setRemoteNavigationTarget(boolean active) {
             runOnUiThread(() -> {
                 if (destroyed) return;
-                remoteNavigationTarget = active && pageReady && activityForeground;
+                searchNavigationState.setRemoteNavigationTarget(active && pageReady && activityForeground);
             });
         }
 
@@ -616,8 +610,7 @@ public class MainActivity extends Activity {
         routedVerticalKeys = 0;
         routedHorizontalKeys = 0;
         routedConfirmKeys = 0;
-        searchNavigationFallback = false;
-        remoteNavigationTarget = false;
+        searchNavigationState.reset();
         completeAccountEditing();
         completeSearchEditing(true);
         if (startupAnimation != null) startupAnimation.stop();
@@ -649,8 +642,7 @@ public class MainActivity extends Activity {
         pageReady = false;
         accountEditing = false;
         searchEditing = false;
-        searchNavigationFallback = false;
-        remoteNavigationTarget = false;
+        searchNavigationState.reset();
         if (appUpdater != null) appUpdater.destroy();
         if (homeChannelManager != null) {
             homeChannelManager.destroy();

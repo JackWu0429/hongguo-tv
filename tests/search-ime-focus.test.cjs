@@ -38,9 +38,11 @@ test('Android keeps D-pad and confirm routed through the search focus graph afte
   const focusinStart = app.indexOf("document.addEventListener('focusin'");
   const focusin = app.slice(focusinStart, app.indexOf("document.querySelectorAll('.side-item')", focusinStart));
   assert.match(focusin, /setRemoteNavigationTarget\(!editingTarget && focusables\(\)\.indexOf\(target\) >= 0\)/);
-  assert.match(activity, /routeFallbackNavigationKey\(\s*searchNavigationFallback, remoteNavigationTarget, searchEditing \|\| accountEditing\)/);
-  assert.match(activity, /searchEditing = true;[\s\S]*?searchNavigationFallback = true;/);
+  assert.match(activity, /searchNavigationState\.routeFallbackNavigationKey\(searchEditing \|\| accountEditing\)/);
+  const beginEditing = activity.slice(activity.indexOf('private void beginSearchEditingOnUiThread'), activity.indexOf('@JavascriptInterface\n        public void setRemoteNavigationTarget'));
+  assert.match(beginEditing, /searchNavigationState\.arm\(\)/);
+  assert.doesNotMatch(beginEditing, /if \(!documentHasFocus\)[\s\S]*?searchNavigationState\.arm\(\)/);
   assert.match(activity, /searchConfirmKeyBit\(event.getKeyCode\(\)\)[\s\S]*?remoteKey\(" \+ event\.getKeyCode\(\)/);
-  assert.match(activity, /public void setRemoteNavigationTarget\(boolean active\)/);
+  assert.match(activity, /public void setRemoteNavigationTarget\(boolean active\)[\s\S]*?searchNavigationState\.setRemoteNavigationTarget/);
   assert.match(app, /function remoteKey\(keyCode, repeat\) \{\s*if \(\[19, 20, 21, 22, 23, 66, 160\]/);
 });
