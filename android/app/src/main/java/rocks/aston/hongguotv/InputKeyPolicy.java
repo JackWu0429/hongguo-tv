@@ -10,6 +10,10 @@ final class InputKeyPolicy {
         return keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE;
     }
 
+    static boolean shouldDismissInputBack(InputEditingState.Snapshot state) {
+        return state != null && state.shouldDismissBack();
+    }
+
     static boolean routeVerticalKey(boolean editing, boolean keyboardVisible) {
         // The old login implementation used a native IME. The current login
         // screen uses an HTML keypad, so a stale Android 6 visible-frame

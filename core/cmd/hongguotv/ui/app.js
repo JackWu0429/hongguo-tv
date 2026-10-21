@@ -297,6 +297,7 @@
   var searchSuggestionOpen = false;
   var searchSuggestionItems = [];
   var searchSuggestionReturnKey = '';
+  var searchSuggestionFocusedKey = '';
   var searchSuggestionDismissedQuery = '';
   var tailTimer = null;
   var playerReturnPage = null;
@@ -861,6 +862,16 @@
     paintFocus(element);
   }
 
+  function remoteFocusTarget() {
+    var painted = document.querySelector('.is-focused');
+    if (painted && focusables().indexOf(painted) >= 0) return painted;
+    var active = document.activeElement;
+    if (active && focusables().indexOf(active) >= 0) return active;
+    var remembered = lastPageFocus[pageMode()];
+    if (remembered && focusables().indexOf(remembered) >= 0) return remembered;
+    return null;
+  }
+
   function paintFocus(element) {
     document.querySelectorAll('.is-focused').forEach(function (node) { node.classList.remove('is-focused'); });
     if (element) element.classList.add('is-focused');
@@ -975,6 +986,10 @@
     // The default scroll behavior is sufficient; old WebViews have no
     // focus-options overload.
     var previous = document.activeElement;
+    if (typeof androidShell !== 'undefined' && androidShell &&
+        (!previous || previous === document.body || focusables().indexOf(previous) < 0) && remoteFocusTarget()) {
+      previous = remoteFocusTarget();
+    }
     if (previous && previous.tagName === 'INPUT' && element.tagName !== 'INPUT' && window.HongguoTVInput) window.HongguoTVInput.finishEditing();
     element.focus();
     markFocus(element);
@@ -1753,7 +1768,7 @@
       numericKeypad.handleKey(key, !!event.repeat);
       event.preventDefault(); event.stopPropagation(); return;
     }
-    var current = document.activeElement;
+    var current = event.remoteNavigation ? remoteFocusTarget() || document.activeElement : document.activeElement;
     if (typeof desktopShell !== 'undefined' && desktopShell && window.HongguoDesktopUI.editing(current)) {
       if (event.isComposing || event.keyCode === 229 || key !== 'Enter') return;
       if (current.id === 'search-input') submitSearch();
@@ -1852,7 +1867,7 @@
   function remoteKey(keyCode, repeat) {
     if ([19, 20, 21, 22, 23, 66, 160].indexOf(keyCode) < 0) return false;
     var handled = false;
-    handleKey({ keyCode: keyCode, repeat: !!repeat, preventDefault: function () { handled = true; }, stopPropagation: function () {} });
+    handleKey({ keyCode: keyCode, repeat: !!repeat, remoteNavigation: true, preventDefault: function () { handled = true; }, stopPropagation: function () {} });
     return handled;
   }
 
@@ -2529,6 +2544,7 @@
     fullscreenExitKeepsHidden = false;
   }
   function handleBack() {
+    var current = typeof androidShell !== 'undefined' && androidShell ? remoteFocusTarget() || document.activeElement : document.activeElement;
     if (coreConnectionModalOpen) { closeCoreConnectionModal(true); return true; }
     if (autoCinemaCandidate) cancelPendingAutoCinema();
     if (endRecommendations && endRecommendations.close(true)) return true;
@@ -2552,9 +2568,9 @@
       revealControls();
       goFocus(activeSidebar());
     }
-    else if (isPlaybackPage() && zoneOf(document.activeElement) !== 'sidebar' && !shell.classList.contains('is-controls-hidden')) hideControls();
+    else if (isPlaybackPage() && zoneOf(current) !== 'sidebar' && !shell.classList.contains('is-controls-hidden')) hideControls();
     else if (pageMode() === 'player') leavePlayer();
-    else if (zoneOf(document.activeElement) !== 'sidebar') goFocus(activeSidebar());
+    else if (zoneOf(current) !== 'sidebar') goFocus(activeSidebar());
     else return false;
     return true;
   }
@@ -2643,7 +2659,7 @@
     pendingAccountHomeProgram = null;
     startPlayer({ series_id: program.series_id, title: program.title, intro: '', cover: '' }, null, { cardLaunch: !!program.cardLaunch });
   }
-  window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, desktopFullscreenChanged: desktopFullscreenChanged, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {}, finishSearchEditing: function () { if (document.activeElement === searchInput) goFocus(firstSearchAction() || firstSearchFilter()); }, openHomeProgram: openHomeProgram };
+  window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, desktopFullscreenChanged: desktopFullscreenChanged, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {}, finishSearchEditing: function () { var current = typeof androidShell !== 'undefined' && androidShell ? remoteFocusTarget() || document.activeElement : document.activeElement; if (current === searchInput) goFocus(searchSuggestionOpen ? firstVisible('.search-suggestion') || firstSearchAction() || firstSearchFilter() : firstSearchAction() || firstSearchFilter()); }, openHomeProgram: openHomeProgram };
 
   function isLibraryPage() { return ['history', 'favorites', 'likes'].indexOf(pageMode()) >= 0; }
   function libraryEntry(id) { return libraryData.entries.filter(function (entry) { return entry.drama.series_id === id; })[0] || null; }
@@ -4776,6 +4792,7 @@
     searchSuggestionRequest = null;
     ++searchSuggestionGeneration;
     searchSuggestionOpen = false;
+    searchSuggestionFocusedKey = '';
     if (searchSuggestions) {
       searchSuggestions.classList.add('is-hidden');
       searchSuggestions.setAttribute('aria-hidden', 'true');
@@ -4790,9 +4807,10 @@
 
   function renderSearchSuggestions(items) {
     if (!searchSuggestions) return;
-    var activeElement = document.activeElement;
-    var previousKey = activeElement && activeElement.dataset && activeElement.dataset.suggestionKey;
-    var restoreSuggestionFocus = !!(previousKey && activeElement.closest && activeElement.closest('#search-suggestions'));
+    var activeElement = typeof androidShell !== 'undefined' && androidShell ? remoteFocusTarget() || document.activeElement : document.activeElement;
+    var activeKey = activeElement && activeElement.dataset && activeElement.dataset.suggestionKey;
+    var restoreSuggestionFocus = !!(activeElement && activeElement.closest && activeElement.closest('#search-suggestions')) || !!searchSuggestionFocusedKey;
+    var previousKey = activeKey || searchSuggestionFocusedKey;
     searchSuggestionItems = (items || []).slice(0, 10);
     searchSuggestions.innerHTML = '';
     searchSuggestionItems.forEach(function (item, index) {
@@ -4828,12 +4846,13 @@
     searchSuggestionOpen = true;
     searchSuggestions.classList.remove('is-hidden'); searchSuggestions.setAttribute('aria-hidden', 'false');
     searchInput.setAttribute('aria-expanded', 'true');
-    if (previousKey) {
+    if (restoreSuggestionFocus) {
       var same = null;
       Array.prototype.forEach.call(searchSuggestions.querySelectorAll('.search-suggestion'), function (button) {
         if (button.dataset.suggestionKey === previousKey) same = button;
       });
-      if (same && restoreSuggestionFocus) goFocus(same);
+      var target = same || firstVisible('.search-suggestion');
+      if (target) goFocus(target);
     }
   }
 
@@ -6625,7 +6644,11 @@
     if (androidShell && window.HongguoTVInput && typeof window.HongguoTVInput.setRemoteNavigationTarget === 'function') {
       var target = event.target;
       var editingTarget = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
-      window.HongguoTVInput.setRemoteNavigationTarget(!editingTarget && focusables().indexOf(target) >= 0);
+      // Search edit mode already blocks fallback keys; keep the last page
+      // target so a delayed IME focus callback cannot disable suggestion nav.
+      if (target.id !== 'search-input') window.HongguoTVInput.setRemoteNavigationTarget(!editingTarget && focusables().indexOf(target) >= 0);
+      if (target.classList && target.classList.contains('search-suggestion')) searchSuggestionFocusedKey = target.dataset.suggestionKey || '';
+      else searchSuggestionFocusedKey = '';
     }
     if (endRecommendations && endRecommendations.isOpen()) {
       if (event.target !== document.getElementById('end-recommendations-track').children[0]) endRecommendations.cancelAutoplay();

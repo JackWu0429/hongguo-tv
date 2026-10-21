@@ -27,11 +27,14 @@ test('Back closes suggestions and returns to the input; the same query stays dis
   assert.match(source, /searchInput\.addEventListener\('input', function \(\) \{\s*searchSuggestionDismissedQuery = '';/);
 });
 
-test('suggestion refresh preserves a focused item across DOM replacement', () => {
+test('suggestion refresh preserves focus by key when the old DOM node is replaced', () => {
   const render = block('renderSearchSuggestions', 'restoreSearchSuggestionFocus');
-  assert.match(render, /var activeElement = document\.activeElement/);
-  assert.match(render, /restoreSuggestionFocus = !!\(previousKey && activeElement\.closest && activeElement\.closest\('#search-suggestions'\)\)/);
-  assert.match(render, /if \(same && restoreSuggestionFocus\) goFocus\(same\)/);
+  assert.match(render, /var activeElement = typeof androidShell !== 'undefined' && androidShell \? remoteFocusTarget\(\) \|\| document\.activeElement : document\.activeElement/);
+  assert.match(render, /restoreSuggestionFocus = !!\(activeElement && activeElement\.closest && activeElement\.closest\('#search-suggestions'\)\) \|\| !!searchSuggestionFocusedKey/);
+  assert.match(render, /var previousKey = activeKey \|\| searchSuggestionFocusedKey/);
+  assert.match(render, /var target = same \|\| firstVisible\('\.search-suggestion'\)/);
+  assert.match(render, /if \(target\) goFocus\(target\)/);
+  assert.match(source, /if \(target\.classList && target\.classList\.contains\('search-suggestion'\)\) searchSuggestionFocusedKey = target\.dataset\.suggestionKey \|\| '';\s*else searchSuggestionFocusedKey = ''/);
   assert.match(render, /button\.addEventListener\('focus', function \(\) \{\s*try \{ button\.scrollIntoView\(\{ block: 'nearest' \}\)/);
   assert.match(fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8'), /\.search-suggestions\s*\{[^}]*max-height:\s*60vh/);
 });
@@ -39,10 +42,12 @@ test('suggestion refresh preserves a focused item across DOM replacement', () =>
 test('search suggestion focus remains in the native search navigation region for remote selection', () => {
   const focusinStart = source.indexOf("document.addEventListener('focusin'");
   const focusin = source.slice(focusinStart, source.indexOf("document.querySelectorAll('.side-item')", focusinStart));
-  assert.match(focusin, /setRemoteNavigationTarget\(!editingTarget && focusables\(\)\.indexOf\(target\) >= 0\)/);
+  assert.match(focusin, /if \(target\.id !== 'search-input'\) window\.HongguoTVInput\.setRemoteNavigationTarget\(!editingTarget && focusables\(\)\.indexOf\(target\) >= 0\)/);
   assert.match(source, /if \(zone === 'searchInput'\)[\s\S]*?searchSuggestionOpen \? firstVisible\('\.search-suggestion'\)/);
   assert.match(source, /if \(zone === 'searchSuggestions'\)[\s\S]*?moveWithinZone\(zone, current, direction\)/);
   assert.match(source, /if \(key === 'Enter'\)[\s\S]*?current\.click\(\)/);
+  assert.match(source, /function remoteFocusTarget\(\)[\s\S]*?document\.querySelector\('\.is-focused'\)[\s\S]*?focusables\(\)\.indexOf\(painted\)/);
+  assert.match(source, /event\.remoteNavigation \? remoteFocusTarget\(\) \|\| document\.activeElement/);
 });
 
 test('suggestion fallback icons use fixed-size inline SVG shapes for legacy Android WebViews', () => {

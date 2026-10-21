@@ -41,19 +41,17 @@ public class MainActivity extends Activity {
     private WebView webView;
     private NativePlayerAdapter playerBridge;
     private boolean backPending;
-    private boolean activityForeground;
+    private volatile boolean activityForeground;
     private AlertDialog exitDialog;
     private boolean keyboardVisible;
-    private boolean accountEditing;
-    private boolean searchEditing;
+    private final InputEditingState inputEditingState = new InputEditingState();
     private final SearchNavigationState searchNavigationState = new SearchNavigationState();
     private final SearchInputFocusPolicy searchInputFocusPolicy = new SearchInputFocusPolicy();
-    private boolean inputBackPending;
     private LinearLayout startupPanel;
     private TextView startupMessage;
     private Button startupRetry;
     private Thread startupThread;
-    private boolean destroyed;
+    private volatile boolean destroyed;
     private boolean pageLoadFailed;
     private volatile boolean pageReady;
     private int routedVerticalKeys;
@@ -65,14 +63,14 @@ public class MainActivity extends Activity {
     private String pendingHomeProgram;
     private volatile String diagnosticDeviceJSON = "{}";
     private final Runnable restoreFullscreen = () -> {
-        if (activityForeground && hasWindowFocus() && !isFinishing() && !isDestroyed() && !accountEditing && !searchEditing && !isKeyboardVisible()) {
+        if (activityForeground && hasWindowFocus() && !isFinishing() && !isDestroyed() && !inputEditingState.snapshot().isEditing() && !isKeyboardVisible()) {
             applyFullscreen();
         }
     };
     private final ViewTreeObserver.OnGlobalLayoutListener keyboardLayoutListener = () -> {
         boolean visible = isKeyboardVisible();
         if (keyboardVisible && !visible) {
-            if (searchEditing) completeSearchEditing(true);
+            if (inputEditingState.snapshot().isSearchEditing()) completeSearchEditing(true);
             else completeAccountEditing();
             scheduleFullscreen();
         }
@@ -94,12 +92,15 @@ public class MainActivity extends Activity {
             public boolean onKeyPreIme(int keyCode, KeyEvent event) {
                 // Floating TV keyboards have no reliable resize/hide signal.
                 // Finish explicitly before Back can be consumed by the IME.
-                if (InputKeyPolicy.isBackKey(keyCode) && (accountEditing || searchEditing || inputBackPending)) {
-                    if (event.getAction() == KeyEvent.ACTION_DOWN) inputBackPending = true;
+                if (InputKeyPolicy.isBackKey(keyCode) && InputKeyPolicy.shouldDismissInputBack(inputEditingState.snapshot())) {
+                    if (event.getAction() == KeyEvent.ACTION_DOWN) inputEditingState.beginBack();
                     if (event.getAction() == KeyEvent.ACTION_UP) {
-                        inputBackPending = false;
-                        if (accountEditing) completeAccountEditing();
+                        InputEditingState.Snapshot editing = inputEditingState.snapshot();
+                        inputEditingState.cancelBack();
+                        if (editing.isAccountEditing()) completeAccountEditing();
                         else completeSearchEditing(true);
+                    } else if (event.getAction() == KeyEvent.ACTION_CANCEL) {
+                        inputEditingState.cancelBack();
                     }
                     return true;
                 }
@@ -144,8 +145,7 @@ public class MainActivity extends Activity {
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 pageLoadFailed = false;
                 pageReady = false;
-                accountEditing = false;
-                searchEditing = false;
+                inputEditingState.reset();
                 searchNavigationState.reset();
                 routedVerticalKeys = 0;
                 routedHorizontalKeys = 0;
@@ -322,7 +322,7 @@ public class MainActivity extends Activity {
 
     private void grantWebViewFocus(boolean repairingSearchInput) {
         if (destroyed || webView == null) return;
-        if (!repairingSearchInput && (accountEditing || searchEditing || isKeyboardVisible())) return;
+        if (!repairingSearchInput && (inputEditingState.snapshot().isEditing() || isKeyboardVisible())) return;
         webView.clearFocus();
         webView.requestFocus(View.FOCUS_DOWN);
     }
@@ -338,7 +338,7 @@ public class MainActivity extends Activity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus && activityForeground && !accountEditing && !searchEditing && !isKeyboardVisible()) {
+        if (hasFocus && activityForeground && !inputEditingState.snapshot().isEditing() && !isKeyboardVisible()) {
             grantWebViewFocus(false);
             applyFullscreen();
         }
@@ -397,7 +397,8 @@ public class MainActivity extends Activity {
     public boolean dispatchKeyEvent(KeyEvent event) {
         int verticalBit = event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP ? 1 : event.getKeyCode() == KeyEvent.KEYCODE_DPAD_DOWN ? 2 : 0;
         int horizontalBit = event.getKeyCode() == KeyEvent.KEYCODE_DPAD_LEFT ? 1 : event.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT ? 2 : 0;
-        boolean fallbackNavigation = searchNavigationState.routeFallbackNavigationKey(searchEditing || accountEditing);
+        InputEditingState.Snapshot editing = inputEditingState.snapshot();
+        boolean fallbackNavigation = searchNavigationState.routeFallbackNavigationKey(editing.isEditing());
         if (horizontalBit != 0) {
             if (event.getAction() == KeyEvent.ACTION_UP && (routedHorizontalKeys & horizontalBit) != 0) {
                 routedHorizontalKeys &= ~horizontalBit;
@@ -418,9 +419,9 @@ public class MainActivity extends Activity {
             // The account page uses an app-owned HTML numeric keypad, so use
             // the same JS router as browser keys after native editing ends.
             boolean pageFocus = webView != null && webView.hasFocus() ||
-                    searchNavigationState.routeSearchKey(searchEditing);
+                    searchNavigationState.routeSearchKey(editing.isSearchEditing());
             if (event.getAction() == KeyEvent.ACTION_DOWN && pageReady && pageFocus &&
-                    InputKeyPolicy.routeVerticalKey(accountEditing, isKeyboardVisible())) {
+                    InputKeyPolicy.routeVerticalKey(editing.isAccountEditing(), isKeyboardVisible())) {
                 routedVerticalKeys |= verticalBit;
                 webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.remoteKey(" + event.getKeyCode() + "," + (event.getRepeatCount() > 0) + ")", null);
                 return true;
@@ -439,10 +440,12 @@ public class MainActivity extends Activity {
             }
         }
         if (InputKeyPolicy.isBackKey(event.getKeyCode())) {
-            if (searchEditing || accountEditing) {
+            if (InputKeyPolicy.shouldDismissInputBack(editing)) {
                 if (event.getAction() == KeyEvent.ACTION_UP) {
-                    if (accountEditing) completeAccountEditing();
+                    if (editing.isAccountEditing()) completeAccountEditing();
                     else completeSearchEditing(true);
+                } else if (event.getAction() == KeyEvent.ACTION_CANCEL) {
+                    inputEditingState.cancelBack();
                 }
                 return true;
             }
@@ -472,9 +475,7 @@ public class MainActivity extends Activity {
         public void startAccountEditing() {
             runOnUiThread(() -> {
                 if (destroyed || !pageReady || !activityForeground || webView == null) return;
-                accountEditing = true;
-                searchEditing = false;
-                inputBackPending = false;
+                inputEditingState.beginAccount();
                 routedVerticalKeys = 0;
                 // Observe the original editable WebView field. Its natural
                 // activation creates the numeric IME connection; do not
@@ -484,21 +485,17 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void startSearchEditing() {
-            runOnUiThread(() -> beginSearchEditingOnUiThread(true));
+            requestSearchEditing(true);
         }
 
         @JavascriptInterface
         public void beginSearchEditing(boolean documentHasFocus) {
-            runOnUiThread(() -> beginSearchEditingOnUiThread(documentHasFocus));
+            requestSearchEditing(documentHasFocus);
         }
 
         private void beginSearchEditingOnUiThread(boolean documentHasFocus) {
-            if (destroyed || !pageReady || !activityForeground || webView == null) return;
-            if (searchInputFocusPolicy.shouldIgnoreFocusRequest(SystemClock.uptimeMillis())) return;
-            searchEditing = true;
+            if (destroyed || !pageReady || !activityForeground || webView == null || !inputEditingState.snapshot().isSearchEditing()) return;
             searchNavigationState.arm();
-            accountEditing = false;
-            inputBackPending = false;
             routedVerticalKeys = 0;
             if (searchInputFocusPolicy.shouldRepairRendererFocus(documentHasFocus)) {
                 grantWebViewFocus(true);
@@ -507,20 +504,18 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void setRemoteNavigationTarget(boolean active) {
-            runOnUiThread(() -> {
-                if (destroyed) return;
-                searchNavigationState.setRemoteNavigationTarget(active && pageReady && activityForeground);
-            });
+            if (destroyed) return;
+            searchNavigationState.setRemoteNavigationTarget(active && pageReady && activityForeground);
         }
 
         @JavascriptInterface
         public void finishEditing() {
+            boolean wasSearchEditing = inputEditingState.finishCurrent() == InputEditingState.Target.SEARCH;
             runOnUiThread(() -> {
                 if (destroyed || webView == null) return;
-                if (searchEditing) searchInputFocusPolicy.onImeDismissed(SystemClock.uptimeMillis());
+                if (inputEditingState.snapshot().isEditing()) return;
+                if (wasSearchEditing) searchInputFocusPolicy.onImeDismissed(SystemClock.uptimeMillis());
                 else searchInputFocusPolicy.onEditingFinished();
-                accountEditing = false;
-                searchEditing = false;
                 InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
                 if (keyboard != null) keyboard.hideSoftInputFromWindow(webView.getWindowToken(), 0);
                 scheduleFullscreen();
@@ -536,19 +531,25 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void requestSearchEditing(boolean documentHasFocus) {
+        if (destroyed || !pageReady || !activityForeground || webView == null ||
+                searchInputFocusPolicy.shouldIgnoreFocusRequest(SystemClock.uptimeMillis())) return;
+        inputEditingState.beginSearch();
+        searchNavigationState.arm();
+        runOnUiThread(() -> beginSearchEditingOnUiThread(documentHasFocus));
+    }
+
     private void completeAccountEditing() {
-        if (!accountEditing) return;
-        accountEditing = false;
+        if (inputEditingState.finishAccount() != InputEditingState.Target.ACCOUNT) return;
         if (!destroyed && pageReady && webView != null) {
             webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.finishAccountEditing()", null);
         }
     }
 
     private void completeSearchEditing(boolean returnFocusToSearchActions) {
-        boolean wasEditing = searchEditing;
+        boolean wasEditing = inputEditingState.finishSearch() == InputEditingState.Target.SEARCH;
+        if (!wasEditing && inputEditingState.snapshot().isAccountEditing()) return;
         if (wasEditing) searchInputFocusPolicy.onImeDismissed(SystemClock.uptimeMillis());
-        searchEditing = false;
-        inputBackPending = false;
         routedVerticalKeys = 0;
         InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (keyboard != null && webView != null) keyboard.hideSoftInputFromWindow(webView.getWindowToken(), 0);
@@ -606,7 +607,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         activityForeground = false;
-        inputBackPending = false;
+        inputEditingState.cancelBack();
         routedVerticalKeys = 0;
         routedHorizontalKeys = 0;
         routedConfirmKeys = 0;
@@ -640,8 +641,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         destroyed = true;
         pageReady = false;
-        accountEditing = false;
-        searchEditing = false;
+        inputEditingState.reset();
         searchNavigationState.reset();
         if (appUpdater != null) appUpdater.destroy();
         if (homeChannelManager != null) {

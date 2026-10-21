@@ -12,6 +12,35 @@ public class InputKeyPolicyTest {
         assertFalse(InputKeyPolicy.isBackKey(KeyEvent.KEYCODE_DPAD_CENTER));
     }
 
+    @Test public void backDismissesAnActiveInputBeforeReturningToThePage() {
+        InputEditingState state = new InputEditingState();
+        assertFalse(InputKeyPolicy.shouldDismissInputBack(state.snapshot()));
+        state.beginSearch();
+        assertTrue(InputKeyPolicy.shouldDismissInputBack(state.snapshot()));
+        state.beginBack();
+        state.finishSearch();
+        assertTrue(InputKeyPolicy.shouldDismissInputBack(state.snapshot()));
+        state.cancelBack();
+        assertFalse(InputKeyPolicy.shouldDismissInputBack(state.snapshot()));
+        state.beginAccount();
+        assertTrue(InputKeyPolicy.shouldDismissInputBack(state.snapshot()));
+    }
+
+    @Test public void editorTransitionsAreMutuallyExclusiveWithoutLosingAnInFlightBack() {
+        InputEditingState state = new InputEditingState();
+        state.beginAccount();
+        state.beginBack();
+        state.beginSearch();
+
+        InputEditingState.Snapshot snapshot = state.snapshot();
+        assertTrue(snapshot.isSearchEditing());
+        assertFalse(snapshot.isAccountEditing());
+        assertTrue(snapshot.backPending);
+        assertFalse(state.finishAccount() == InputEditingState.Target.ACCOUNT);
+        assertTrue(state.snapshot().isSearchEditing());
+        assertTrue(state.snapshot().backPending);
+    }
+
     @Test public void floatingKeyboardKeepsDirectionalKeysEvenWithoutWindowResize() {
         assertFalse(InputKeyPolicy.routeVerticalKey(true, false));
         assertFalse(InputKeyPolicy.routeVerticalKey(true, true));
@@ -56,5 +85,14 @@ public class InputKeyPolicyTest {
         state.reset();
         assertFalse(state.routeSearchKey(false));
         assertFalse(state.routeFallbackNavigationKey(false));
+    }
+
+    @Test public void armingSearchNavigationDoesNotClearARecentlyFocusedSuggestion() {
+        SearchNavigationState state = new SearchNavigationState();
+        state.setRemoteNavigationTarget(true);
+        state.arm();
+
+        assertTrue(state.routeFallbackNavigationKey(false));
+        assertTrue(state.routeSearchKey(false));
     }
 }

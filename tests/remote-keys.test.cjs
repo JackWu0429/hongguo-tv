@@ -5,12 +5,16 @@ const vm = require('node:vm');
 require('./helpers/app-text.cjs');
 const source = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'), 'utf8');
 const keyNames = source.match(/  var keyNames = \{[\s\S]*?\n  \};/)[0];
+const remoteFocus = source.slice(source.indexOf('  function remoteFocusTarget('), source.indexOf('  function paintFocus('));
 const keys = source.slice(source.indexOf('  function normalizedKey('), source.indexOf('  function showNotice('));
 function keyboard() {
   const c = vm.createContext({});
   vm.runInContext(`
     var current={id:'sidebar-recommend',classList:{contains:function(){return false}}};
-    var document={activeElement:current};
+    var highlighted=current;
+    var document={activeElement:current,body:{id:'body'},querySelector:function(selector){return selector==='.is-focused'?highlighted:null}};
+    function focusables(){return highlighted?[highlighted]:[]}
+    var lastPageFocus={search:current};
     var detailModalOpen=false,playerOptionsOpen=false,confirmOpen=false,discussionOpen=false;
     var androidShell=false; function accountKeypadOpen(){return false}
     function firstVisible(selector){return {id:selector.slice(1)}}
@@ -25,14 +29,14 @@ function keyboard() {
     function isPlaybackPage(){return false}
     function zoneOf(){return 'sidebar'}
     function moveFrom(current,direction){moved.push(direction);return {id:direction}}
-    function goFocus(target){focused.push(target.id)}
+    function goFocus(target){focused.push(target.id);highlighted=target;if(!target.classList)target.classList={contains:function(){return false}};if(!target.click)target.click=function(){clicks++}}
     function revealControls(){}
     function handleMediaCommand(){return false}
     function handleEndRecommendationKey(){return false}
     function handleBack(){backs++;return true}
     function submitSearch(){searches++}
     current.click=function(){clicks++};
-  ` + keyNames + keys, c);
+  ` + remoteFocus + keyNames + keys, c);
   return c;
 }
 test('Android 6 DOM arrows without event.key enter the application focus router', () => {
@@ -105,6 +109,23 @@ test('native remote bridge uses the existing focus router for arrows and confirm
   assert.equal(c.clicks,1);
   assert.deepEqual(Array.from(c.moved),['down','up','left','right']);
   assert.deepEqual(Array.from(c.focused),['down','up','left','right']);
+});
+test('native remote navigation follows the painted focus when WebView activeElement is lost', () => {
+  const c=keyboard();
+  c.searchInput={id:'search-input',classList:{contains:function(){return false}}};
+  c.suggestion={id:'suggestion',classList:{contains:function(){return false},add:function(){}}};
+  vm.runInContext(`
+    document.activeElement=document.body;
+    highlighted=searchInput;
+    lastPageFocus.search=searchInput;
+    searchSuggestionOpen=true;
+    moveFrom=function(current,direction){moved.push(current.id+':'+direction);return current===searchInput&&direction==='down'?suggestion:null};
+  `,c);
+  assert.equal(c.remoteKey(20,false),true);
+  assert.deepEqual(Array.from(c.moved),['search-input:down']);
+  assert.deepEqual(Array.from(c.focused),['suggestion']);
+  assert.equal(c.remoteKey(23,false),true);
+  assert.equal(c.clicks,1);
 });
 test('account number buttons activate once without submitting SMS or login', () => {
   const c=keyboard();

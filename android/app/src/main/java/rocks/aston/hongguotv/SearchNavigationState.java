@@ -2,12 +2,11 @@ package rocks.aston.hongguotv;
 
 /** Keeps D-pad routing on the page after an IME takes native focus from WebView. */
 final class SearchNavigationState {
-    private boolean fallbackEnabled;
-    private boolean remoteNavigationTarget;
+    private volatile boolean fallbackEnabled;
+    private volatile boolean remoteNavigationTarget;
 
     void arm() {
         fallbackEnabled = true;
-        remoteNavigationTarget = false;
     }
 
     void setRemoteNavigationTarget(boolean active) {
