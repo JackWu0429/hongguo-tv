@@ -2643,7 +2643,7 @@
     pendingAccountHomeProgram = null;
     startPlayer({ series_id: program.series_id, title: program.title, intro: '', cover: '' }, null, { cardLaunch: !!program.cardLaunch });
   }
-  window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, desktopFullscreenChanged: desktopFullscreenChanged, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {}, openHomeProgram: openHomeProgram };
+  window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, desktopFullscreenChanged: desktopFullscreenChanged, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {}, finishSearchEditing: function () { if (document.activeElement === searchInput) goFocus(firstSearchAction() || firstSearchFilter()); }, openHomeProgram: openHomeProgram };
 
   function isLibraryPage() { return ['history', 'favorites', 'likes'].indexOf(pageMode()) >= 0; }
   function libraryEntry(id) { return libraryData.entries.filter(function (entry) { return entry.drama.series_id === id; })[0] || null; }
@@ -5895,6 +5895,7 @@
     closeSearchSuggestions(false);
     var query = window.HongguoSearchHistory.normalize(searchInput ? searchInput.value : '');
     if (!query) { showNotice(uiText('content.searchLength', '请输入不超过100字的剧名或关键词')); goFocus(searchInput); return; }
+    if (androidShell && window.HongguoTVInput && typeof window.HongguoTVInput.finishSearchEditing === 'function') window.HongguoTVInput.finishSearchEditing();
     searchInput.value = query;
     var returnTarget = document.activeElement;
     activeSearchQuery = query; searchKind = 'keyword';
@@ -6596,9 +6597,12 @@
     // WebView while the DOM search input remains active. Tell the native
     // shell so it can keep forwarding vertical D-pad navigation to this
     // page; desktop and browser previews keep their existing behavior.
-    if (androidShell && event.target && event.target.id === 'search-input' &&
-        window.HongguoTVInput && typeof window.HongguoTVInput.startSearchEditing === 'function') {
-      window.HongguoTVInput.startSearchEditing();
+    if (androidShell && event.target && event.target.id === 'search-input' && window.HongguoTVInput) {
+      if (typeof window.HongguoTVInput.beginSearchEditing === 'function') {
+        window.HongguoTVInput.beginSearchEditing(typeof document.hasFocus === 'function' && document.hasFocus());
+      } else if (typeof window.HongguoTVInput.startSearchEditing === 'function') {
+        window.HongguoTVInput.startSearchEditing();
+      }
     }
     markFocus(event.target);
     queueTailCheck();

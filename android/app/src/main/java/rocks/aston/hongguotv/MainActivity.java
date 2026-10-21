@@ -46,6 +46,7 @@ public class MainActivity extends Activity {
     private boolean keyboardVisible;
     private boolean accountEditing;
     private boolean searchEditing;
+    private final SearchInputFocusPolicy searchInputFocusPolicy = new SearchInputFocusPolicy();
     private boolean inputBackPending;
     private LinearLayout startupPanel;
     private TextView startupMessage;
@@ -68,7 +69,8 @@ public class MainActivity extends Activity {
     private final ViewTreeObserver.OnGlobalLayoutListener keyboardLayoutListener = () -> {
         boolean visible = isKeyboardVisible();
         if (keyboardVisible && !visible) {
-            completeAccountEditing();
+            if (searchEditing) completeSearchEditing(true);
+            else completeAccountEditing();
             scheduleFullscreen();
         }
         keyboardVisible = visible;
@@ -94,7 +96,7 @@ public class MainActivity extends Activity {
                     if (event.getAction() == KeyEvent.ACTION_UP) {
                         inputBackPending = false;
                         if (accountEditing) completeAccountEditing();
-                        else completeSearchEditing();
+                        else completeSearchEditing(true);
                     }
                     return true;
                 }
@@ -127,7 +129,7 @@ public class MainActivity extends Activity {
         appUpdater = new AppUpdater(this, new AppUpdater.Host() {
             public boolean trusted() { return pageReady; }
             public boolean foreground() { return activityForeground; }
-            public void restoreFocus() { if (!destroyed && webView != null) { webView.requestFocus(); scheduleFullscreen(); } }
+            public void restoreFocus() { if (!destroyed && webView != null) { grantWebViewFocus(false); scheduleFullscreen(); } }
             public void allowPrompt(AppUpdater.PromptCheck check) {
                 if (!pageReady || webView == null) { check.result(false); return; }
                 webView.evaluateJavascript("!!(window.HongguoTV && window.HongguoTV.canShowAppUpdate())", result -> check.result("true".equals(result)));
@@ -141,6 +143,7 @@ public class MainActivity extends Activity {
                 pageReady = false;
                 accountEditing = false;
                 searchEditing = false;
+                searchInputFocusPolicy.reset();
                 super.onPageStarted(view, url, favicon);
             }
 
@@ -157,7 +160,7 @@ public class MainActivity extends Activity {
                     startupPanel.setVisibility(View.GONE);
                     startupAnimation.stop();
                     pageReady = true;
-                    webView.requestFocus();
+                    grantWebViewFocus(false);
                     appUpdater.start();
                     homeChannelManager.ensureDefaultChannel(true);
                 }
@@ -212,7 +215,7 @@ public class MainActivity extends Activity {
         });
         decor.getViewTreeObserver().addOnGlobalLayoutListener(keyboardLayoutListener);
         applyFullscreen();
-        webView.requestFocus(View.FOCUS_DOWN);
+        grantWebViewFocus(false);
         waitForCore();
     }
 
@@ -276,7 +279,7 @@ public class MainActivity extends Activity {
                     if (coreReady != CoreService.endpoint()) { showStartupFailure(); return; }
                     coreUrl = coreReady.url;
                     webView.loadUrl(coreUrl);
-                    webView.requestFocus();
+                    grantWebViewFocus(false);
                 } else { showStartupFailure(); startupMessage.setText(failureMessage); }
             });
         }, "hongguo-tv-startup");
@@ -310,6 +313,13 @@ public class MainActivity extends Activity {
         decor.post(restoreFullscreen);
     }
 
+    private void grantWebViewFocus(boolean repairingSearchInput) {
+        if (destroyed || webView == null) return;
+        if (!repairingSearchInput && (accountEditing || searchEditing || isKeyboardVisible())) return;
+        webView.clearFocus();
+        webView.requestFocus(View.FOCUS_DOWN);
+    }
+
     private boolean isKeyboardVisible() {
         View decor = getWindow().getDecorView();
         Rect visibleFrame = new Rect();
@@ -321,7 +331,10 @@ public class MainActivity extends Activity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus && activityForeground && !accountEditing && !searchEditing && !isKeyboardVisible()) applyFullscreen();
+        if (hasFocus && activityForeground && !accountEditing && !searchEditing && !isKeyboardVisible()) {
+            grantWebViewFocus(false);
+            applyFullscreen();
+        }
     }
 
     private void startCoreService() {
@@ -393,6 +406,13 @@ public class MainActivity extends Activity {
             }
         }
         if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            if (searchEditing || accountEditing) {
+                if (event.getAction() == KeyEvent.ACTION_UP) {
+                    if (accountEditing) completeAccountEditing();
+                    else completeSearchEditing(true);
+                }
+                return true;
+            }
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) requestPageBack();
             return true;
         }
@@ -424,19 +444,32 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void startSearchEditing() {
-            runOnUiThread(() -> {
-                if (destroyed || !pageReady || !activityForeground || webView == null) return;
-                searchEditing = true;
-                accountEditing = false;
-                inputBackPending = false;
-                routedVerticalKeys = 0;
-            });
+            runOnUiThread(() -> beginSearchEditingOnUiThread(true));
+        }
+
+        @JavascriptInterface
+        public void beginSearchEditing(boolean documentHasFocus) {
+            runOnUiThread(() -> beginSearchEditingOnUiThread(documentHasFocus));
+        }
+
+        private void beginSearchEditingOnUiThread(boolean documentHasFocus) {
+            if (destroyed || !pageReady || !activityForeground || webView == null) return;
+            if (searchInputFocusPolicy.shouldIgnoreFocusRequest(SystemClock.uptimeMillis())) return;
+            searchEditing = true;
+            accountEditing = false;
+            inputBackPending = false;
+            routedVerticalKeys = 0;
+            if (searchInputFocusPolicy.shouldRepairRendererFocus(documentHasFocus)) {
+                grantWebViewFocus(true);
+            }
         }
 
         @JavascriptInterface
         public void finishEditing() {
             runOnUiThread(() -> {
                 if (destroyed || webView == null) return;
+                if (searchEditing) searchInputFocusPolicy.onImeDismissed(SystemClock.uptimeMillis());
+                else searchInputFocusPolicy.onEditingFinished();
                 accountEditing = false;
                 searchEditing = false;
                 InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
@@ -449,7 +482,7 @@ public class MainActivity extends Activity {
         public void finishSearchEditing() {
             runOnUiThread(() -> {
                 if (destroyed || webView == null) return;
-                completeSearchEditing();
+                completeSearchEditing(false);
             });
         }
     }
@@ -462,13 +495,17 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void completeSearchEditing() {
-        if (!searchEditing) return;
+    private void completeSearchEditing(boolean returnFocusToSearchActions) {
+        boolean wasEditing = searchEditing;
+        if (wasEditing) searchInputFocusPolicy.onImeDismissed(SystemClock.uptimeMillis());
         searchEditing = false;
         inputBackPending = false;
         routedVerticalKeys = 0;
         InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (keyboard != null && webView != null) keyboard.hideSoftInputFromWindow(webView.getWindowToken(), 0);
+        if (returnFocusToSearchActions && wasEditing && pageReady && webView != null) {
+            webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.finishSearchEditing()", null);
+        }
         scheduleFullscreen();
     }
 
@@ -523,7 +560,7 @@ public class MainActivity extends Activity {
         inputBackPending = false;
         routedVerticalKeys = 0;
         completeAccountEditing();
-        completeSearchEditing();
+        completeSearchEditing(true);
         if (startupAnimation != null) startupAnimation.stop();
         if (playerBridge != null) playerBridge.onPause();
         if (webView != null) {
