@@ -38,7 +38,7 @@ if [ "$stage_package" -eq 1 ] && [ -z "$stage_id_suffix" ]; then
   echo "--stage-package requires WEBOS_STAGE_APP_ID_SUFFIX to avoid replacing another installed app" >&2
   exit 2
 fi
-if [ -n "$stage_id_suffix" ] && ! printf '%s' "$stage_id_suffix" | rg -q '^\.[a-z0-9-]{1,24}$'; then
+if [ -n "$stage_id_suffix" ] && ! printf '%s\n' "$stage_id_suffix" | grep -Eq '^\.[a-z0-9-]{1,24}$'; then
   echo "WEBOS_STAGE_APP_ID_SUFFIX must look like .run6-http" >&2
   exit 2
 fi
