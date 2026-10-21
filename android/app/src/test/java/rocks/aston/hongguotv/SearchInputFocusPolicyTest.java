@@ -25,9 +25,10 @@ public class SearchInputFocusPolicyTest {
         SearchInputFocusPolicy policy = new SearchInputFocusPolicy();
         assertTrue(policy.shouldRepairRendererFocus(false));
         policy.onImeDismissed(1000L);
-        assertFalse(policy.shouldRepairRendererFocus(false));
-        assertFalse(policy.shouldIgnoreFocusRequest(1200L));
+        assertTrue(policy.shouldIgnoreFocusRequest(1200L));
+        assertFalse(policy.shouldIgnoreFocusRequest(1500L));
         assertTrue(policy.shouldRepairRendererFocus(false));
+        assertFalse(policy.shouldRepairRendererFocus(false));
     }
 
     @Test public void resetClearsDismissGuardAndRepairAttempt() {
