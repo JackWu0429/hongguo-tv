@@ -279,7 +279,7 @@ func (c *hongguoClient) Category(ctx context.Context, request CategoryRequest) (
 		"req_type":            reqType,
 		"client_req_type":     3,
 	}
-	payload, err := c.postJSON(ctx, c.apiBase+"/reading/distribution/category/landpage/v/?"+c.appQuery(), body)
+	payload, err := c.postSignedJSON(ctx, "/reading/distribution/category/landpage/v/", body)
 	if err != nil {
 		return CategoryResult{}, err
 	}
@@ -306,6 +306,39 @@ func (c *hongguoClient) Category(ctx context.Context, request CategoryRequest) (
 		result.NextOffset = maxInt(request.Offset, 0) + len(result.Items)
 	}
 	return result, nil
+}
+
+// Category is an anonymous app endpoint, but it still requires the same
+// Passport envelope as the account APIs. Some edge nodes return HTTP 200 with
+// an empty body when a device identity is rejected, so rotate the one-shot
+// identity and retry only that transient response.
+func (c *hongguoClient) postSignedJSON(ctx context.Context, path string, body any) (map[string]any, error) {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	for attempt := 0; attempt < 3; attempt++ {
+		client := newPassportClient(accountSession{
+			DeviceID:  miniReelRandomID(),
+			InstallID: miniReelRandomID(),
+			Cookies:   map[string]string{},
+		})
+		client.http = c.httpClient
+		client.base = c.apiBase
+		payload, requestErr := client.cloudJSONBody(ctx, path, http.MethodPost, nil, raw, "application/json; charset=utf-8", nil)
+		if requestErr == nil {
+			return payload, nil
+		}
+		if !errors.Is(requestErr, errPassportEmptyResponse) || attempt == 2 {
+			return nil, requestErr
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	return nil, errPassportEmptyResponse
 }
 
 var categoryFilterNames = map[string]string{

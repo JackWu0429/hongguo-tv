@@ -38,6 +38,8 @@ type passportClient struct {
 	session    accountSession
 }
 
+var errPassportEmptyResponse = errors.New("上游响应为空")
+
 func cloneAccountSession(session accountSession) accountSession {
 	copy := session
 	copy.Cookies = map[string]string{}
@@ -146,6 +148,9 @@ func (c *passportClient) requestWithSignatureHeaders(ctx context.Context, path, 
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20+1))
 	if err != nil || len(b) > 4<<20 {
 		return nil, errors.New("红果账号响应读取失败")
+	}
+	if len(b) == 0 {
+		return nil, errPassportEmptyResponse
 	}
 	var payload map[string]any
 	d := json.NewDecoder(bytes.NewReader(b))

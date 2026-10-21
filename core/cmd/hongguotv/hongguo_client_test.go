@@ -80,6 +80,50 @@ func TestCategoryFiltersSelectorsAndPagination(t *testing.T) {
 	}
 }
 
+func TestCategoryUsesPassportSignature(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Medusa") == "" || r.Header.Get("X-Gorgon") == "" || r.Header.Get("X-Khronos") == "" {
+			t.Fatalf("category request was not signed: headers=%v", r.Header)
+		}
+		if r.URL.Query().Get("device_id") == "" || r.URL.Query().Get("iid") == "" {
+			t.Fatalf("category request is missing one-shot device identity: %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"has_more":false,"video_data":[]}}`))
+	}))
+	defer server.Close()
+	client := newHongguoClient()
+	client.apiBase = server.URL
+	client.httpClient.Timeout = 2 * time.Second
+	if _, err := client.Category(context.Background(), CategoryRequest{Path: "/category/real-drama"}); err != nil {
+		t.Fatalf("signed category request failed: %v", err)
+	}
+}
+
+func TestCategoryRetriesEmptySignedResponseWithFreshIdentity(t *testing.T) {
+	attempts := 0
+	identities := map[string]bool{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		identities[r.URL.Query().Get("device_id")] = true
+		if attempts < 3 {
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"has_more":false,"video_data":[]}}`))
+	}))
+	defer server.Close()
+	client := newHongguoClient()
+	client.apiBase = server.URL
+	client.httpClient.Timeout = 2 * time.Second
+	if _, err := client.Category(context.Background(), CategoryRequest{Path: "/category/real-drama"}); err != nil {
+		t.Fatalf("empty response retry failed: %v", err)
+	}
+	if attempts != 3 || len(identities) != 3 {
+		t.Fatalf("attempts=%d unique identities=%d, want three of each", attempts, len(identities))
+	}
+}
+
 func TestCategoryAlwaysExposesMacStatusFilter(t *testing.T) {
 	filters := normalizeCategoryFilters(nil)
 	if len(filters) != 1 || filters[0].Type != "creation_status" || filters[0].Label != "状态" {
