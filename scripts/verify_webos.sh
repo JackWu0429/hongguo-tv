@@ -5,6 +5,7 @@ repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 node_bin=${NODE:-node}
 
 "$node_bin" --check "$repo_dir/scripts/run_webos_http_direct_service.js"
+"$node_bin" --check "$repo_dir/webos/service/range-media.js"
 
 "$node_bin" - "$repo_dir" <<'NODE'
 var fs = require('fs');
@@ -59,6 +60,7 @@ NODE
 
 "$node_bin" "$repo_dir/webos/service/passport-sign.test.js"
 "$node_bin" "$repo_dir/webos/service/provider.test.js"
+"$node_bin" "$repo_dir/webos/service/range-media.test.js"
 "$node_bin" "$repo_dir/webos/service/account.test.js"
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/hongguo-webos-verify.XXXXXX")

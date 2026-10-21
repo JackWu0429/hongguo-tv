@@ -12,6 +12,7 @@
   var url = require('url');
   var querystring = require('querystring');
   var passportSign = require('./passport-sign');
+  var rangeMedia = require('./range-media');
 
   var API_BASE = 'https://api5-normal-sinfonlineb.fqnovel.com';
   var WEB_BASE = 'https://hongguoduanju.com';
@@ -20,6 +21,8 @@
   var MAX_JSON = 5 * 1024 * 1024;
   var MAX_MEDIA = 512 * 1024 * 1024;
   var jobs = Object.create(null);
+  var fullDownloads = Object.create(null);
+  var rangeSources = Object.create(null);
   var mediaStatus = Object.create(null);
   var cacheRoot = '';
   var lastVideoModelDiagnostic = null;
@@ -363,9 +366,12 @@
     return candidates.sort(function (a, b) { return a.height - b.height; })[candidates.length - 1];
   }
 
-  function mediaToken(seriesID, vid, quality, fallback) {
+  function mediaToken(seriesID, vid, quality, fallback, mode) {
+    quality = String(quality || '').trim().toUpperCase();
+    if (quality === 'AUTO') quality = '';
     var suffix = quality ? ':' + quality + ':' + String(!!fallback) : '';
-    return crypto.createHash('sha256').update(String(seriesID) + ':' + String(vid) + suffix).digest('hex').slice(0, 24);
+    var token = crypto.createHash('sha256').update(String(seriesID) + ':' + String(vid) + suffix).digest('hex').slice(0, 24);
+    return mode === 'range' ? crypto.createHash('sha256').update(token + ':range').digest('hex').slice(0, 24) : token;
   }
   function ensureCacheRoot() {
     if (cacheRoot) return cacheRoot;
@@ -381,22 +387,7 @@
   function fileExists(file) { try { return fs.statSync(file).isFile(); } catch (ignored) { return false; } }
 
   function downloadFile(target, destination) {
-    return new Promise(function (resolve, reject) {
-      var parsed = url.parse(target);
-      var transport = parsed.protocol === 'http:' ? http : https;
-      var request = transport.get({ hostname: parsed.hostname, port: parsed.port || (parsed.protocol === 'http:' ? 80 : 443), path: parsed.path, headers: { 'User-Agent': APP_UA, Accept: '*/*', 'Accept-Encoding': 'identity', Referer: 'https://novel.snssdk.com/', Origin: 'https://novel.snssdk.com' }, timeout: 90000 }, function (response) {
-        if (response.statusCode < 200 || response.statusCode >= 300) { response.resume(); reject(fail('媒体源 HTTP ' + response.statusCode)); return; }
-        var output = fs.createWriteStream(destination, { mode: 384 });
-        var total = 0;
-        response.on('data', function (chunk) { total += chunk.length; if (total > MAX_MEDIA) request.destroy(fail('媒体超过大小限制')); });
-        output.on('error', reject);
-        response.on('error', reject);
-        output.on('finish', function () { output.close(); resolve(); });
-        response.pipe(output);
-      });
-      request.on('error', reject);
-      request.on('timeout', function () { request.destroy(fail('媒体下载超时')); });
-    });
+    return rangeMedia.downloadFile(target, destination, { 'User-Agent': APP_UA }, MAX_MEDIA);
   }
 
   function readU32(buffer, offset) { return buffer.readUInt32BE(offset); }
@@ -482,26 +473,86 @@
     fs.writeFileSync(file, buffer, { mode: 384 });
   }
 
-  function prepare(seriesID, vid, quality, fallback) {
+  function prepare(seriesID, vid, quality, fallback, mode, prefetch) {
     if (!validID(seriesID) || !validID(vid)) return Promise.reject(fail('播放参数无效'));
-    var token = mediaToken(seriesID, vid, quality, fallback); var root = ensureCacheRoot(); var dir = path.join(root, token); var file = path.join(dir, token + '.mp4');
-    if (fileExists(file)) return Promise.resolve({ path: '/minireel-proxy/media/' + token + '.mp4', quality: quality || '', qualities: [], vid: vid, mode: 'full' });
-    if (jobs[token]) return jobs[token];
-    jobs[token] = videoOptions(vid).then(function (options) {
+    quality = String(quality || '').trim().toUpperCase();
+    if (quality === 'AUTO') quality = '';
+    var wantsRange = String(mode || '') === 'range';
+    var fullToken = mediaToken(seriesID, vid, quality, fallback, 'full');
+    var token = wantsRange ? mediaToken(seriesID, vid, quality, fallback, 'range') : fullToken;
+    var jobKey = token + (prefetch ? ':prefetch' : '');
+    var root = ensureCacheRoot(); var dir = path.join(root, token); var file = path.join(dir, token + '.mp4');
+    if (rangeSources[token] && wantsRange) {
+      rangeSources[token].lastUsedAt = Date.now();
+      return Promise.resolve({ path: '/minireel-proxy/media/' + token + '.mp4', quality: rangeSources[token].quality || quality || '', qualities: [], vid: vid, mode: 'range' });
+    }
+    if (jobs[jobKey]) return jobs[jobKey];
+    if (!wantsRange && fileExists(file)) return Promise.resolve({ path: '/minireel-proxy/media/' + token + '.mp4', quality: quality || '', qualities: [], vid: vid, mode: 'full' });
+    var job = videoOptions(vid).then(function (options) {
       var selected = choose(options, quality, fallback);
-      mkdirp(dir, 448);
-      var temp = file + '.part';
-      return downloadFile(selected.url, temp).then(function () {
-        if (selected.key) decryptMP4(temp, selected.key);
-        fs.renameSync(temp, file);
-        return { path: '/minireel-proxy/media/' + token + '.mp4', quality: selected.quality, qualities: options.map(function (x) { return x.quality; }).filter(Boolean), vid: vid, mode: 'full' };
-      }).catch(function (error) {
-        try { fs.unlinkSync(temp); } catch (ignored) {}
-        try { fs.rmdirSync(dir); } catch (ignoredDir) {}
-        throw error;
+      var qualities = options.map(function (x) { return x.quality; }).filter(Boolean);
+      function prepareFull(rangeError) {
+        var fullDir = path.join(root, fullToken);
+        var fullFile = path.join(fullDir, fullToken + '.mp4');
+        function withFallback(result) {
+          var output = Object.assign({}, result);
+          if (rangeError) output.range_fallback = String(rangeError.message || '按需读取不可用，已使用整集播放模式');
+          return output;
+        }
+        if (fileExists(fullFile)) return Promise.resolve(withFallback({ path: '/minireel-proxy/media/' + fullToken + '.mp4', quality: selected.quality, qualities: qualities, vid: vid, mode: 'full' }));
+        if (fullDownloads[fullToken]) return fullDownloads[fullToken].then(withFallback);
+        mkdirp(fullDir, 448);
+        var temp = fullFile + '.part';
+        var download = downloadFile(selected.url, temp).then(function () {
+          if (selected.key) decryptMP4(temp, selected.key);
+          fs.renameSync(temp, fullFile);
+          return { path: '/minireel-proxy/media/' + fullToken + '.mp4', quality: selected.quality, qualities: qualities, vid: vid, mode: 'full' };
+        }).catch(function (error) {
+          try { fs.unlinkSync(temp); } catch (ignored) {}
+          try { fs.rmdirSync(fullDir); } catch (ignoredDir) {}
+          throw error;
+        });
+        var sharedDownload = download.then(function (result) {
+          if (fullDownloads[fullToken] === sharedDownload) delete fullDownloads[fullToken];
+          return result;
+        }, function (error) {
+          if (fullDownloads[fullToken] === sharedDownload) delete fullDownloads[fullToken];
+          throw error;
+        });
+        fullDownloads[fullToken] = sharedDownload;
+        return sharedDownload.then(withFallback);
+      }
+      if (!wantsRange) return prepareFull(null);
+      if (!selected.key) {
+        var missingKey = fail('当前视频没有 CENC key');
+        if (prefetch) throw missingKey;
+        return prepareFull(missingKey);
+      }
+      return rangeMedia.open(selected.url, selected.key, { vid: vid, quality: selected.quality }).then(function (source) {
+        source.quality = selected.quality;
+        source.refresh = function () {
+          return videoOptions(vid).then(function (freshOptions) {
+            var fresh = choose(freshOptions, selected.quality, false);
+            return { url: fresh.url, key: fresh.key };
+          });
+        };
+        source.lastUsedAt = Date.now();
+        trimRangeSources(token, source);
+        rangeSources[token] = source;
+        return { path: '/minireel-proxy/media/' + token + '.mp4', quality: selected.quality, qualities: qualities, vid: vid, mode: 'range' };
+      }).catch(function (rangeError) {
+        if (prefetch) throw rangeError;
+        return prepareFull(rangeError);
       });
-    }).then(function (result) { delete jobs[token]; return result; }, function (error) { delete jobs[token]; throw error; });
-    return jobs[token];
+    }).then(function (result) {
+      if (jobs[jobKey] === job) delete jobs[jobKey];
+      return result;
+    }, function (error) {
+      if (jobs[jobKey] === job) delete jobs[jobKey];
+      throw error;
+    });
+    jobs[jobKey] = job;
+    return job;
   }
 
   function parseMediaByteRange(value, length) {
@@ -540,6 +591,12 @@
       return jsonResponse(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' });
     }
     if (!/^[a-f0-9]{24}$/.test(token)) return jsonResponse(res, 400, { ok: false, error: '媒体标识无效' });
+    if (rangeSources[token]) {
+      rangeSources[token].lastUsedAt = Date.now();
+      return rangeMedia.serve(req, res, rangeSources[token], function (status) {
+        mediaStatus[token] = { status: status, at: Date.now(), mode: 'range' };
+      });
+    }
     var file = path.join(ensureCacheRoot(), token, token + '.mp4');
     var stat;
     try { stat = fs.statSync(file); } catch (error) { mediaStatus[token] = { status: 404, at: Date.now() }; return jsonResponse(res, 404, { ok: false, error: '媒体尚未准备好' }); }
@@ -979,8 +1036,38 @@
     var token = match[1], file = path.join(ensureCacheRoot(), token, token + '.mp4'), stat;
     try { stat = fs.statSync(file); result.media_prepared = stat.isFile(); result.media_bytes = stat.size; result.media_state = result.media_prepared ? 'ready' : 'missing'; } catch (ignored) { result.media_state = jobs[token] ? 'preparing' : 'missing'; }
     var status = mediaStatus[token];
-    if (status) { result.media_http_status = status.status; result.media_age_seconds = Math.max(0, Math.floor((Date.now() - status.at) / 1000)); }
+    if (status) { result.media_http_status = status.status; result.media_age_seconds = Math.max(0, Math.floor((Date.now() - status.at) / 1000)); result.media_mode = status.mode || 'full'; }
+    var rangeSource = rangeSources[token];
+    if (rangeSource) {
+      result.media_mode = 'range';
+      result.media_prepared = true;
+      result.media_bytes = 0;
+      result.media_range_length = rangeSource.length;
+      result.media_init_bytes = rangeSource.prefix.length;
+      result.media_sample_count = rangeSource.samples.length;
+      result.media_metadata_bytes = rangeSource.prefix.length + rangeSource.samples.length * 128 + (rangeSource.key ? rangeSource.key.length : 0);
+      result.media_state = 'range-ready';
+    }
     return result;
+  }
+
+  function trimRangeSources(keepToken, keepSource) {
+    var now = Date.now();
+    var metadataBytes = keepSource ? keepSource.prefix.length + keepSource.samples.length * 128 + (keepSource.key ? keepSource.key.length : 0) : 0;
+    if (metadataBytes > 24 * 1024 * 1024) throw fail('MP4 Range 索引超过内存限制');
+    Object.keys(rangeSources).forEach(function (key) {
+      if (key !== keepToken && now - Number(rangeSources[key].lastUsedAt || 0) > 15 * 60 * 1000) delete rangeSources[key];
+    });
+    var keys = Object.keys(rangeSources).filter(function (key) { return key !== keepToken; });
+    keys.sort(function (a, b) { return Number(rangeSources[a].lastUsedAt || 0) - Number(rangeSources[b].lastUsedAt || 0); });
+    function totalBytes() {
+      return Object.keys(rangeSources).reduce(function (total, key) {
+        var source = rangeSources[key];
+        return total + source.prefix.length + source.samples.length * 128 + (source.key ? source.key.length : 0);
+      }, metadataBytes);
+    }
+    while ((Object.keys(rangeSources).length >= 2 || totalBytes() > 24 * 1024 * 1024) && keys.length) delete rangeSources[keys.shift()];
+    if (totalBytes() > 24 * 1024 * 1024) throw fail('Range 索引缓存超过内存限制');
   }
 
   function videoModelDiagnostics() {
@@ -1091,6 +1178,6 @@
     dataDirectory: dataDirectory,
     searchHistory: searchHistory, mediaDiagnostics: mediaDiagnostics, parseMediaByteRange: parseMediaByteRange,
     videoModelDiagnostics: videoModelDiagnostics, inspectVideoModel: inspectVideoModel,
-    status: function () { return { playback_verified: false, provider: 'first-party-js-port', media: 'cenc-aes-ctr-local-cache', data: 'real-public-metadata-plus-local-library' }; }
+    status: function () { return { playback_verified: false, provider: 'first-party-js-port', media: 'cenc-aes-ctr-range-with-full-download-fallback', data: 'real-public-metadata-plus-local-library' }; }
   };
 }());

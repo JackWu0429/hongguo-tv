@@ -10,6 +10,7 @@ var createNumberInput = require('./number-input');
 var handlers = {};
 var activityCalls = [];
 var libraryChanges = [];
+var prepareRequests = [];
 var luna = {
   activityManager: {
     create: function (name, callback) { activityCalls.push('create:' + name); callback({ id: 'activity-1' }); },
@@ -30,7 +31,7 @@ var provider = {
   actorWorks: function () { return Promise.resolve({ actor: {}, items: [] }); },
   radar: function () { return Promise.resolve({ ranks: {}, growth: {} }); },
   engagement: function () { return Promise.resolve({ series_id: '1', vid: '2' }); },
-  prepare: function (seriesID, vid) { return Promise.resolve({ series_id: seriesID, vid: vid, path: '/media/test.mp4' }); },
+  prepare: function (seriesID, vid, quality, fallback, mode, prefetch) { prepareRequests.push({ mode: mode || '', prefetch: !!prefetch }); return Promise.resolve({ series_id: seriesID, vid: vid, path: '/media/test.mp4', mode: mode || 'full' }); },
   serveMedia: function (_, res) { res.statusCode = 206; res.end(JSON.stringify({ ok: true })); },
   discussion: function () { return Promise.resolve({ items: [], has_more: false, total: 0 }); },
   replies: function () { return Promise.resolve({ items: [], has_more: false, total: 0 }); },
@@ -123,6 +124,12 @@ async function run() {
 
   var blockedOrigin = await request('GET', '/api/v1/status', { Origin: 'https://example.test' });
   assert.strictEqual(blockedOrigin.headers['access-control-allow-origin'], undefined, 'remote origins cannot read the local service');
+
+  var rangePrepare = await request('GET', '/api/v1/play/info?series_id=1&vid=2&mode=range');
+  assert.strictEqual(JSON.parse(rangePrepare.body).data.mode, 'range');
+  assert.deepStrictEqual(prepareRequests[0], { mode: 'range', prefetch: false }, 'playback mode is forwarded to the provider');
+  await request('GET', '/api/v1/play/info?series_id=1&vid=3&mode=range&prefetch=1');
+  assert.deepStrictEqual(prepareRequests[1], { mode: 'range', prefetch: true }, 'speculative Range preparation is marked so it cannot download the full episode');
 
   var recommendations = await request('GET', '/api/v1/lists/recommend?offset=0');
   assert.strictEqual(JSON.parse(recommendations.body).data.items[0].series_id, '1');

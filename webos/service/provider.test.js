@@ -1,6 +1,7 @@
 'use strict';
 
 var assert = require('assert');
+var crypto = require('crypto');
 var EventEmitter = require('events');
 var PassThrough = require('stream').PassThrough;
 var http = require('http');
@@ -8,6 +9,8 @@ var https = require('https');
 var fs = require('fs');
 var os = require('os');
 var path = require('path');
+var rangeMedia = require('./range-media');
+var originalDownloadFile = rangeMedia.downloadFile;
 var originalRequest = https.request;
 var dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hongguo-webos-provider-'));
 process.env.HONGGUO_WEBOS_DATA_DIR = dataRoot;
@@ -16,6 +19,8 @@ var seriesID = '1234567890123456789';
 var categoryRequest = null;
 var calendarRequest = null;
 var engagementRequests = [];
+var videoModelRequests = 0;
+var mediaDownloadRequests = 0;
 var html = '<script>window._ROUTER_DATA=' + JSON.stringify({ loaderData: { detail_page: {
   seriesDetail: {
     series_id: seriesID,
@@ -47,6 +52,10 @@ https.request = function (options) {
   req.destroy = function (error) { if (error) process.nextTick(function () { req.emit('error', error); }); };
   req.end = function () {
     var body = html;
+    if (options.path.indexOf('/novel/player/video_model/v1/') >= 0) {
+      videoModelRequests++;
+      body = JSON.stringify({ data: { video_model: { video_list: [{ main_url: 'https://media.example.test/episode.mp4', video_meta: { vheight: 720, definition: '720P' }, encrypt_info: {} }] } } });
+    }
     if (options.path.indexOf('/reading/bookapi/plan/v') >= 0) body = '{"code":0,"data":[]}';
     if (options.path.indexOf('/reading/distribution/category/landpage/v/') >= 0) {
       categoryRequest = { options: options, query: Object.fromEntries(new URL('https://fixture.test' + options.path).searchParams), body: Buffer.concat(requestChunks).toString('utf8') };
@@ -75,6 +84,11 @@ https.request = function (options) {
 };
 
 var provider = require('./provider');
+rangeMedia.downloadFile = function (_, destination) {
+  mediaDownloadRequests++;
+  fs.writeFileSync(destination, Buffer.from('full-media-fixture'));
+  return Promise.resolve();
+};
 
 function requestMedia(server, method, range, ifRange) {
   return new Promise(function (resolve, reject) {
@@ -183,6 +197,22 @@ async function run() {
     assert(engagementRequests[0].options.headers['X-Gorgon'] && engagementRequests[1].options.headers['X-Gorgon'], 'both attempts are signed');
     assert.notStrictEqual(engagementRequests[0].query.device_id, engagementRequests[1].query.device_id, 'retry uses a fresh device identity');
 
+    var fullToken = crypto.createHash('sha256').update(seriesID + ':4234567890123456789').digest('hex').slice(0, 24);
+    var rangeToken = crypto.createHash('sha256').update(fullToken + ':range').digest('hex').slice(0, 24);
+    assert.notStrictEqual(rangeToken, fullToken, 'Range and full playback use independent local media tokens');
+    var downloadsBeforePrefetch = mediaDownloadRequests;
+    var prefetchError = await provider.prepare(seriesID, '4234567890123456789', '', false, 'range', true).then(function () { return null; }, function (error) { return error; });
+    assert(prefetchError && /CENC key/.test(prefetchError.message), 'Range prefetch without a key fails quietly');
+    assert.strictEqual(mediaDownloadRequests, downloadsBeforePrefetch, 'failed Range prefetch never downloads the full episode');
+    assert.strictEqual(videoModelRequests, 1, 'prefetch resolves the episode source before rejecting unsupported Range');
+    var rangeFallback = await provider.prepare(seriesID, '5234567890123456789', '', false, 'range', false);
+    assert.strictEqual(rangeFallback.mode, 'full');
+    assert(rangeFallback.range_fallback, 'foreground Range preparation reports its full-file fallback');
+    assert.strictEqual(mediaDownloadRequests, downloadsBeforePrefetch + 1, 'foreground Range failure falls back to one full download');
+    var fallbackToken = crypto.createHash('sha256').update(seriesID + ':5234567890123456789').digest('hex').slice(0, 24);
+    assert.strictEqual(rangeFallback.path, '/minireel-proxy/media/' + fallbackToken + '.mp4', 'foreground fallback uses the standard full-file URL');
+    assert.strictEqual(videoModelRequests, 2, 'foreground preparation performs a fresh source resolution');
+
     var seasons = await provider.seasons(seriesID);
     assert.strictEqual(seasons.source, 'webos-detail-fallback');
     assert.strictEqual(seasons.items.length, 1);
@@ -200,12 +230,14 @@ async function run() {
     console.log('webOS provider signed category/calendar, detail actors/social and empty-season fallback: PASS');
   } finally {
     https.request = originalRequest;
+    rangeMedia.downloadFile = originalDownloadFile;
     fs.rmSync(dataRoot, { recursive: true, force: true });
   }
 }
 
 run().catch(function (error) {
   https.request = originalRequest;
+  rangeMedia.downloadFile = originalDownloadFile;
   console.error(error.stack || error);
   process.exitCode = 1;
 });
