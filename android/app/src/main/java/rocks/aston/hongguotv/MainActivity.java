@@ -99,8 +99,6 @@ public class MainActivity extends Activity {
                         inputEditingState.cancelBack();
                         if (editing.isAccountEditing()) completeAccountEditing();
                         else completeSearchEditing(true);
-                    } else if (event.getAction() == KeyEvent.ACTION_CANCEL) {
-                        inputEditingState.cancelBack();
                     }
                     return true;
                 }
@@ -444,8 +442,6 @@ public class MainActivity extends Activity {
                 if (event.getAction() == KeyEvent.ACTION_UP) {
                     if (editing.isAccountEditing()) completeAccountEditing();
                     else completeSearchEditing(true);
-                } else if (event.getAction() == KeyEvent.ACTION_CANCEL) {
-                    inputEditingState.cancelBack();
                 }
                 return true;
             }
@@ -493,15 +489,6 @@ public class MainActivity extends Activity {
             requestSearchEditing(documentHasFocus);
         }
 
-        private void beginSearchEditingOnUiThread(boolean documentHasFocus) {
-            if (destroyed || !pageReady || !activityForeground || webView == null || !inputEditingState.snapshot().isSearchEditing()) return;
-            searchNavigationState.arm();
-            routedVerticalKeys = 0;
-            if (searchInputFocusPolicy.shouldRepairRendererFocus(documentHasFocus)) {
-                grantWebViewFocus(true);
-            }
-        }
-
         @JavascriptInterface
         public void setRemoteNavigationTarget(boolean active) {
             if (destroyed) return;
@@ -537,6 +524,15 @@ public class MainActivity extends Activity {
         inputEditingState.beginSearch();
         searchNavigationState.arm();
         runOnUiThread(() -> beginSearchEditingOnUiThread(documentHasFocus));
+    }
+
+    private void beginSearchEditingOnUiThread(boolean documentHasFocus) {
+        if (destroyed || !pageReady || !activityForeground || webView == null || !inputEditingState.snapshot().isSearchEditing()) return;
+        searchNavigationState.arm();
+        routedVerticalKeys = 0;
+        if (searchInputFocusPolicy.shouldRepairRendererFocus(documentHasFocus)) {
+            grantWebViewFocus(true);
+        }
     }
 
     private void completeAccountEditing() {

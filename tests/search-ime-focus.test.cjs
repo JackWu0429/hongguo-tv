@@ -28,7 +28,8 @@ test('Back dismisses the IME and restores focus within the active search area', 
   const dispatch = activity.slice(activity.indexOf('public boolean dispatchKeyEvent('), activity.indexOf('private static int searchConfirmKeyBit('));
   assert.match(preIme, /InputKeyPolicy\.isBackKey\(keyCode\) && InputKeyPolicy\.shouldDismissInputBack\(inputEditingState\.snapshot\(\)\)/);
   assert.match(preIme, /KeyEvent\.ACTION_UP[\s\S]*?completeSearchEditing\(true\)/);
-  assert.match(preIme, /KeyEvent\.ACTION_CANCEL[\s\S]*?inputEditingState\.cancelBack\(\)/);
+  assert.match(preIme, /KeyEvent\.ACTION_UP[\s\S]*?inputEditingState\.cancelBack\(\)/);
+  assert.doesNotMatch(activity, /KeyEvent\.ACTION_CANCEL/);
   assert.match(dispatch, /InputKeyPolicy\.shouldDismissInputBack\(editing\)[\s\S]*?completeSearchEditing\(true\)/);
   assert.match(dispatch, /requestPageBack\(\)/);
   assert.match(app, /finishSearchEditing: function \(\) \{ var current = typeof androidShell !== 'undefined' && androidShell \? remoteFocusTarget\(\) \|\| document\.activeElement : document\.activeElement; if \(current === searchInput\) goFocus\(searchSuggestionOpen \? firstVisible\('\.search-suggestion'\) \|\| firstSearchAction\(\) \|\| firstSearchFilter\(\) : firstSearchAction\(\) \|\| firstSearchFilter\(\)\); \}/);
@@ -44,7 +45,8 @@ test('Android keeps D-pad and confirm routed through the search focus graph afte
   const focusin = app.slice(focusinStart, app.indexOf("document.querySelectorAll('.side-item')", focusinStart));
   assert.match(focusin, /setRemoteNavigationTarget\(!editingTarget && focusables\(\)\.indexOf\(target\) >= 0\)/);
   assert.match(activity, /searchNavigationState\.routeFallbackNavigationKey\(editing\.isEditing\(\)\)/);
-  const beginEditing = activity.slice(activity.indexOf('private void beginSearchEditingOnUiThread'), activity.indexOf('@JavascriptInterface\n        public void setRemoteNavigationTarget'));
+  const beginEditingStart = activity.indexOf('private void beginSearchEditingOnUiThread');
+  const beginEditing = activity.slice(beginEditingStart, activity.indexOf('private void completeAccountEditing', beginEditingStart));
   assert.match(beginEditing, /searchNavigationState\.arm\(\)/);
   assert.doesNotMatch(beginEditing, /if \(!documentHasFocus\)[\s\S]*?searchNavigationState\.arm\(\)/);
   assert.match(activity, /searchConfirmKeyBit\(event.getKeyCode\(\)\)[\s\S]*?remoteKey\(" \+ event\.getKeyCode\(\)/);
