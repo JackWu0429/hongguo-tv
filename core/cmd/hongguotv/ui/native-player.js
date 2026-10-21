@@ -97,6 +97,7 @@
     try { domVideo.pause(); } catch (ignoredPause) {}
     usingNative = true;
     document.documentElement.classList.add('native-playback');
+    dispatch('nativefallbackstart');
     loadId = 'hongguo-' + (++sequence);
     nativeRequested = false;
     try { bridge.begin(loadId); } catch (ignoredBegin) {}
@@ -117,6 +118,7 @@
     nativeRequested = false;
     loadId = 'hongguo-' + (++sequence);
     document.documentElement.classList.remove('native-playback');
+    dispatch('nativefallbackend');
     try {
       state.source = source;
       state.currentTime = position; state.duration = NaN; state.readyState = 0;

@@ -111,10 +111,15 @@ test('Media3 fallback uses the staged resume position before WebView playback ad
 test('native playback failure restores the visible WebView video layer', () => {
   const f = fixture();
   const proxy = f.document.getElementById('hero-video');
+  const events = [];
+  proxy.addEventListener('nativefallbackstart', () => events.push('start'));
+  proxy.addEventListener('nativefallbackend', () => events.push('end'));
   const nativeId = activateNative(f);
   assert.equal(f.rootClassNames.has('native-playback'), true);
+  assert.deepEqual(events, ['start']);
   f.context.window.HongguoNativePlayback.event(nativeId, 'error');
   assert.equal(f.rootClassNames.has('native-playback'), false);
+  assert.deepEqual(events, ['start', 'end']);
   assert.equal(proxy.src, '/media/test.mp4');
 });
 

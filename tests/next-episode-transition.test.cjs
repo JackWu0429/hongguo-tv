@@ -213,6 +213,20 @@ test('a rendered Media3 frame counts as the current same-series playback before 
   assert.equal(f.hero.classList.contains('is-episode-transition'),true);
   assert.equal(f.hero.classList.contains('is-native-media3-episode-transition'),true);
 });
+test('Media3 fallback that starts after an episode switch hides the series poster during preparation',async()=>{
+  const f=fixture({native:false});f.gate.resolve();f.c.playFeedItem(0,2,0);
+  await settlePlayback(f);
+  assert.equal(f.hero.classList.contains('is-episode-transition'),true);
+  assert.equal(f.hero.classList.contains('is-native-media3-episode-transition'),false);
+  assert.equal(f.c.activePlayback.preserveNativeTransition,true);
+  f.handlers.nativefallbackstart();
+  assert.equal(f.hero.classList.contains('is-native-media3-episode-transition'),true);
+  f.handlers.nativefallbackend();
+  assert.equal(f.hero.classList.contains('is-native-media3-episode-transition'),true);
+  f.hero.classList.remove('is-preparing-video', 'is-episode-transition');
+  f.handlers.nativefallbackend();
+  assert.equal(f.hero.classList.contains('is-native-media3-episode-transition'),false);
+});
 test('first playback does not use the Media3 episode-transition poster suppression state',()=>{
   const f=fixture({native:true});f.c.activePlayback=null;f.gate.resolve();f.c.playFeedItem(0,1,0);
   assert.equal(f.hero.classList.contains('is-episode-transition'),false);

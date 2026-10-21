@@ -7097,6 +7097,22 @@
   });
   media.addEventListener('ratechange', updatePlaybackControls);
   media.addEventListener('volumechange', updatePlaybackControls);
+  media.addEventListener('nativefallbackstart', function () {
+    var hero = document.getElementById('hero');
+    if (hero && hero.classList.contains('is-preparing-video') && hero.classList.contains('is-episode-transition') &&
+        activePlayback && activePlayback.preserveNativeTransition && playbackEngineName() !== 'mpv') {
+      hero.classList.add('is-native-media3-episode-transition');
+    }
+  });
+  media.addEventListener('nativefallbackend', function () {
+    var hero = document.getElementById('hero');
+    // A Media3 failure can fall back to WebView while the new episode is still
+    // preparing. Keep the old drama poster suppressed until that transition
+    // presents a real frame; otherwise the poster flashes back over loading.
+    if (hero && (!hero.classList.contains('is-preparing-video') || !hero.classList.contains('is-episode-transition'))) {
+      hero.classList.remove('is-native-media3-episode-transition');
+    }
+  });
   media.addEventListener('emptied', updatePlaybackControls);
   media.addEventListener('waiting', function () {
     if (!activePlayback) return;
