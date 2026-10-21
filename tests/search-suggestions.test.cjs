@@ -36,13 +36,13 @@ test('suggestion refresh preserves a focused item across DOM replacement', () =>
   assert.match(fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8'), /\.search-suggestions\s*\{[^}]*max-height:\s*60vh/);
 });
 
-test('suggestion list keeps focus rings clear of its scroll clipping edge', () => {
+test('suggestion panel uses the input and scan control width without counting search', () => {
   const css = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8');
   assert.match(css, /\.search-suggestions\s*\{[^}]*padding:\s*10px 6px/);
-  const wideLayout = css.match(/@media\s*\(min-width:\s*1500px\)\s*\{([\s\S]*?)\n\}/);
-  assert.ok(wideLayout);
-  assert.match(wideLayout[1], /\.search-input-wrap\s*\{\s*position:\s*static;/);
-  assert.match(wideLayout[1], /\.search-suggestions\s*\{[^}]*top:\s*calc\(100%\s*\+\s*8px\);[^}]*right:\s*auto;[^}]*left:\s*0;[^}]*width:\s*100%;[^}]*max-width:\s*100%;[^}]*box-sizing:\s*border-box/);
+  assert.match(css, /\.search-input-wrap\s*\{[^}]*position:\s*relative/);
+  assert.match(css, /\.search-suggestions\s*\{[^}]*width:\s*410px;[^}]*max-width:\s*78vw/);
+  assert.match(css, /\.desktop-shell\s+\.search-suggestions\s*\{\s*width:\s*354px;\s*\}/);
+  assert.doesNotMatch(css, /@media\s*\(min-width:\s*1500px\)\s*\{[^}]*\.search-input-wrap\s*\{\s*position:\s*static/);
 });
 
 test('reservation status tabs retain their previous compact pill appearance', () => {
