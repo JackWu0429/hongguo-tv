@@ -16,7 +16,7 @@
 </table>
 
 - [Android TV 最新正式版本](https://github.com/aston314/hongguo-tv-releases/releases/latest)
-- [LG webOS 测试版 `.ipk`](https://github.com/aston314/hongguo-tv-releases/releases/tag/webos-v0.2.100-test.21)
+- [LG webOS 测试版 `.ipk`](https://github.com/aston314/hongguo-tv-releases/releases/tag/webos-v0.2.100-test.22)
 - [Linux x86_64 AppImage 测试版](https://github.com/aston314/hongguo-tv-releases/releases/tag/linux-v0.2.100-test.1)
 - [桌面版下载（macOS / Windows）](https://github.com/aston314/hongguo-tv-releases/releases/tag/desktop-v0.2.100)
 - 面向 Android TV，最低 Android 6，支持 ARM64、ARMv7 和 x86_64。
@@ -72,7 +72,7 @@ AppImage 已在 Ubuntu 24.04 和 Debian 12 容器中通过真实红果数据及�
 
 ## LG webOS 测试版
 
-[下载 webOS 测试版](https://github.com/aston314/hongguo-tv-releases/releases/tag/webos-v0.2.100-test.21)，在 Release 的 **Assets** 中下载 `hongguo-webos-0.2.100-test.21.ipk`。这是 LG webOS TV 的实验包，不是 Android APK，也不属于稳定版。
+[下载 webOS 测试版](https://github.com/aston314/hongguo-tv-releases/releases/tag/webos-v0.2.100-test.22)，在 Release 的 **Assets** 中下载 `hongguo-webos-0.2.100-test.22.ipk`。这是 LG webOS TV 的实验包，不是 Android APK，也不属于稳定版。
 
 安装需要在电视上启用 **LG Developer Mode**，并使用 webOS 开发工具安装 `.ipk`。目前已完成真实数据请求、签名、解密和本地媒体代理的文件级验证，尚未在 LG 真机验证安装、遥控焦点或视频播放；不同型号的 HEVC/AAC 支持可能不同，不能保证一定能播放。
 
