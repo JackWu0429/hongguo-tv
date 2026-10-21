@@ -48,6 +48,7 @@ button:focus { outline: none; }
 .app-shell.sidebar-icons .main-surface { width: calc(100% - 104px); }
 
 .main-surface { position: relative; display: flex; flex: 1 1 auto; width: calc(100% - 200px); min-width: 0; flex-direction: column; background: #111217; }
+.main-surface.has-playback-drawer #hero { flex: 1 1 auto; width: calc(100% - 320px); }
 .main-surface.has-placeholder .hero { visibility: hidden; }
 .main-surface.has-placeholder .channel-tabs { visibility: hidden; }
 .main-surface.has-search .hero { visibility: hidden; }
@@ -255,6 +256,30 @@ button:focus { outline: none; }
 .progress-track.control-button:disabled span::after { display: none; }
 .control-button:disabled { opacity: .4; }
 .player-options { position: absolute; z-index: 9; right: 28px; bottom: 132px; width: 320px; padding: 18px; color: #fff; background: #22232c; border: 1px solid #454652; border-radius: 14px; box-shadow: 0 8px 35px rgba(0,0,0,.5); }
+.playback-command-menu { position: fixed; z-index: 22; top: 0; right: 0; bottom: 0; left: auto; display: flex; align-items: stretch; justify-content: flex-end; width: 320px; min-width: 320px; max-width: 320px; padding: 0; box-sizing: border-box; background: transparent; }
+.playback-menu-hint { position: absolute; z-index: 20; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center; padding: 18px; box-sizing: border-box; background: rgba(0,0,0,.48); pointer-events: none; }
+.playback-menu-hint-card { display: flex; width: 100%; max-width: 760px; max-height: 92vh; flex-direction: column; align-items: center; overflow: auto; padding: 12px 14px 16px; box-sizing: border-box; color: #fff; background: rgba(20,21,26,.82); border: 1px solid rgba(255,255,255,.18); border-radius: 12px; box-shadow: 0 12px 38px rgba(0,0,0,.42); }
+.playback-menu-hint-graphic { position: relative; flex: 0 0 auto; width: 100%; max-width: 680px; line-height: 0; }
+.playback-menu-hint-graphic img { display: block; width: 100%; height: auto; }
+.playback-menu-hint-label { position: absolute; z-index: 1; display: block; overflow: hidden; box-sizing: border-box; color: #fff; font-size: 2.06%; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+.playback-menu-hint-press { top: 10.7%; left: 28%; width: 43%; color: #52514e; text-align: center; }
+.playback-menu-hint-screen-episode { top: 29.3%; left: 42%; width: 16%; padding: 2px 4px; background: rgba(0,0,0,.5); text-align: left; }
+.playback-menu-hint-menu-title { top: 29.2%; left: 67.4%; width: 29%; font-size: 2.45%; font-weight: 500; }
+.playback-menu-hint-episode { top: 38.8%; left: 72.5%; width: 23%; }
+.playback-menu-hint-season { top: 49.1%; left: 72.5%; width: 23%; }
+.playback-menu-hint-fullscreen { top: 59.4%; left: 72.5%; width: 23%; }
+.playback-menu-hint-caption { top: 78.4%; left: 48%; width: 40%; color: #52514e; text-align: center; }
+.playback-menu-hint-card > p { max-width: 680px; margin: 8px 0 0; color: #f0f0f5; font-size: 15px; line-height: 1.45; text-align: center; }
+.playback-menu-hint-card > p + p { margin-top: 2px; color: #c1c2ca; font-size: 13px; }
+.playback-command-panel { display: flex; width: 100%; max-width: 100%; height: 100%; flex-direction: column; overflow-y: auto; padding: 22px; box-sizing: border-box; color: #fff; background: rgba(22,23,30,.97); border: 0; border-left: 1px solid rgba(255,255,255,.16); border-radius: 0; box-shadow: -12px 0 34px rgba(0,0,0,.28); }
+.playback-command-panel h2 { margin: 0 0 12px; font-size: 20px; line-height: 1.35; }
+.playback-command-actions { display: flex; flex-direction: column; }
+.playback-command-action { width: 100%; min-height: 50px; padding: 0 16px; color: #eeeef3; background: #343540; border: 1px solid #4a4b57; border-radius: 6px; font-size: 17px; text-align: left; }
+.playback-command-content { display: inline-flex; align-items: center; min-height: 24px; }
+.playback-command-content > svg { display: block; flex: 0 0 22px; width: 22px; height: 22px; margin-right: 12px; }
+.playback-command-label { display: block; line-height: 1.35; }
+.playback-command-action + .playback-command-action { margin-top: 8px; }
+.playback-command-action.is-focused, .playback-command-action:focus:not(.pointer-focus-muted) { outline: none; border-color: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,.88); background: #454652; }
 .player-options-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 20px; }
 .player-options-heading .player-option { width: 44px; min-height: 40px; font-size: 24px; text-align: center; }
 #player-options-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
@@ -605,6 +630,34 @@ button:focus { outline: none; }
 .calendar-empty { min-height: 260px; padding: 28px; text-align: center; line-height: 1.8; }
 
 .detail-modal { position: fixed; z-index: 30; top: 0; right: 0; bottom: 0; left: 0; display: grid; place-items: center; padding: 32px; background: rgba(0,0,0,.73); }
+.detail-modal.is-playback-drawer { top: 0; right: 0; bottom: 0; left: auto; display: flex; width: 320px; align-items: stretch; justify-content: flex-end; padding: 0; background: transparent; pointer-events: none; }
+.detail-modal.is-playback-drawer .detail-dialog { width: 320px; min-width: 320px; max-width: 320px; height: 100%; max-height: 100%; pointer-events: auto; border-top: 0; border-right: 0; border-bottom: 0; border-radius: 0; }
+.detail-modal.is-playback-drawer .detail-header { align-items: flex-start; min-height: 112px; gap: 12px; padding: 14px 16px; }
+.detail-modal.is-playback-drawer .detail-cover, .detail-modal.is-playback-drawer .detail-intro, .detail-modal.is-playback-drawer .detail-cast { display: none; }
+.detail-modal.is-playback-drawer .detail-title-row { display: block; }
+.detail-modal.is-playback-drawer .detail-header-actions { margin-top: 8px; gap: 8px; }
+.detail-modal.is-playback-drawer .detail-header-action { min-width: 76px; min-height: 36px; }
+.detail-modal.is-playback-drawer .detail-close { align-self: flex-start; flex-basis: 42px; min-width: 42px; min-height: 42px; margin: 0; padding: 0 8px; }
+.detail-modal.is-playback-drawer .detail-tabs { flex: 0 0 auto; }
+.detail-modal.is-playback-drawer #detail-tab-reviews, .detail-modal.is-playback-drawer #detail-tab-related { display: none; }
+.detail-modal.is-playback-drawer #detail-episode-panel, .detail-modal.is-playback-drawer #detail-series-panel { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; }
+.detail-modal.is-playback-drawer #detail-episode-panel.is-hidden, .detail-modal.is-playback-drawer #detail-series-panel.is-hidden { display: none; }
+.detail-modal.is-playback-drawer .detail-progress { padding: 12px 18px 8px; font-size: 14px; }
+.detail-modal.is-playback-drawer .detail-episodes { height: auto; max-height: none; padding: 12px 18px 20px; }
+.detail-modal.is-playback-drawer .detail-series-panel { height: auto; max-height: none; overflow-y: auto; padding: 8px 10px 12px; }
+.detail-modal.is-playback-drawer .detail-series-list { gap: 8px; padding: 4px; }
+.detail-modal.is-playback-drawer .series-row { min-height: 76px; gap: 8px; padding: 7px 9px; border-radius: 8px; }
+.detail-modal.is-playback-drawer .series-cover { flex-basis: 40px; width: 40px; height: 56px; }
+.detail-modal.is-playback-drawer .series-copy { padding: 0; }
+.detail-modal.is-playback-drawer .series-title { overflow: hidden; font-size: 15px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.detail-modal.is-playback-drawer .series-meta { overflow: hidden; margin-top: 3px; font-size: 14px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.detail-modal.is-playback-drawer .series-status { min-width: 0; max-width: 92px; padding: 5px 8px; border-radius: 6px; font-size: 14px; white-space: nowrap; }
+@media (max-width: 800px) {
+  .main-surface.has-playback-drawer #hero { width: 0; }
+  .playback-command-menu { width: 100vw; min-width: 0; max-width: 100vw; }
+  .detail-modal.is-playback-drawer { width: 100vw; }
+  .detail-modal.is-playback-drawer .detail-dialog { width: 100vw; min-width: 0; max-width: 100vw; }
+}
 .detail-dialog { position: relative; display: flex; width: 92vw; max-width: 1080px; max-height: 88vh; flex-direction: column; overflow: hidden; background: #202126; border: 1px solid rgba(255,255,255,.15); border-radius: 18px; box-shadow: 0 24px 70px rgba(0,0,0,.55); }
 .detail-header { display: flex; flex: 0 0 auto; align-items: center; gap: 16px; min-height: 138px; padding: 16px 24px; color: #fff; border-bottom: 1px solid rgba(255,255,255,.1); }
 .detail-cover { flex: 0 0 76px; width: 76px; height: 106px; object-fit: cover; background: #30313a; border-radius: 6px; }

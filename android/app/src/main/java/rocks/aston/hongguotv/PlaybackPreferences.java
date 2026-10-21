@@ -67,4 +67,19 @@ final class PlaybackPreferences {
             throw new IllegalStateException("auto cinema preference was not saved");
         }
     }
+
+    @JavascriptInterface
+    public String readPlaybackMenuHint() {
+        return preferences.getString("playbackMenuHint", "unseen");
+    }
+
+    @JavascriptInterface
+    public void writePlaybackMenuHint(String value) {
+        if (!"seen".equals(value) && !"unseen".equals(value)) {
+            throw new IllegalArgumentException("invalid playback menu hint state");
+        }
+        if (!preferences.edit().putString("playbackMenuHint", value).commit()) {
+            throw new IllegalStateException("playback menu hint state was not saved");
+        }
+    }
 }

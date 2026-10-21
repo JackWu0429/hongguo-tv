@@ -66,6 +66,7 @@
     detailCastModal: '.detail-cast-close, .detail-cast-modal-item',
     confirmation: '.confirm-button',
     playerOptions: '.player-option, #player-compose-input, #player-diagnostics-scroll',
+    playbackCommandMenu: '.playback-command-action',
     endRecommendations: '.end-recommendation-card, #end-recommendations-close',
     modalActions: '.modal-action',
     episodes: '.detail-episode',
@@ -166,6 +167,11 @@
   var autoCinemaPreferences = null;
   var autoCinemaSettingCard = document.getElementById('auto-cinema-settings');
   var autoCinemaToggle = document.getElementById('auto-cinema-toggle');
+  var playbackMenuHintSeen = false;
+  var playbackMenuHintCandidate = false;
+  var playbackMenuHintTimer = 0;
+  var playbackMenuHintPreviewForced = /(?:^|[?&])show-playback-menu-hint=1(?:&|$)/.test((window.location && window.location.search) || '');
+  var playbackMenuHintAvailable = androidShell || webosShell || playbackMenuHintPreviewForced;
   function applicationHidden() { return desktopShell ? !!window.HongguoDesktop.background : !!document.hidden; }
   document.documentElement.classList.toggle('desktop-shell', desktopShell);
   document.documentElement.classList.toggle('tv-shell', androidShell || webosShell);
@@ -193,6 +199,11 @@
   var pagePlaceholder = document.getElementById('page-placeholder');
   var detailModal = document.getElementById('detail-modal');
   var detailModalOpen = false;
+  var playbackCommandMenu = document.getElementById('playback-command-menu');
+  var playbackCommandMenuOpen = false;
+  var playbackCommandMenuReturnFocus = null;
+  var playbackDetailReturnToMenu = false;
+  var playbackDetailResumeAction = '';
   var discussionOpen = false;
   var discussionReturn = null;
   var discussionSession = null;
@@ -399,12 +410,12 @@
     },
     canPresent: function () {
       return !scanModalOpen() && !accountKeypadOpen() && !supportModalOpen && !rankFilterOpen && !(typeof actorWorksOpen !== 'undefined' && actorWorksOpen) && !confirmOpen &&
-        !detailModalOpen && !playerOptionsOpen && !discussionOpen && zoneOf(document.activeElement) === 'feed';
+        !detailModalOpen && !playerOptionsOpen && !(typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen) && !discussionOpen && zoneOf(document.activeElement) === 'feed';
     },
     canAutoplay: function () {
       var track = document.getElementById('end-recommendations-track');
       return !scanModalOpen() && !accountKeypadOpen() && !supportModalOpen && !rankFilterOpen && !(typeof actorWorksOpen !== 'undefined' && actorWorksOpen) && !confirmOpen &&
-        !detailModalOpen && !playerOptionsOpen && !discussionOpen && (!document.hasFocus || document.hasFocus()) && document.activeElement === track.children[0];
+        !detailModalOpen && !playerOptionsOpen && !(typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen) && !discussionOpen && (!document.hasFocus || document.hasFocus()) && document.activeElement === track.children[0];
     },
     now: function () { return window.performance && typeof window.performance.now === 'function' ? window.performance.now() : Date.now(); },
     countdown: renderEndRecommendationCountdown,
@@ -824,6 +835,133 @@
     return shell && shell.dataset.mode ? shell.dataset.mode : 'recommend';
   }
 
+  function syncNativePlaybackPageState() {
+    if (!androidShell || !window.HongguoTVInput || typeof window.HongguoTVInput.setPlaybackPageActive !== 'function') return;
+    window.HongguoTVInput.setPlaybackPageActive(pageMode() === 'player');
+  }
+
+  function playbackCommandMenuSeasonButton() {
+    return document.getElementById('player-menu-seasons');
+  }
+
+  function syncPlaybackDrawerLayout() {
+    var open = pageMode() === 'player' && (playbackCommandMenuOpen || detailModalOpen || playbackDetailReturnToMenu);
+    mainSurface.classList.toggle('has-playback-drawer', open);
+    if (!isPlaybackPage()) return;
+    syncNativePlayerBounds();
+    if (window.requestAnimationFrame) window.requestAnimationFrame(syncNativePlayerBounds);
+    setTimeout(syncNativePlayerBounds, 140);
+  }
+
+  function updatePlaybackCommandMenu() {
+    if (!playbackCommandMenu) return;
+    var item = activePlayback && activePlayback.item || featuredItem || currentDetail;
+    var episodeButton = document.getElementById('player-menu-episodes');
+    var episodeLabel = uiText('modal.selectEpisode', '选集');
+    var episodeCount = Number(item && item.episode_count) || 0;
+    if (episodeCount > 0) episodeLabel += ' · ' + uiText('content.episodeCount', '全{count}集', { count: episodeCount });
+    if (episodeButton) {
+      var episodeText = episodeButton.querySelector('.playback-command-label');
+      if (episodeText) { episodeText.removeAttribute('data-i18n'); episodeText.textContent = episodeLabel; }
+      episodeButton.removeAttribute('data-i18n-aria-label');
+      episodeButton.setAttribute('aria-label', episodeLabel);
+    }
+    var seasonButton = playbackCommandMenuSeasonButton();
+    var existingSeasonButton = document.querySelector('[data-action="seasons"]');
+    var showSeasons = !!(existingSeasonButton && !existingSeasonButton.classList.contains('is-hidden'));
+    if (seasonButton) {
+      seasonButton.classList.toggle('is-hidden', !showSeasons);
+      var seasonText = seasonButton.querySelector('.playback-command-label');
+      var seasonCatalog = item && seasonCatalogCache[item.series_id];
+      var seasonCount = seasonCatalog && Array.isArray(seasonCatalog.items) ? seasonCatalog.items.length : 0;
+      var seasonLabel = seasonCount ? uiText('ui.selectSeasonCount', '选季 · {count} 季', { count: seasonCount }) : uiText('ui.selectSeason', '选季');
+      if (seasonText) { seasonText.removeAttribute('data-i18n'); seasonText.textContent = seasonLabel; }
+      seasonButton.removeAttribute('data-i18n-aria-label');
+      seasonButton.setAttribute('aria-label', seasonLabel);
+      if (!showSeasons && playbackCommandMenuOpen && (document.activeElement === seasonButton || seasonButton.classList.contains('is-focused'))) goFocus(document.getElementById('player-menu-episodes'));
+    }
+    var fullscreenButton = document.getElementById('player-menu-fullscreen');
+    if (fullscreenButton) {
+      var full = shell.classList.contains('is-cinema');
+      var key = full ? 'ui.exitFullscreen' : 'ui.fullscreen';
+      var label = fullscreenButton.querySelector('.playback-command-label');
+      var icon = full ? 'icon-fullscreen-exit' : 'icon-fullscreen';
+      if (label) {
+        label.removeAttribute('data-i18n');
+        label.dataset.i18n = key;
+        label.textContent = uiText(key, full ? '退出全屏' : '全屏');
+      }
+      fullscreenButton.setAttribute('data-i18n-aria-label', key);
+      fullscreenButton.setAttribute('aria-label', uiText(key, full ? '退出全屏' : '全屏'));
+      var use = fullscreenButton.querySelector('use');
+      if (use) {
+        use.setAttribute('href', '#' + icon);
+        use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#' + icon);
+      }
+    }
+  }
+
+  function closePlaybackCommandMenu(restoreFocus) {
+    if (!playbackCommandMenuOpen) return false;
+    playbackCommandMenuOpen = false;
+    if (playbackCommandMenu) {
+      playbackCommandMenu.classList.add('is-hidden');
+      playbackCommandMenu.setAttribute('aria-hidden', 'true');
+    }
+    syncPlaybackDrawerLayout();
+    clearTimeout(controlsTimer);
+    var target = playbackCommandMenuReturnFocus;
+    playbackCommandMenuReturnFocus = null;
+    if (restoreFocus !== false) {
+      if (!target || !document.contains(target) || target.disabled || !target.getClientRects().length || focusables().indexOf(target) < 0) target = document.getElementById('hero-feed-focus');
+      goFocus(target);
+      scheduleControlsHide();
+    }
+    return true;
+  }
+
+  function openPlaybackCommandMenu(focusAction, preserveReturnFocus) {
+    if (pageMode() !== 'player' || !playbackCommandMenu || detailModalOpen || confirmOpen || discussionOpen || supportModalOpen || rankFilterOpen || detailCastOpen || playerOptionsOpen || scanModalOpen() || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || (endRecommendations && endRecommendations.isOpen())) return false;
+    if (playbackCommandMenuOpen) return true;
+    if (!preserveReturnFocus) {
+      playbackCommandMenuReturnFocus = remoteFocusTarget() || document.activeElement;
+      if (!playbackCommandMenuReturnFocus || focusables().indexOf(playbackCommandMenuReturnFocus) < 0) playbackCommandMenuReturnFocus = document.getElementById('hero-feed-focus');
+    }
+    updatePlaybackCommandMenu();
+    playbackCommandMenuOpen = true;
+    playbackCommandMenu.classList.remove('is-hidden');
+    playbackCommandMenu.setAttribute('aria-hidden', 'false');
+    syncPlaybackDrawerLayout();
+    clearTimeout(controlsTimer);
+    var target = focusAction && document.getElementById(focusAction);
+    if (!target || target.classList.contains('is-hidden')) target = document.getElementById('player-menu-episodes');
+    goFocus(target && !target.classList.contains('is-hidden') ? target : firstVisible('.playback-command-action'));
+    return true;
+  }
+
+  function togglePlaybackCommandMenu() {
+    var existingHint = document.getElementById('playback-menu-hint');
+    if (existingHint && !existingHint.classList.contains('is-hidden') && typeof closePlaybackMenuHint === 'function') closePlaybackMenuHint();
+    return playbackCommandMenuOpen ? closePlaybackCommandMenu(true) : openPlaybackCommandMenu();
+  }
+
+  function handlePlaybackCommandMenuKey(key, repeat) {
+    var current = remoteFocusTarget() || document.activeElement;
+    if (key === 'Escape' || key === 'Backspace') { if (!repeat) closePlaybackCommandMenu(true); return true; }
+    if (key === 'Enter') {
+      if (!repeat && current && typeof current.click === 'function') current.click();
+      return true;
+    }
+    var direction = ({ ArrowUp: 'up', ArrowDown: 'down' })[key];
+    if (key === 'ArrowLeft' || key === 'ArrowRight') return true;
+    if (direction && !repeat) {
+      var target = moveWithinZone('playbackCommandMenu', current, direction);
+      if (target) goFocus(target);
+      return true;
+    }
+    return !!direction;
+  }
+
   function scanModalOpen() { return searchScanOpen || danmakuScanOpen; }
 
   function focusables(selector) {
@@ -841,9 +979,11 @@
       else if (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) { if (!element.closest('#actor-works-modal')) return; }
       else if (detailCastOpen) { if (!element.closest('#detail-cast-modal')) return; }
       else if (confirmOpen) { if (!element.closest('#confirm-modal')) return; }
+      else if (typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen) { if (!element.closest('#playback-command-menu')) return; }
       else if (playerOptionsOpen) { if (!element.closest('#player-options')) return; }
       else if (discussionOpen) { if (!element.closest('#discussion-panel')) return; }
       else if (endRecommendations && endRecommendations.isOpen()) { if (!element.closest('#end-recommendations')) return; }
+      else if (element.closest('#playback-command-menu')) return;
       else if (element.closest('#end-recommendations')) return;
       else if (element.closest('#discussion-panel')) return;
       else if (detailModalOpen ? !insideModal : insideModal) return;
@@ -957,6 +1097,7 @@
     if (element.classList.contains('playback-mode-action')) return 'playbackModes';
     if (element.classList.contains('account-action')) return 'accountActions';
     if (element.classList.contains('confirm-button')) return 'confirmation';
+    if (element.classList.contains('playback-command-action')) return 'playbackCommandMenu';
     if (element.classList.contains('player-option') || element.id === 'player-compose-input' || element.id === 'player-diagnostics-scroll') return 'playerOptions';
     if (element.closest('#discussion-panel')) return 'discussion';
     if (element.classList.contains('detail-tab')) return 'detailTabs';
@@ -1005,7 +1146,7 @@
     if (accountCountryModalOpen && element.classList.contains('account-country-item')) {
       try { element.scrollIntoView(false); } catch (ignoredCountryScroll) {}
     }
-    if (!scanModalOpen() && !accountCountryModalOpen && !accountKeypadOpen() && !detailModalOpen && !(typeof actorWorksOpen !== 'undefined' && actorWorksOpen) && !confirmOpen && !playerOptionsOpen && !discussionOpen && zoneOf(element) !== 'sidebar') {
+    if (!scanModalOpen() && !accountCountryModalOpen && !accountKeypadOpen() && !detailModalOpen && !(typeof actorWorksOpen !== 'undefined' && actorWorksOpen) && !confirmOpen && !playerOptionsOpen && !(typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen) && !discussionOpen && zoneOf(element) !== 'sidebar') {
       lastContentFocus = element;
       lastPageFocus[pageMode()] = element;
     }
@@ -1254,6 +1395,7 @@
     }
     if (supportModalOpen) return document.getElementById('support-close');
     if (confirmOpen) return direction === 'left' || direction === 'right' ? moveWithinZone('confirmation', current, direction) : null;
+    if (typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen) return moveWithinZone('playbackCommandMenu', current, direction);
     if (rankFilterOpen) return moveModalFrom(current, direction);
     if (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) return moveModalFrom(current, direction);
     if (playerOptionsOpen) {
@@ -1768,6 +1910,9 @@
       numericKeypad.handleKey(key, !!event.repeat);
       event.preventDefault(); event.stopPropagation(); return;
     }
+    if (typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen && typeof handlePlaybackCommandMenuKey === 'function' && handlePlaybackCommandMenuKey(key, !!event.repeat)) {
+      event.preventDefault(); event.stopPropagation(); return;
+    }
     var current = event.remoteNavigation ? remoteFocusTarget() || document.activeElement : document.activeElement;
     if (typeof desktopShell !== 'undefined' && desktopShell && window.HongguoDesktopUI.editing(current)) {
       if (event.isComposing || event.keyCode === 229 || key !== 'Enter') return;
@@ -1914,6 +2059,77 @@
     showNotice.timer = setTimeout(function () { notice.classList.add('is-hidden'); }, 3200);
   }
 
+  function readPlaybackMenuHintSeen() {
+    try {
+      if (androidShell && window.HongguoTVPreferences && typeof window.HongguoTVPreferences.readPlaybackMenuHint === 'function') {
+        return window.HongguoTVPreferences.readPlaybackMenuHint() === 'seen';
+      }
+      return window.localStorage.getItem('hongguo-tv-playback-menu-hint') === 'seen';
+    } catch (ignored) { return false; }
+  }
+
+  function savePlaybackMenuHintSeen() {
+    try {
+      if (androidShell && window.HongguoTVPreferences && typeof window.HongguoTVPreferences.writePlaybackMenuHint === 'function') {
+        window.HongguoTVPreferences.writePlaybackMenuHint('seen');
+      } else window.localStorage.setItem('hongguo-tv-playback-menu-hint', 'seen');
+    } catch (ignored) { /* An optional hint must never affect playback. */ }
+  }
+
+  function resizePlaybackMenuHint() {
+    var graphic = document.getElementById('playback-menu-hint-graphic');
+    if (!graphic || !playbackMenuHintAvailable) return;
+    var width = Math.min(680, Math.floor((window.innerWidth || 680) * .9), Math.floor((window.innerHeight || 520) * .78 * 680 / 520));
+    width = Math.max(240, width);
+    graphic.style.width = width + 'px';
+  }
+
+  function updatePlaybackMenuHintCopy(playback) {
+    var item = playback && playback.item || featuredItem || {};
+    var count = Number(item.episode_count) || 0;
+    var seasonEntry = item.series_id && seasonCatalogCache[item.series_id];
+    var seasons = seasonEntry && Array.isArray(seasonEntry.items) ? seasonEntry.items.length : 0;
+    var episode = Number(playback && playback.episode || item.start_episode || 1) || 1;
+    var set = function (id, value) { var node = document.getElementById(id); if (node) node.textContent = value; };
+    set('playback-menu-hint-title', uiText('player.menuHintTitle', '播放菜单提示'));
+    set('playback-menu-hint-copy', uiText('player.menuHintCopy', '按返回键或等待片刻可关闭提示'));
+    set('playback-menu-hint-press', uiText('player.menuHintPress', '按下菜单键'));
+    set('playback-menu-hint-screen-episode', uiText('player.menuHintEpisodeBadge', '第 {episode} 集', { episode: episode }));
+    set('playback-menu-hint-menu-title', uiText('player.quickMenu', '播放菜单'));
+    set('playback-menu-hint-episode', count ? uiText('player.menuHintEpisode', '选集 · 全{count}集', { count: count }) : uiText('modal.selectEpisode', '选集'));
+    set('playback-menu-hint-season', seasons > 1 ? uiText('player.menuHintSeason', '选季 · {count}季', { count: seasons }) : uiText('player.menuHintSeasonShort', '选季'));
+    set('playback-menu-hint-fullscreen', uiText('player.menuHintFullscreen', '全屏'));
+    set('playback-menu-hint-caption', uiText('player.menuHintCaption', '屏幕右侧弹出播放菜单'));
+    resizePlaybackMenuHint();
+  }
+  if (window.HongguoI18n && typeof window.HongguoI18n.onChange === 'function') window.HongguoI18n.onChange(function () {
+    var hint = document.getElementById('playback-menu-hint');
+    if (hint && !hint.classList.contains('is-hidden')) updatePlaybackMenuHintCopy(activePlayback);
+  });
+
+  function closePlaybackMenuHint() {
+    clearTimeout(playbackMenuHintTimer);
+    playbackMenuHintTimer = 0;
+    var hint = document.getElementById('playback-menu-hint');
+    if (hint) { hint.classList.add('is-hidden'); hint.setAttribute('aria-hidden', 'true'); }
+    playbackMenuHintCandidate = false;
+  }
+
+  function showPlaybackMenuHint(playback) {
+    if (!playbackMenuHintAvailable || playbackMenuHintSeen || !playbackMenuHintCandidate || pageMode() !== 'player') return false;
+    playbackMenuHintSeen = true;
+    playbackMenuHintCandidate = false;
+    savePlaybackMenuHintSeen();
+    updatePlaybackMenuHintCopy(playback);
+    var hint = document.getElementById('playback-menu-hint');
+    if (!hint) return false;
+    hint.classList.remove('is-hidden');
+    hint.setAttribute('aria-hidden', 'false');
+    clearTimeout(playbackMenuHintTimer);
+    playbackMenuHintTimer = setTimeout(closePlaybackMenuHint, 10000);
+    return true;
+  }
+
   function notificationAccountKey() {
     return accountData && accountData.logged_in && accountData.profile && accountData.profile.uid ? String(accountData.profile.uid) : '';
   }
@@ -2051,7 +2267,7 @@
   function scheduleControlsHide() {
     clearTimeout(controlsTimer);
     var video = document.getElementById('hero-video');
-    if (!isPlaybackPage() || shell.classList.contains('is-controls-hidden') || video.paused || video.ended || detailModalOpen || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || confirmOpen || playerOptionsOpen || discussionOpen || ['sidebar', 'channels'].indexOf(zoneOf(document.activeElement)) >= 0) return;
+    if (!isPlaybackPage() || (typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen) || shell.classList.contains('is-controls-hidden') || video.paused || video.ended || detailModalOpen || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || confirmOpen || playerOptionsOpen || discussionOpen || ['sidebar', 'channels'].indexOf(zoneOf(document.activeElement)) >= 0) return;
     controlsTimer = setTimeout(function () { hideControls(); }, 4000);
   }
   function revealControls() {
@@ -2060,7 +2276,7 @@
   }
   function hideControls() {
     clearTimeout(controlsTimer);
-    if (!isPlaybackPage() || detailModalOpen || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || confirmOpen || playerOptionsOpen || discussionOpen || zoneOf(document.activeElement) === 'sidebar') return;
+    if (!isPlaybackPage() || (typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen) || detailModalOpen || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || confirmOpen || playerOptionsOpen || discussionOpen || zoneOf(document.activeElement) === 'sidebar') return;
     shell.classList.add('is-controls-hidden');
     goFocus(document.getElementById('hero-feed-focus'));
   }
@@ -2554,10 +2770,13 @@
     if (accountCountryModalOpen) { closeAccountCountryModal(false); return true; }
     if (accountKeypadOpen()) { numericKeypad.close('back'); return true; }
     if (supportModalOpen) { closeSupportQR(); return true; }
+    var playbackHint = document && typeof document.getElementById === 'function' ? document.getElementById('playback-menu-hint') : null;
+    if (playbackHint && !playbackHint.classList.contains('is-hidden')) { if (typeof closePlaybackMenuHint === 'function') closePlaybackMenuHint(); return true; }
     if (followNotificationViewOpen) { closeFollowNotifications(); return true; }
     if (rankFilterOpen) { closeRankFilter(true); return true; }
     if (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) { closeActorWorks(true); return true; }
     if (detailCastOpen) { closeDetailCast(true); return true; }
+    if (typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen) { if (typeof closePlaybackCommandMenu === 'function') closePlaybackCommandMenu(true); return true; }
     if (confirmOpen) closeConfirmation();
     else if (playerOptionsOpen) closePlayerOptions();
     else if (detailModalOpen) closeDetail();
@@ -2588,6 +2807,8 @@
     return true;
   }
   function pauseForBackground() {
+    if (typeof closePlaybackCommandMenu === 'function') closePlaybackCommandMenu(false);
+    if (typeof closePlaybackMenuHint === 'function') closePlaybackMenuHint();
     if (searchScanOpen) closeSearchScan(true);
     if (typeof danmakuScanOpen !== 'undefined' && danmakuScanOpen) closeDanmakuScan(false);
     if (accountKeypadOpen()) numericKeypad.close('background');
@@ -2659,7 +2880,7 @@
     pendingAccountHomeProgram = null;
     startPlayer({ series_id: program.series_id, title: program.title, intro: '', cover: '' }, null, { cardLaunch: !!program.cardLaunch });
   }
-  window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, desktopFullscreenChanged: desktopFullscreenChanged, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {}, finishSearchEditing: function () { var current = typeof androidShell !== 'undefined' && androidShell ? remoteFocusTarget() || document.activeElement : document.activeElement; if (current === searchInput) goFocus(searchSuggestionOpen ? firstVisible('.search-suggestion') || firstSearchAction() || firstSearchFilter() : firstSearchAction() || firstSearchFilter()); }, openHomeProgram: openHomeProgram };
+  window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, togglePlaybackCommandMenu: togglePlaybackCommandMenu, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, desktopFullscreenChanged: desktopFullscreenChanged, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {}, finishSearchEditing: function () { var current = typeof androidShell !== 'undefined' && androidShell ? remoteFocusTarget() || document.activeElement : document.activeElement; if (current === searchInput) goFocus(searchSuggestionOpen ? firstVisible('.search-suggestion') || firstSearchAction() || firstSearchFilter() : firstSearchAction() || firstSearchFilter()); }, openHomeProgram: openHomeProgram };
 
   function isLibraryPage() { return ['history', 'favorites', 'likes'].indexOf(pageMode()) >= 0; }
   function libraryEntry(id) { return libraryData.entries.filter(function (entry) { return entry.drama.series_id === id; })[0] || null; }
@@ -4266,6 +4487,7 @@
       if (playbackTiming.length > 20) playbackTiming.shift();
     }
     updatePlaybackControls(); scheduleControlsHide(); saveProgress(true);
+    if (typeof showPlaybackMenuHint === 'function') showPlaybackMenuHint(playback);
   }
   function checkPlaybackProgress(video) {
     var playback = activePlayback, presentation = playback && playback.presentation;
@@ -4569,6 +4791,9 @@
 
   function startPlayer(item, returnFocus, startOptions) {
     if (!item || !item.series_id) return;
+    if (typeof closePlaybackCommandMenu === 'function') closePlaybackCommandMenu(false);
+    if (typeof closePlaybackMenuHint === 'function') closePlaybackMenuHint();
+    var menuHintCandidate = typeof playbackMenuHintAvailable !== 'undefined' && playbackMenuHintAvailable && pageMode() === 'recommend' && (typeof playbackMenuHintPreviewForced !== 'undefined' && playbackMenuHintPreviewForced || !!returnFocus && isAutoCinemaCardLaunch(returnFocus));
     var launchFromCard = shouldAutoCinemaForLaunch(pageMode(), returnFocus, startOptions);
     if (typeof notificationHidePopup === 'function') notificationHidePopup();
     var recommendation = rememberRecommendation();
@@ -4580,6 +4805,7 @@
     }
     shell.dataset.mode = 'player';
     shell.classList.add('is-player');
+    if (typeof syncNativePlaybackPageState === 'function') syncNativePlaybackPageState();
     document.getElementById('page-context').disabled = false;
     mainSurface.classList.remove('has-search', 'has-placeholder', 'has-workspace');
     hideWorkspacePages();
@@ -4590,6 +4816,7 @@
     feedItems = [item];
     feedIndex = 0;
     cancelPendingAutoCinema();
+    playbackMenuHintCandidate = menuHintCandidate;
     autoCinemaCandidate = autoCinemaEnabled && launchFromCard;
     playFeedItem(0, item.__explicitEpisode ? item.start_episode : undefined, item.__explicitEpisode ? 0 : undefined);
     if (autoCinemaCandidate) autoCinemaGeneration = feedGeneration;
@@ -6160,6 +6387,7 @@
       entry.pending = false; entry.expires = Date.now() + 120000;
       entry.items.forEach(function (item) { rememberSeasonCatalog(item.series_id, entry); });
       rememberSeasonCatalog(id, entry);
+      if (playbackMenuHintCandidate || (document.getElementById('playback-menu-hint') && !document.getElementById('playback-menu-hint').classList.contains('is-hidden'))) updatePlaybackMenuHintCopy(activePlayback);
       return entry.items;
     }).catch(function (error) {
       if (seasonCatalogCache[id] === entry) delete seasonCatalogCache[id];
@@ -6183,6 +6411,7 @@
     var generation = ++seasonControlGeneration;
     seasonControlID = id; seasonControlState = id ? 'loading' : '';
     button.classList.toggle('is-hidden', !hinted);
+    updatePlaybackCommandMenu();
     if (!hinted && document.activeElement === button) goFocus(document.querySelector('[data-action="episodes"]'));
     setControlIcon('seasons', uiText('ui.selectSeasonLoading', '选季…'), 'icon-seasons'); button.setAttribute('aria-busy', id ? 'true' : 'false');
     if (!id) {
@@ -6197,6 +6426,7 @@
       setControlIcon('seasons', uiText('ui.selectSeasonCount', '选季 · {count} 季', { count: count }), 'icon-seasons'); button.setAttribute('aria-busy', 'false');
       var hasSeasons = items.length > 1 || items.some(function (season) { return !!(season.season_index > 0 || season.label || posterSeasonLabel(season)); });
       button.classList.toggle('is-hidden', !hasSeasons);
+      updatePlaybackCommandMenu();
       if (!hasSeasons && document.activeElement === button) goFocus(document.querySelector('[data-action="episodes"]'));
     }).catch(function () {
       if (generation !== seasonControlGeneration) return;
@@ -6206,7 +6436,13 @@
 
   function focusCurrentSeason() {
     var row = currentSeriesRow();
-    if (row) row.scrollIntoView({ block: 'nearest' });
+    var list = document.getElementById('detail-series-list');
+    if (row && list) {
+      var listRect = list.getBoundingClientRect();
+      var rowRect = row.getBoundingClientRect();
+      var centeredTop = list.scrollTop + rowRect.top - listRect.top - (list.clientHeight - row.offsetHeight) / 2;
+      list.scrollTop = Math.max(0, Math.min(list.scrollHeight - list.clientHeight, centeredTop));
+    }
     if (seriesFocusCurrent && detailTab === 'series' && document.activeElement.id === 'detail-tab-series') {
       seriesFocusCurrent = false; if (row) goFocus(row);
     }
@@ -6489,12 +6725,18 @@
     detailElements().title.textContent = item.title || uiText('modal.selectEpisode', '选集');
     selectDetailTab(initialTab === 'series' ? 'series' : 'episodes');
     detailFocusPending = detailTab === 'episodes';
+    detailModal.classList.toggle('is-playback-drawer', pageMode() === 'player');
+    syncPlaybackDrawerLayout();
     loadDetailEpisodes(item);
   }
 
-  function closeDetail() {
+  function closeDetail(skipPlaybackMenuReturn) {
     if (actorWorksOpen) closeActorWorks(false);
     if (detailCastOpen) closeDetailCast(false);
+    var returnToPlaybackMenu = !skipPlaybackMenuReturn && playbackDetailReturnToMenu && pageMode() === 'player';
+    var playbackMenuAction = playbackDetailResumeAction;
+    playbackDetailReturnToMenu = false;
+    playbackDetailResumeAction = '';
     resetSeriesPanel();
     ++detailGeneration;
     seriesRootID = '';
@@ -6504,10 +6746,15 @@
     currentDetail = null;
     detailRequestItem = null;
     detailModal.classList.add('is-hidden');
+    detailModal.classList.remove('is-playback-drawer');
     detailModal.setAttribute('aria-hidden', 'true');
     var target = detailReturnFocus && document.contains(detailReturnFocus) ? detailReturnFocus : firstCatalog() || activeChannel();
     detailReturnFocus = null;
-    if (!restoreSearchSuggestionFocus()) goFocus(target);
+    if (!restoreSearchSuggestionFocus()) {
+      if (returnToPlaybackMenu) openPlaybackCommandMenu(playbackMenuAction, true);
+      else goFocus(target);
+    }
+    if (!returnToPlaybackMenu) syncPlaybackDrawerLayout();
     searchSuggestionReturnKey = '';
     scheduleControlsHide();
   }
@@ -6525,7 +6772,7 @@
     var episode = currentDetail.episodes[index];
     var item = Object.assign({}, currentDetail, { vid: episode.video_id, start_episode: episode.index, __explicitEpisode: true });
     var returnFocus = detailReturnFocus;
-    closeDetail();
+    closeDetail(true);
     startPlayer(item, returnFocus);
   }
 
@@ -6541,6 +6788,7 @@
       if (!restoring) { revealControls(); goFocus(firstContentFocus()); }
       return;
     }
+    if (typeof closePlaybackCommandMenu === 'function') closePlaybackCommandMenu(false);
     if (searchScanOpen) closeSearchScan(false);
     if (typeof danmakuScanOpen !== 'undefined' && danmakuScanOpen) closeDanmakuScan(false);
     if (smsVerification) smsVerification.stop();
@@ -6560,6 +6808,7 @@
     document.querySelectorAll('.side-item').forEach(function (node) { node.classList.toggle('is-active', node === item); });
     var label = item.querySelector('span:last-child');
     shell.dataset.mode = item.dataset.page || 'recommend';
+    if (typeof syncNativePlaybackPageState === 'function') syncNativePlaybackPageState();
     document.getElementById('page-context').textContent = label ? label.textContent : uiText('ui.page', '页面');
     document.getElementById('page-context').disabled = true;
     shell.classList.remove('is-player');
@@ -6638,6 +6887,7 @@
   document.addEventListener('scroll', queueTailCheck, true);
   window.addEventListener('resize', queueTailCheck);
   window.addEventListener('resize', layoutLastPlaybackFrame);
+  window.addEventListener('resize', resizePlaybackMenuHint);
   window.addEventListener('resize', function () { if (endRecommendations && endRecommendations.isOpen()) scrollEndRecommendationIntoView(document.activeElement); });
   window.addEventListener('blur', cancelEndRecommendationAutoplay);
   document.addEventListener('focusin', function (event) {
@@ -6655,6 +6905,7 @@
       if (!event.target.closest('#end-recommendations')) { goFocus(document.getElementById('end-recommendations-track').children[endRecommendationIndex] || document.getElementById('end-recommendations-close')); return; }
       scrollEndRecommendationIntoView(event.target);
     } else setTimeout(flushEndRecommendations, 0);
+    if (typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen && !event.target.closest('#playback-command-menu')) { goFocus(firstVisible('.playback-command-action')); return; }
     if (scanModalOpen() && !event.target.closest('#search-scan-modal')) { goFocus(document.getElementById('search-scan-close')); return; }
     if (accountCountryModalOpen && !event.target.closest('#account-country-modal')) { goFocus(document.querySelector('.account-country-item.is-selected') || document.getElementById('account-country-close')); return; }
     if (typeof actorWorksOpen !== 'undefined' && actorWorksOpen && !event.target.closest('#actor-works-modal')) { goFocus(document.getElementById('actor-works-close')); return; }
@@ -6682,7 +6933,7 @@
     if (zone === 'sidebar') clearTimeout(controlsTimer);
     else if (isPlaybackPage() && ['controls', 'timeline', 'actions', 'channels'].indexOf(zone) >= 0) revealControls();
     else if (isPlaybackPage() && zone === 'feed') scheduleControlsHide();
-    if (!scanModalOpen() && !accountKeypadOpen() && !detailModalOpen && !(typeof actorWorksOpen !== 'undefined' && actorWorksOpen) && !confirmOpen && !playerOptionsOpen && !discussionOpen && zone !== 'sidebar') {
+    if (!scanModalOpen() && !accountKeypadOpen() && !detailModalOpen && !(typeof actorWorksOpen !== 'undefined' && actorWorksOpen) && !confirmOpen && !playerOptionsOpen && !(typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen) && !discussionOpen && zone !== 'sidebar') {
       lastContentFocus = event.target;
       lastPageFocus[pageMode()] = event.target;
     }
@@ -6723,6 +6974,23 @@
       } else if (item.dataset.action === 'play' || item.dataset.action === 'pause') toggleVideo();
       else if (item.dataset.action === 'seasons') {
         if (featuredItem) openDetail(featuredItem, 'series');
+      }
+      else if (item.dataset.action === 'player-menu-episodes' || item.dataset.action === 'player-menu-seasons') {
+        if (!featuredItem) {
+          closePlaybackCommandMenu(true);
+          showNotice(uiText('ui.noPlayableDrama', '当前还没有可打开的短剧。'));
+          return;
+        }
+        var menuReturn = playbackCommandMenuReturnFocus || document.getElementById('hero-feed-focus');
+        playbackDetailReturnToMenu = true;
+        playbackDetailResumeAction = item.id;
+        closePlaybackCommandMenu(false);
+        playbackCommandMenuReturnFocus = menuReturn;
+        openDetail(featuredItem, item.dataset.action === 'player-menu-seasons' ? 'series' : undefined, menuReturn);
+      }
+      else if (item.dataset.action === 'player-menu-fullscreen') {
+        closePlaybackCommandMenu(true);
+        toggleCinema();
       }
       else if (item.dataset.action === 'episodes') {
         if (featuredItem) openDetail(featuredItem);
@@ -6825,6 +7093,7 @@
   document.getElementById('detail-series-retry').addEventListener('click', loadSeriesSeasons);
   document.getElementById('end-recommendations-close').addEventListener('click', function () { endRecommendations.close(true); });
   document.getElementById('end-recommendations').addEventListener('click', function (event) { if (event.target === this) endRecommendations.close(true); });
+  if (playbackCommandMenu) playbackCommandMenu.addEventListener('click', function (event) { if (event.target === this) closePlaybackCommandMenu(true); });
   ['wheel', 'touchstart', 'mousedown', 'pointerdown'].forEach(function (name) {
     document.getElementById('end-recommendations').addEventListener(name, cancelEndRecommendationAutoplay, true);
   });
@@ -7440,7 +7709,9 @@
   appUpdates.refresh();
   setInterval(appUpdates.refresh, 1000);
   updateFollowNotificationAccess();
+  syncNativePlaybackPageState();
   goFocus(document.querySelector('.side-item.is-active'));
+  playbackMenuHintSeen = readPlaybackMenuHintSeen();
   restorePlaybackPreferences();
   loadStatus();
   libraryReady = loadLibrary();

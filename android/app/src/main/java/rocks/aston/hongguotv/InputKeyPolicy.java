@@ -10,6 +10,10 @@ final class InputKeyPolicy {
         return keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE;
     }
 
+    static boolean routePlaybackMenuKey(boolean playbackPageActive, int keyCode) {
+        return playbackPageActive && keyCode == KeyEvent.KEYCODE_MENU;
+    }
+
     static boolean shouldDismissInputBack(InputEditingState.Snapshot state) {
         return state != null && state.shouldDismissBack();
     }

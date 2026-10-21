@@ -12,6 +12,13 @@ public class InputKeyPolicyTest {
         assertFalse(InputKeyPolicy.isBackKey(KeyEvent.KEYCODE_DPAD_CENTER));
     }
 
+    @Test public void menuKeyIsOwnedOnlyByThePlaybackPage() {
+        assertTrue(InputKeyPolicy.routePlaybackMenuKey(true, KeyEvent.KEYCODE_MENU));
+        assertFalse(InputKeyPolicy.routePlaybackMenuKey(false, KeyEvent.KEYCODE_MENU));
+        assertFalse(InputKeyPolicy.routePlaybackMenuKey(true, KeyEvent.KEYCODE_BACK));
+        assertFalse(InputKeyPolicy.routePlaybackMenuKey(true, KeyEvent.KEYCODE_HOME));
+    }
+
     @Test public void backDismissesAnActiveInputBeforeReturningToThePage() {
         InputEditingState state = new InputEditingState();
         assertFalse(InputKeyPolicy.shouldDismissInputBack(state.snapshot()));

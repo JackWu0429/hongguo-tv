@@ -42,6 +42,7 @@ public class MainActivity extends Activity {
     private NativePlayerAdapter playerBridge;
     private boolean backPending;
     private volatile boolean activityForeground;
+    private volatile boolean playbackPageActive;
     private AlertDialog exitDialog;
     private boolean keyboardVisible;
     private final InputEditingState inputEditingState = new InputEditingState();
@@ -437,6 +438,12 @@ public class MainActivity extends Activity {
                 return true;
             }
         }
+        if (InputKeyPolicy.routePlaybackMenuKey(playbackPageActive, event.getKeyCode())) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0 && pageReady && webView != null) {
+                webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.togglePlaybackCommandMenu()", null);
+            }
+            return true;
+        }
         if (InputKeyPolicy.isBackKey(event.getKeyCode())) {
             if (InputKeyPolicy.shouldDismissInputBack(editing)) {
                 if (event.getAction() == KeyEvent.ACTION_UP) {
@@ -493,6 +500,12 @@ public class MainActivity extends Activity {
         public void setRemoteNavigationTarget(boolean active) {
             if (destroyed) return;
             searchNavigationState.setRemoteNavigationTarget(active && pageReady && activityForeground);
+        }
+
+        @JavascriptInterface
+        public void setPlaybackPageActive(boolean active) {
+            if (destroyed) return;
+            playbackPageActive = active;
         }
 
         @JavascriptInterface
@@ -637,6 +650,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         destroyed = true;
         pageReady = false;
+        playbackPageActive = false;
         inputEditingState.reset();
         searchNavigationState.reset();
         if (appUpdater != null) appUpdater.destroy();
