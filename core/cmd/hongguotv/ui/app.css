@@ -378,7 +378,8 @@ button:focus { outline: none; }
 .search-suggestion { display: flex; align-items: center; width: 100%; min-height: 48px; padding: 6px 10px; color: #f5f5f7; background: transparent; border: 0; border-radius: 7px; text-align: left; }
 .search-suggestion + .search-suggestion { margin-top: 2px; }
 .search-suggestion-image { flex: 0 0 30px; width: 30px; height: 40px; object-fit: cover; margin-right: 10px; border-radius: 4px; background: #2d2e36; }
-.search-suggestion-icon { flex: 0 0 30px; display: grid; place-items: center; width: 30px; height: 30px; margin-right: 10px; color: #b8bac5; background: #2a2b34; border-radius: 50%; font-size: 13px; }
+.search-suggestion-icon { flex: 0 0 34px; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; margin-right: 10px; color: #c1c3ce; background: #2a2b34; border-radius: 50%; }
+.search-suggestion-icon svg { display: block; flex: 0 0 20px; width: 20px; height: 20px; }
 .search-suggestion-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .search-suggestion-name { overflow: hidden; font-size: 15px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .search-suggestion-meta { overflow: hidden; color: #9b9ca8; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }

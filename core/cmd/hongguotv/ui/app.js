@@ -4725,6 +4725,50 @@
     return labels[kind] || labels.common_query;
   }
 
+  function createSearchSuggestionIcon(kind) {
+    var namespace = 'http://www.w3.org/2000/svg';
+    var shapes = {
+      short_play_actor: [
+        ['circle', { cx: '12', cy: '8', r: '3.2' }],
+        ['path', { d: 'M5 20a7 7 0 0 1 14 0' }]
+      ],
+      short_play_role: [
+        ['circle', { cx: '10', cy: '7.5', r: '2.8' }],
+        ['path', { d: 'M4.5 17.5a5.5 5.5 0 0 1 11 0M18 14.5l1 1.8 2 .3-1.5 1.4.4 2-1.9-.9-1.8.9.3-2-1.4-1.4 2-.3z' }]
+      ],
+      album: [
+        ['rect', { x: '4', y: '4', width: '16', height: '16', rx: '2' }],
+        ['path', { d: 'M8 8h8M8 12h8M8 16h5' }]
+      ],
+      title: [
+        ['path', { d: 'M7 3h7l4 4v14H7zM14 3v5h5M10 12h5M10 16h5' }]
+      ],
+      common_query: [
+        ['circle', { cx: '10.5', cy: '10.5', r: '5.8' }],
+        ['path', { d: 'm15 15 5 5' }]
+      ]
+    };
+    var wrapper = document.createElement('span');
+    wrapper.className = 'search-suggestion-icon';
+    wrapper.setAttribute('aria-hidden', 'true');
+    var svg = document.createElementNS(namespace, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('focusable', 'false');
+    var elements = shapes[kind] || shapes.common_query;
+    elements.forEach(function (shape) {
+      var element = document.createElementNS(namespace, shape[0]);
+      Object.keys(shape[1]).forEach(function (attribute) { element.setAttribute(attribute, shape[1][attribute]); });
+      element.setAttribute('fill', 'none');
+      element.setAttribute('stroke', 'currentColor');
+      element.setAttribute('stroke-width', '1.8');
+      element.setAttribute('stroke-linecap', 'round');
+      element.setAttribute('stroke-linejoin', 'round');
+      svg.appendChild(element);
+    });
+    wrapper.appendChild(svg);
+    return wrapper;
+  }
+
   function closeSearchSuggestions(restoreInput) {
     clearTimeout(searchSuggestionTimer);
     searchSuggestionTimer = null;
@@ -4765,8 +4809,7 @@
       if (item.drama && item.drama.cover) {
         image = document.createElement('img'); image.className = 'search-suggestion-image'; image.alt = ''; image.loading = 'lazy'; setCover(image, item.drama);
       } else {
-        image = document.createElement('span'); image.className = 'search-suggestion-icon'; image.textContent = item.kind === 'short_play_actor' ? '人' : item.kind === 'short_play_role' ? '角' : '⌕';
-        image.setAttribute('aria-hidden', 'true');
+        image = createSearchSuggestionIcon(item.kind);
       }
       var copy = document.createElement('span'); copy.className = 'search-suggestion-copy';
       var name = document.createElement('span'); name.className = 'search-suggestion-name'; name.textContent = item.name;

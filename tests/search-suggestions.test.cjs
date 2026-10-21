@@ -36,6 +36,17 @@ test('suggestion refresh preserves a focused item across DOM replacement', () =>
   assert.match(fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8'), /\.search-suggestions\s*\{[^}]*max-height:\s*60vh/);
 });
 
+test('suggestion fallback icons use fixed-size inline SVG shapes for legacy Android WebViews', () => {
+  const icon = block('createSearchSuggestionIcon', 'closeSearchSuggestions');
+  const css = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8');
+  assert.match(icon, /document\.createElementNS\(namespace, 'svg'\)/);
+  assert.match(icon, /short_play_actor:[\s\S]*?short_play_role:[\s\S]*?album:[\s\S]*?title:[\s\S]*?common_query:/);
+  assert.match(icon, /shapes\[kind\] \|\| shapes\.common_query/);
+  assert.match(css, /\.search-suggestion-icon\s*\{[^}]*display:\s*flex;[^}]*width:\s*34px;[^}]*height:\s*34px/);
+  assert.match(css, /\.search-suggestion-icon svg\s*\{[^}]*width:\s*20px;[^}]*height:\s*20px/);
+  assert.doesNotMatch(css, /\.search-suggestion-icon\s*\{[^}]*display:\s*grid/);
+});
+
 test('suggestion panel uses the input and scan control width without counting search', () => {
   const css = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8');
   assert.match(css, /\.search-suggestions\s*\{[^}]*padding:\s*10px 6px/);
