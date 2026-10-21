@@ -95,13 +95,16 @@ test('Android search input notifies the native shell without changing browser fo
   assert.match(source, /event\.target\.id === 'search-input'/);
   assert.match(source, /androidShell && event\.target/);
 });
-test('native vertical bridge uses the existing router once and ignores text editing keys', () => {
+test('native remote bridge uses the existing focus router for arrows and confirm', () => {
   const c=keyboard();
   assert.equal(c.remoteKey(20,false),true);
   assert.equal(c.remoteKey(19,true),true);
-  assert.equal(c.remoteKey(21,false),false);
-  assert.deepEqual(Array.from(c.moved),['down','up']);
-  assert.deepEqual(Array.from(c.focused),['down','up']);
+  assert.equal(c.remoteKey(21,false),true);
+  assert.equal(c.remoteKey(22,false),true);
+  assert.equal(c.remoteKey(23,false),true);
+  assert.equal(c.clicks,1);
+  assert.deepEqual(Array.from(c.moved),['down','up','left','right']);
+  assert.deepEqual(Array.from(c.focused),['down','up','left','right']);
 });
 test('account number buttons activate once without submitting SMS or login', () => {
   const c=keyboard();

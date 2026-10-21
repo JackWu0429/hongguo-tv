@@ -19,7 +19,15 @@ public class InputKeyPolicyTest {
     }
 
     @Test public void searchEditingKeepsVerticalNavigationOnPageRouter() {
-        assertTrue(InputKeyPolicy.routeSearchKey(true));
-        assertFalse(InputKeyPolicy.routeSearchKey(false));
+        assertTrue(InputKeyPolicy.routeSearchKey(true, false, false));
+        assertFalse(InputKeyPolicy.routeSearchKey(false, false, true));
+    }
+
+    @Test public void rendererFallbackRoutesOnlyToAFocusedNonEditor() {
+        assertTrue(InputKeyPolicy.routeSearchKey(false, true, true));
+        assertTrue(InputKeyPolicy.routeFallbackNavigationKey(true, true, false));
+        assertFalse(InputKeyPolicy.routeFallbackNavigationKey(true, false, false));
+        assertFalse(InputKeyPolicy.routeFallbackNavigationKey(true, true, true));
+        assertFalse(InputKeyPolicy.routeSearchKey(false, true, false));
     }
 }

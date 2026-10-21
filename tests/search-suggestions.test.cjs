@@ -36,6 +36,15 @@ test('suggestion refresh preserves a focused item across DOM replacement', () =>
   assert.match(fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8'), /\.search-suggestions\s*\{[^}]*max-height:\s*60vh/);
 });
 
+test('search suggestion focus remains in the native search navigation region for remote selection', () => {
+  const focusinStart = source.indexOf("document.addEventListener('focusin'");
+  const focusin = source.slice(focusinStart, source.indexOf("document.querySelectorAll('.side-item')", focusinStart));
+  assert.match(focusin, /setRemoteNavigationTarget\(!editingTarget && focusables\(\)\.indexOf\(target\) >= 0\)/);
+  assert.match(source, /if \(zone === 'searchInput'\)[\s\S]*?searchSuggestionOpen \? firstVisible\('\.search-suggestion'\)/);
+  assert.match(source, /if \(zone === 'searchSuggestions'\)[\s\S]*?moveWithinZone\(zone, current, direction\)/);
+  assert.match(source, /if \(key === 'Enter'\)[\s\S]*?current\.click\(\)/);
+});
+
 test('suggestion fallback icons use fixed-size inline SVG shapes for legacy Android WebViews', () => {
   const icon = block('createSearchSuggestionIcon', 'closeSearchSuggestions');
   const css = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8');

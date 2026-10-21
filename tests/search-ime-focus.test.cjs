@@ -31,3 +31,13 @@ test('general focus restoration avoids an active editor while search repair requ
   assert.match(activity, /if \(!repairingSearchInput && \(accountEditing \|\| searchEditing \|\| isKeyboardVisible\(\)\)\) return/);
   assert.match(activity, /private void beginSearchEditingOnUiThread\(boolean documentHasFocus\)[\s\S]*?if \(destroyed \|\| !pageReady \|\| !activityForeground \|\| webView == null\) return/);
 });
+
+test('Android keeps D-pad and confirm routed through the search focus graph after leaving the editor', () => {
+  const focusinStart = app.indexOf("document.addEventListener('focusin'");
+  const focusin = app.slice(focusinStart, app.indexOf("document.querySelectorAll('.side-item')", focusinStart));
+  assert.match(focusin, /setRemoteNavigationTarget\(!editingTarget && focusables\(\)\.indexOf\(target\) >= 0\)/);
+  assert.match(activity, /routeFallbackNavigationKey\(\s*searchNavigationFallback, remoteNavigationTarget, searchEditing \|\| accountEditing\)/);
+  assert.match(activity, /searchConfirmKeyBit\(event.getKeyCode\(\)\)[\s\S]*?remoteKey\(" \+ event\.getKeyCode\(\)/);
+  assert.match(activity, /public void setRemoteNavigationTarget\(boolean active\)/);
+  assert.match(app, /function remoteKey\(keyCode, repeat\) \{\s*if \(\[19, 20, 21, 22, 23, 66, 160\]/);
+});

@@ -424,7 +424,7 @@
     37: 'ArrowLeft', 38: 'ArrowUp', 39: 'ArrowRight', 40: 'ArrowDown',
     13: 'Enter', 27: 'Escape', 8: 'Backspace', 9: 'Tab', 46: 'Delete', 32: ' ',
     19: 'ArrowUp', 20: 'ArrowDown', 21: 'ArrowLeft', 22: 'ArrowRight',
-    23: 'Enter', 66: 'Enter', 4: 'Escape', 111: 'Escape'
+    23: 'Enter', 66: 'Enter', 160: 'Enter', 4: 'Escape', 111: 'Escape'
   };
 
   function playMedia(video) {
@@ -1850,7 +1850,7 @@
   }
 
   function remoteKey(keyCode, repeat) {
-    if (keyCode !== 19 && keyCode !== 20) return false;
+    if ([19, 20, 21, 22, 23, 66, 160].indexOf(keyCode) < 0) return false;
     var handled = false;
     handleKey({ keyCode: keyCode, repeat: !!repeat, preventDefault: function () { handled = true; }, stopPropagation: function () {} });
     return handled;
@@ -6622,6 +6622,11 @@
   window.addEventListener('resize', function () { if (endRecommendations && endRecommendations.isOpen()) scrollEndRecommendationIntoView(document.activeElement); });
   window.addEventListener('blur', cancelEndRecommendationAutoplay);
   document.addEventListener('focusin', function (event) {
+    if (androidShell && window.HongguoTVInput && typeof window.HongguoTVInput.setRemoteNavigationTarget === 'function') {
+      var target = event.target;
+      var editingTarget = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      window.HongguoTVInput.setRemoteNavigationTarget(!editingTarget && focusables().indexOf(target) >= 0);
+    }
     if (endRecommendations && endRecommendations.isOpen()) {
       if (event.target !== document.getElementById('end-recommendations-track').children[0]) endRecommendations.cancelAutoplay();
       if (!event.target.closest('#end-recommendations')) { goFocus(document.getElementById('end-recommendations-track').children[endRecommendationIndex] || document.getElementById('end-recommendations-close')); return; }

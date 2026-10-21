@@ -12,12 +12,12 @@ final class InputKeyPolicy {
         return !editing;
     }
 
-    /**
-     * A system IME can temporarily move window focus away from the WebView
-     * while the DOM search field remains active. Keep vertical D-pad routing
-     * enabled so the user can leave that field for the scan/filter actions.
-     */
-    static boolean routeSearchKey(boolean searchEditing) {
-        return searchEditing;
+    /** Keeps page-owned navigation working after leaving the IME-backed search field. */
+    static boolean routeSearchKey(boolean searchEditing, boolean searchNavigationFallback, boolean remoteNavigationTarget) {
+        return searchEditing || searchNavigationFallback && remoteNavigationTarget;
+    }
+
+    static boolean routeFallbackNavigationKey(boolean searchNavigationFallback, boolean remoteNavigationTarget, boolean editing) {
+        return searchNavigationFallback && remoteNavigationTarget && !editing;
     }
 }

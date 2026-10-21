@@ -46,6 +46,8 @@ public class MainActivity extends Activity {
     private boolean keyboardVisible;
     private boolean accountEditing;
     private boolean searchEditing;
+    private boolean searchNavigationFallback;
+    private boolean remoteNavigationTarget;
     private final SearchInputFocusPolicy searchInputFocusPolicy = new SearchInputFocusPolicy();
     private boolean inputBackPending;
     private LinearLayout startupPanel;
@@ -56,6 +58,8 @@ public class MainActivity extends Activity {
     private boolean pageLoadFailed;
     private volatile boolean pageReady;
     private int routedVerticalKeys;
+    private int routedHorizontalKeys;
+    private int routedConfirmKeys;
     private AnimatedVectorDrawable startupAnimation;
     private AppUpdater appUpdater;
     private TvHomeChannelManager homeChannelManager;
@@ -143,6 +147,11 @@ public class MainActivity extends Activity {
                 pageReady = false;
                 accountEditing = false;
                 searchEditing = false;
+                searchNavigationFallback = false;
+                remoteNavigationTarget = false;
+                routedVerticalKeys = 0;
+                routedHorizontalKeys = 0;
+                routedConfirmKeys = 0;
                 searchInputFocusPolicy.reset();
                 super.onPageStarted(view, url, favicon);
             }
@@ -389,6 +398,20 @@ public class MainActivity extends Activity {
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         int verticalBit = event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP ? 1 : event.getKeyCode() == KeyEvent.KEYCODE_DPAD_DOWN ? 2 : 0;
+        int horizontalBit = event.getKeyCode() == KeyEvent.KEYCODE_DPAD_LEFT ? 1 : event.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT ? 2 : 0;
+        boolean fallbackNavigation = InputKeyPolicy.routeFallbackNavigationKey(
+                searchNavigationFallback, remoteNavigationTarget, searchEditing || accountEditing);
+        if (horizontalBit != 0) {
+            if (event.getAction() == KeyEvent.ACTION_UP && (routedHorizontalKeys & horizontalBit) != 0) {
+                routedHorizontalKeys &= ~horizontalBit;
+                return true;
+            }
+            if (event.getAction() == KeyEvent.ACTION_DOWN && pageReady && webView != null && fallbackNavigation) {
+                routedHorizontalKeys |= horizontalBit;
+                webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.remoteKey(" + event.getKeyCode() + "," + (event.getRepeatCount() > 0) + ")", null);
+                return true;
+            }
+        }
         if (verticalBit != 0) {
             if (event.getAction() == KeyEvent.ACTION_UP && (routedVerticalKeys & verticalBit) != 0) {
                 routedVerticalKeys &= ~verticalBit;
@@ -397,11 +420,24 @@ public class MainActivity extends Activity {
             // Old WebView can consume vertical keys as input caret movement.
             // The account page uses an app-owned HTML numeric keypad, so use
             // the same JS router as browser keys after native editing ends.
-            boolean pageFocus = webView.hasFocus() || InputKeyPolicy.routeSearchKey(searchEditing);
+            boolean pageFocus = webView != null && webView.hasFocus() ||
+                    InputKeyPolicy.routeSearchKey(searchEditing, searchNavigationFallback, remoteNavigationTarget);
             if (event.getAction() == KeyEvent.ACTION_DOWN && pageReady && pageFocus &&
                     InputKeyPolicy.routeVerticalKey(accountEditing, isKeyboardVisible())) {
                 routedVerticalKeys |= verticalBit;
                 webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.remoteKey(" + event.getKeyCode() + "," + (event.getRepeatCount() > 0) + ")", null);
+                return true;
+            }
+        }
+        int confirmBit = searchConfirmKeyBit(event.getKeyCode());
+        if (confirmBit != 0) {
+            if (event.getAction() == KeyEvent.ACTION_UP && (routedConfirmKeys & confirmBit) != 0) {
+                routedConfirmKeys &= ~confirmBit;
+                return true;
+            }
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0 && pageReady && webView != null && fallbackNavigation) {
+                routedConfirmKeys |= confirmBit;
+                webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.remoteKey(" + event.getKeyCode() + ",false)", null);
                 return true;
             }
         }
@@ -425,6 +461,13 @@ public class MainActivity extends Activity {
             return true;
         }
         return super.dispatchKeyEvent(event);
+    }
+
+    private static int searchConfirmKeyBit(int keyCode) {
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER) return 1;
+        if (keyCode == KeyEvent.KEYCODE_ENTER) return 2;
+        if (keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) return 4;
+        return 0;
     }
 
     public final class InputBridge {
@@ -456,12 +499,21 @@ public class MainActivity extends Activity {
             if (destroyed || !pageReady || !activityForeground || webView == null) return;
             if (searchInputFocusPolicy.shouldIgnoreFocusRequest(SystemClock.uptimeMillis())) return;
             searchEditing = true;
+            if (!documentHasFocus) searchNavigationFallback = true;
             accountEditing = false;
             inputBackPending = false;
             routedVerticalKeys = 0;
             if (searchInputFocusPolicy.shouldRepairRendererFocus(documentHasFocus)) {
                 grantWebViewFocus(true);
             }
+        }
+
+        @JavascriptInterface
+        public void setRemoteNavigationTarget(boolean active) {
+            runOnUiThread(() -> {
+                if (destroyed) return;
+                remoteNavigationTarget = active && pageReady && activityForeground;
+            });
         }
 
         @JavascriptInterface
@@ -559,6 +611,10 @@ public class MainActivity extends Activity {
         activityForeground = false;
         inputBackPending = false;
         routedVerticalKeys = 0;
+        routedHorizontalKeys = 0;
+        routedConfirmKeys = 0;
+        searchNavigationFallback = false;
+        remoteNavigationTarget = false;
         completeAccountEditing();
         completeSearchEditing(true);
         if (startupAnimation != null) startupAnimation.stop();
@@ -590,6 +646,8 @@ public class MainActivity extends Activity {
         pageReady = false;
         accountEditing = false;
         searchEditing = false;
+        searchNavigationFallback = false;
+        remoteNavigationTarget = false;
         if (appUpdater != null) appUpdater.destroy();
         if (homeChannelManager != null) {
             homeChannelManager.destroy();
