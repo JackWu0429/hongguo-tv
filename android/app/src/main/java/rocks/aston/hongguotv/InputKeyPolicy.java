@@ -1,8 +1,14 @@
 package rocks.aston.hongguotv;
 
+import android.view.KeyEvent;
+
 /** The login page uses an app-owned numeric keypad, so page navigation owns TV arrows. */
 final class InputKeyPolicy {
     private InputKeyPolicy() {}
+
+    static boolean isBackKey(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE;
+    }
 
     static boolean routeVerticalKey(boolean editing, boolean keyboardVisible) {
         // The old login implementation used a native IME. The current login

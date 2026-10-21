@@ -1,10 +1,17 @@
 package rocks.aston.hongguotv;
 
+import android.view.KeyEvent;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public class InputKeyPolicyTest {
+    @Test public void backAndEscapeKeysUseTheApplicationBackFlow() {
+        assertTrue(InputKeyPolicy.isBackKey(KeyEvent.KEYCODE_BACK));
+        assertTrue(InputKeyPolicy.isBackKey(KeyEvent.KEYCODE_ESCAPE));
+        assertFalse(InputKeyPolicy.isBackKey(KeyEvent.KEYCODE_DPAD_CENTER));
+    }
+
     @Test public void floatingKeyboardKeepsDirectionalKeysEvenWithoutWindowResize() {
         assertFalse(InputKeyPolicy.routeVerticalKey(true, false));
         assertFalse(InputKeyPolicy.routeVerticalKey(true, true));

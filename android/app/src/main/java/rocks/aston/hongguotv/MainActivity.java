@@ -95,7 +95,7 @@ public class MainActivity extends Activity {
             public boolean onKeyPreIme(int keyCode, KeyEvent event) {
                 // Floating TV keyboards have no reliable resize/hide signal.
                 // Finish explicitly before Back can be consumed by the IME.
-                if (keyCode == KeyEvent.KEYCODE_BACK && (accountEditing || searchEditing || inputBackPending)) {
+                if (InputKeyPolicy.isBackKey(keyCode) && (accountEditing || searchEditing || inputBackPending)) {
                     if (event.getAction() == KeyEvent.ACTION_DOWN) inputBackPending = true;
                     if (event.getAction() == KeyEvent.ACTION_UP) {
                         inputBackPending = false;
@@ -441,7 +441,7 @@ public class MainActivity extends Activity {
                 return true;
             }
         }
-        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+        if (InputKeyPolicy.isBackKey(event.getKeyCode())) {
             if (searchEditing || accountEditing) {
                 if (event.getAction() == KeyEvent.ACTION_UP) {
                     if (accountEditing) completeAccountEditing();
@@ -499,7 +499,10 @@ public class MainActivity extends Activity {
             if (destroyed || !pageReady || !activityForeground || webView == null) return;
             if (searchInputFocusPolicy.shouldIgnoreFocusRequest(SystemClock.uptimeMillis())) return;
             searchEditing = true;
-            if (!documentHasFocus) searchNavigationFallback = true;
+            // Keep Android remote navigation on the app-owned focus graph
+            // after the IME changes WebView focus, even if the initial DOM
+            // focus snapshot was true.
+            searchNavigationFallback = true;
             accountEditing = false;
             inputBackPending = false;
             routedVerticalKeys = 0;

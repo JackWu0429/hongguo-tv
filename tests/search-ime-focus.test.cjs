@@ -23,6 +23,8 @@ test('search submission explicitly dismisses the native IME while browser behavi
 
 test('Back dismisses Android search editing and restores focus to a search action', () => {
   assert.match(activity, /onKeyPreIme\(int keyCode, KeyEvent event\)[\s\S]*?completeSearchEditing\(true\)/);
+  assert.match(activity, /InputKeyPolicy\.isBackKey\(keyCode\) && \(accountEditing \|\| searchEditing \|\| inputBackPending\)/);
+  assert.match(activity, /if \(InputKeyPolicy\.isBackKey\(event\.getKeyCode\(\)\)\) \{[\s\S]*?requestPageBack\(\)/);
   assert.match(activity, /if \(searchEditing \|\| accountEditing\)[\s\S]*?completeSearchEditing\(true\)/);
   assert.match(app, /finishSearchEditing: function \(\) \{ if \(document\.activeElement === searchInput\) goFocus\(firstSearchAction\(\) \|\| firstSearchFilter\(\)\); \}/);
 });
@@ -37,6 +39,7 @@ test('Android keeps D-pad and confirm routed through the search focus graph afte
   const focusin = app.slice(focusinStart, app.indexOf("document.querySelectorAll('.side-item')", focusinStart));
   assert.match(focusin, /setRemoteNavigationTarget\(!editingTarget && focusables\(\)\.indexOf\(target\) >= 0\)/);
   assert.match(activity, /routeFallbackNavigationKey\(\s*searchNavigationFallback, remoteNavigationTarget, searchEditing \|\| accountEditing\)/);
+  assert.match(activity, /searchEditing = true;[\s\S]*?searchNavigationFallback = true;/);
   assert.match(activity, /searchConfirmKeyBit\(event.getKeyCode\(\)\)[\s\S]*?remoteKey\(" \+ event\.getKeyCode\(\)/);
   assert.match(activity, /public void setRemoteNavigationTarget\(boolean active\)/);
   assert.match(app, /function remoteKey\(keyCode, repeat\) \{\s*if \(\[19, 20, 21, 22, 23, 66, 160\]/);
