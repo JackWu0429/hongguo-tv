@@ -5053,6 +5053,25 @@
     }
   }
 
+  // Keep the focus ring inside the suggestion scrollport. Android 6 may
+  // place a focused first/last item exactly on the edge when using
+  // scrollIntoView, which clips the two-pixel white outline.
+  function keepSearchSuggestionFocusVisible(button) {
+    if (!searchSuggestions || !button || !searchSuggestions.getBoundingClientRect || !button.getBoundingClientRect) return;
+    var bounds = searchSuggestions.getBoundingClientRect();
+    var rect = button.getBoundingClientRect();
+    var inset = 6;
+    var top = bounds.top + (searchSuggestions.clientTop || 0) + inset;
+    var bottom = bounds.top + (searchSuggestions.clientTop || 0) + searchSuggestions.clientHeight - inset;
+    var scrollTop = Number(searchSuggestions.scrollTop) || 0;
+    var next = scrollTop;
+    if (rect.top < top) next -= top - rect.top;
+    else if (rect.bottom > bottom) next += rect.bottom - bottom;
+    var max = Math.max(0, (Number(searchSuggestions.scrollHeight) || 0) - (Number(searchSuggestions.clientHeight) || 0));
+    next = Math.max(0, Math.min(max, next));
+    if (next !== scrollTop) searchSuggestions.scrollTop = next;
+  }
+
   function renderSearchSuggestions(items) {
     if (!searchSuggestions) return;
     var activeElement = typeof androidShell !== 'undefined' && androidShell ? remoteFocusTarget() || document.activeElement : document.activeElement;
@@ -5070,6 +5089,7 @@
       button.setAttribute('aria-label', uiText('search.suggestionLabel', '搜索{value}', { value: item.name }));
       button.addEventListener('focus', function () {
         try { button.scrollIntoView({ block: 'nearest' }); } catch (ignore) { button.scrollIntoView(false); }
+        keepSearchSuggestionFocusVisible(button);
       });
       var image = null;
       if (item.drama && item.drama.cover) {

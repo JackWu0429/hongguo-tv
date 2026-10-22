@@ -36,7 +36,16 @@ test('suggestion refresh preserves focus by key when the old DOM node is replace
   assert.match(render, /if \(target\) goFocus\(target\)/);
   assert.match(source, /if \(target\.classList && target\.classList\.contains\('search-suggestion'\)\) searchSuggestionFocusedKey = target\.dataset\.suggestionKey \|\| '';\s*else searchSuggestionFocusedKey = ''/);
   assert.match(render, /button\.addEventListener\('focus', function \(\) \{\s*try \{ button\.scrollIntoView\(\{ block: 'nearest' \}\)/);
+  assert.match(render, /keepSearchSuggestionFocusVisible\(button\)/);
   assert.match(fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8'), /\.search-suggestions\s*\{[^}]*max-height:\s*60vh/);
+});
+
+test('suggestion focus keeps a visible inset at both scroll edges', () => {
+  const focus = block('keepSearchSuggestionFocusVisible', 'renderSearchSuggestions');
+  assert.match(focus, /var inset = 6/);
+  assert.match(focus, /rect\.top < top/);
+  assert.match(focus, /rect\.bottom > bottom/);
+  assert.match(focus, /scrollHeight[\s\S]*clientHeight/);
 });
 
 test('search suggestion focus remains in the native search navigation region for remote selection', () => {
