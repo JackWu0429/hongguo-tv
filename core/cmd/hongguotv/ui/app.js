@@ -2115,8 +2115,14 @@
     playbackMenuHintCandidate = false;
   }
 
+  function armPlaybackMenuHint() {
+    if (!playbackMenuHintAvailable || playbackMenuHintSeen || pageMode() !== 'recommend' || !feedItems.length) return false;
+    playbackMenuHintCandidate = true;
+    return true;
+  }
+
   function showPlaybackMenuHint(playback) {
-    if (!playbackMenuHintAvailable || playbackMenuHintSeen || !playbackMenuHintCandidate || pageMode() !== 'player') return false;
+    if (!playbackMenuHintAvailable || playbackMenuHintSeen || !playbackMenuHintCandidate || !isPlaybackPage()) return false;
     playbackMenuHintSeen = true;
     playbackMenuHintCandidate = false;
     savePlaybackMenuHintSeen();
@@ -4777,6 +4783,7 @@
       showRecommendationPlaceholder(feedPager.hasMore() ? uiText('ui.readingRecommendations', '正在读取推荐') : uiText('ui.noRecommendations', '暂时没有推荐内容'));
       return;
     }
+    armPlaybackMenuHint();
     playFeedItem(0);
   }
 
