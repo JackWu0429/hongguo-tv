@@ -5517,6 +5517,26 @@
     follow.querySelector('span').textContent = uiText(following ? 'ui.followed' : 'ui.follow', following ? '已追更' : '追更');
   }
 
+  // Keep the actor focus ring inside its nested scrollport. Older Android
+  // WebViews can leave the first or last grid item flush with the edge even
+  // after scrollIntoView({ block: 'nearest' }), clipping the white ring.
+  function keepDetailCastFocusVisible(button) {
+    var list = document.getElementById('detail-cast-all');
+    if (!list || !button || !list.getBoundingClientRect || !button.getBoundingClientRect) return;
+    var bounds = list.getBoundingClientRect();
+    var rect = button.getBoundingClientRect();
+    var inset = 6;
+    var top = bounds.top + (list.clientTop || 0) + inset;
+    var bottom = bounds.top + (list.clientTop || 0) + list.clientHeight - inset;
+    var scrollTop = Number(list.scrollTop) || 0;
+    var next = scrollTop;
+    if (rect.top < top) next -= top - rect.top;
+    else if (rect.bottom > bottom) next += rect.bottom - bottom;
+    var max = Math.max(0, (Number(list.scrollHeight) || 0) - (Number(list.clientHeight) || 0));
+    next = Math.max(0, Math.min(max, next));
+    if (next !== scrollTop) list.scrollTop = next;
+  }
+
   function actorButton(name, actor, className) {
     var button = document.createElement('button');
     button.type = 'button';
@@ -5543,6 +5563,12 @@
       button.addEventListener('click', function () {
         openActorWorks({ actor_id: actor.id, title: name, intro: '', cover: actor.avatar });
       });
+      if (className === 'detail-cast-modal-item') {
+        button.addEventListener('focus', function () {
+          try { button.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (ignore) { button.scrollIntoView(false); }
+          keepDetailCastFocusVisible(button);
+        });
+      }
     } else {
       var fallback = document.createElement('span');
       fallback.className = 'detail-cast-avatar';

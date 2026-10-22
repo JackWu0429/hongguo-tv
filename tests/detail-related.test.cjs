@@ -116,6 +116,22 @@ test('detail actor strip limits the first row and exposes the remaining cast in 
   assert.equal(nodes['detail-cast-strip'].children.length, 0);
 });
 
+test('actor modal focus keeps its ring inside the nested scrollport on old WebViews', () => {
+  const actorStart = source.indexOf('  function keepDetailCastFocusVisible(');
+  const actorEnd = source.indexOf('  function renderActorWorks(', actorStart);
+  const actorSource = source.slice(actorStart, actorEnd);
+  const css = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8');
+
+  assert.match(actorSource, /function keepDetailCastFocusVisible\(button\)/);
+  assert.match(actorSource, /var inset = 6/);
+  assert.match(actorSource, /rect\.top < top/);
+  assert.match(actorSource, /rect\.bottom > bottom/);
+  assert.match(actorSource, /scrollHeight[\s\S]*clientHeight/);
+  assert.match(actorSource, /className === 'detail-cast-modal-item'[\s\S]*?addEventListener\('focus'/);
+  assert.match(actorSource, /keepDetailCastFocusVisible\(button\)/);
+  assert.match(css, /.detail-cast-all\s*\{[^}]*overflow-y:\s*auto;[^}]*padding:\s*8px 5px/);
+});
+
 test('actor works dialog is a top-level overlay above the detail dialog', () => {
   const indexSource = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/index.html'), 'utf8');
   const sectionTags = /<section\b[^>]*>|<\/section>/g;
