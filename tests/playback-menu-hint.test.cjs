@@ -4,6 +4,15 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const app = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.js'), 'utf8');
+const css = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8');
+
+test('menu hint labels use readable fixed sizes instead of shrinking with the SVG', () => {
+  assert.match(css, /\.playback-menu-hint-label\s*\{[^}]*font-size:\s*16px/);
+  assert.match(css, /\.playback-menu-hint-menu-title\s*\{[^}]*font-size:\s*19px/);
+  assert.match(css, /\.playback-menu-hint-card\s*>\s*p\s*\{[^}]*font-size:\s*18px/);
+  assert.match(css, /\.playback-menu-hint-card\s*>\s*p\s*\+\s*p\s*\{[^}]*font-size:\s*16px/);
+  assert.doesNotMatch(css, /\.playback-menu-hint-label\s*\{[^}]*font-size:\s*\d+(?:\.\d+)?%/);
+});
 
 function functionSource(name, nextName) {
   const start = app.indexOf('  function ' + name + '(');

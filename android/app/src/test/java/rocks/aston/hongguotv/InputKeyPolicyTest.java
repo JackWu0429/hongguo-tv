@@ -12,9 +12,13 @@ public class InputKeyPolicyTest {
         assertFalse(InputKeyPolicy.isBackKey(KeyEvent.KEYCODE_DPAD_CENTER));
     }
 
-    @Test public void menuKeyIsOwnedOnlyByThePlaybackPage() {
+    @Test public void menuKeyVariantsAreOwnedOnlyByThePlaybackPage() {
         assertTrue(InputKeyPolicy.routePlaybackMenuKey(true, KeyEvent.KEYCODE_MENU));
+        assertTrue(InputKeyPolicy.routePlaybackMenuKey(true, KeyEvent.KEYCODE_TV_CONTENTS_MENU));
+        assertTrue(InputKeyPolicy.routePlaybackMenuKey(true, KeyEvent.KEYCODE_TV_MEDIA_CONTEXT_MENU));
         assertFalse(InputKeyPolicy.routePlaybackMenuKey(false, KeyEvent.KEYCODE_MENU));
+        assertFalse(InputKeyPolicy.routePlaybackMenuKey(false, KeyEvent.KEYCODE_TV_CONTENTS_MENU));
+        assertFalse(InputKeyPolicy.routePlaybackMenuKey(false, KeyEvent.KEYCODE_TV_MEDIA_CONTEXT_MENU));
         assertFalse(InputKeyPolicy.routePlaybackMenuKey(true, KeyEvent.KEYCODE_BACK));
         assertFalse(InputKeyPolicy.routePlaybackMenuKey(true, KeyEvent.KEYCODE_HOME));
     }

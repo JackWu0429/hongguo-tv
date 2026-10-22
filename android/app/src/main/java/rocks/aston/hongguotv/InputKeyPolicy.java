@@ -11,7 +11,9 @@ final class InputKeyPolicy {
     }
 
     static boolean routePlaybackMenuKey(boolean playbackPageActive, int keyCode) {
-        return playbackPageActive && keyCode == KeyEvent.KEYCODE_MENU;
+        return playbackPageActive && (keyCode == KeyEvent.KEYCODE_MENU
+                || keyCode == KeyEvent.KEYCODE_TV_CONTENTS_MENU
+                || keyCode == KeyEvent.KEYCODE_TV_MEDIA_CONTEXT_MENU);
     }
 
     static boolean shouldDismissInputBack(InputEditingState.Snapshot state) {
