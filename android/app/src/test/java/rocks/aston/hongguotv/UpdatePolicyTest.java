@@ -27,13 +27,14 @@ public class UpdatePolicyTest {
         assertTrue(UpdatePolicy.automaticCheckDue(1000, 2000));
         assertTrue(UpdatePolicy.automaticCheckDue(100 + UpdatePolicy.CHECK_INTERVAL, 100));
     }
-    @Test public void proxyAndDirectSourcesArePredictable() {
-        assertArrayEquals(new String[]{"https://ghfast.top/https://github.com/a", "https://github.com/a"},
-                UpdatePolicy.sources("https://github.com/a", "https://ghfast.top"));
-        assertArrayEquals(new String[]{"https://github.com/a"}, UpdatePolicy.sources("https://github.com/a", ""));
-        for (String bad : new String[]{"http://proxy.test", "https://u:p@proxy.test/", "https://proxy.test/?x=1", "https://proxy.test/#x"}) {
-            try { UpdatePolicy.proxyPrefix(bad); fail(bad); } catch (IllegalArgumentException expected) { /* expected */ }
-        }
+    @Test public void builtInMirrorsAlwaysEndWithDirectSource() {
+        assertArrayEquals(new String[]{
+                        "https://gh-proxy.com/https://github.com/a",
+                        "https://v4.gh-proxy.org/https://github.com/a",
+                        "https://gh-proxy.org/https://github.com/a",
+                        "https://ghfast.top/https://github.com/a",
+                        "https://github.com/a"},
+                UpdatePolicy.sources("https://github.com/a"));
     }
     @Test public void versionCodeAndCompleteSignerSetDecideInstall() {
         assertTrue(match(9, "0.2.10", new String[]{"A", "B"}, new String[]{"B", "A"}));

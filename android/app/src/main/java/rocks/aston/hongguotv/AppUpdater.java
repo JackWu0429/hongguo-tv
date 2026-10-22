@@ -16,9 +16,7 @@ import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
-import android.view.Gravity;
 import android.webkit.JavascriptInterface;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -58,7 +56,7 @@ final class AppUpdater {
     private volatile String snapshot = "{}";
     private boolean started, checking, downloading, promptAllowed, manualPrompt, promptCheckPending;
     private Manifest latest;
-    private String state = "idle", message = "", proxy;
+    private String state = "idle", message = "";
     private long downloaded;
     private AlertDialog dialog;
     private ProgressBar progress;
@@ -73,8 +71,6 @@ final class AppUpdater {
     AppUpdater(Activity activity, Host host) {
         this.activity = activity; this.host = host;
         preferences = activity.getSharedPreferences("HongguoTVUpdates", Activity.MODE_PRIVATE);
-        proxy = preferences.getString("proxy", UpdatePolicy.DEFAULT_PROXY);
-        try { proxy = UpdatePolicy.proxyPrefix(proxy); } catch (IllegalArgumentException invalid) { proxy = UpdatePolicy.DEFAULT_PROXY; }
         directory = new File(activity.getCacheDir(), "app-updates");
         partial = new File(directory, "update.part"); apk = new File(directory, "update.apk");
         try { latest = new Manifest(new JSONObject(preferences.getString("manifest", "{}")), activity.getPackageName()); }
@@ -112,7 +108,6 @@ final class AppUpdater {
                 if (latest != null && "ready".equals(state)) launchInstaller(latest);
             });
         }
-        @JavascriptInterface public void configure() { if (host.trusted()) activity.runOnUiThread(() -> configureSource()); }
         @JavascriptInterface public void setPromptAllowed(boolean allowed) {
             if (host.trusted()) activity.runOnUiThread(() -> { promptAllowed = allowed; maybePrompt(); });
         }
@@ -168,12 +163,11 @@ final class AppUpdater {
                 || preferences.getBoolean("waiting_installer", false)) return;
         checking = true; manualPrompt = manual; state = "checking"; message = "正在检查更新…"; publish();
         final int epoch = generation.incrementAndGet();
-        final String selectedProxy = proxy;
         worker.execute(() -> {
             Manifest result = null;
             String error = "暂时无法连接更新服务，请稍后重试";
             String origin = UpdatePolicy.manifestUrl(BuildConfig.VARIANT_ID) + "?check=" + System.currentTimeMillis();
-            for (String source : UpdatePolicy.sources(origin, selectedProxy)) {
+            for (String source : UpdatePolicy.sources(origin)) {
                 if (!valid(epoch)) return;
                 try {
                     result = new Manifest(new JSONObject(readManifest(source, epoch)), activity.getPackageName());
@@ -282,8 +276,7 @@ final class AppUpdater {
             downloading = true; downloaded = 0; state = "downloading"; message = "正在下载 " + target.name; publish();
             final int epoch = generation.incrementAndGet();
             showDownloadProgress();
-            final String selectedProxy = proxy;
-            worker.execute(() -> download(target, selectedProxy, epoch));
+            worker.execute(() -> download(target, epoch));
         });
     }
 
@@ -301,7 +294,7 @@ final class AppUpdater {
         show(next, AlertDialog.BUTTON_NEGATIVE);
     }
 
-    private void download(Manifest target, String selectedProxy, int epoch) {
+    private void download(Manifest target, int epoch) {
         String error = "下载暂时不可用";
         try {
             directory.mkdirs();
@@ -309,7 +302,7 @@ final class AppUpdater {
                 verifyArchive(target, apk); completed(target, epoch); return;
             }
             apk.delete();
-            String[] sources = UpdatePolicy.sources(target.url, selectedProxy);
+            String[] sources = UpdatePolicy.sources(target.url);
             for (int sourceIndex = 0; sourceIndex < sources.length; sourceIndex++) {
                 String source = sources[sourceIndex];
                 ensureValid(epoch);
@@ -317,7 +310,7 @@ final class AppUpdater {
                 final boolean fallback = sourceIndex > 0;
                 activity.runOnUiThread(() -> {
                     if (!valid(epoch)) return;
-                    downloaded = 0; message = fallback ? "代理下载失败，正在尝试 GitHub 直连…" : "正在连接下载服务…"; publish();
+                    downloaded = 0; message = fallback ? "当前线路失败，正在尝试下一条更新线路…" : "正在连接更新服务…"; publish();
                     if (progress != null) progress.setIndeterminate(true);
                     if (progressText != null) progressText.setText(message);
                 });
@@ -618,32 +611,6 @@ final class AppUpdater {
         }
     }
 
-    private void configureSource() {
-        if (!host.foreground() || downloading || checking || dialog != null) return;
-        EditText input = new EditText(activity); input.setSingleLine(true); input.setText(proxy);
-        input.setHint("https://ghfast.top/，留空为直连"); input.setTextSize(17); input.setSelectAllOnFocus(true);
-        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
-        LinearLayout panel = new LinearLayout(activity); panel.setOrientation(LinearLayout.VERTICAL); panel.setGravity(Gravity.CENTER);
-        int pad = Math.round(20 * activity.getResources().getDisplayMetrics().density); panel.setPadding(pad, pad, pad, pad);
-        panel.addView(input, new LinearLayout.LayoutParams(-1, -2));
-        AlertDialog next = new AlertDialog.Builder(activity).setTitle("下载设置")
-                .setMessage("代理连接失败时自动尝试 GitHub 直连。留空则始终直连。")
-                .setView(panel).setNegativeButton("取消", null).setPositiveButton("保存", (d, which) -> {
-                    try { proxy = UpdatePolicy.proxyPrefix(input.getText().toString()); preferences.edit().putString("proxy", proxy).apply(); publish(); }
-                    catch (Exception failure) { message = friendly(failure); publish(); }
-                }).create();
-        show(next, AlertDialog.BUTTON_POSITIVE);
-        // Keep D-pad navigation available without requiring a touch keyboard.
-        input.setOnKeyListener((view, key, event) -> {
-            if (key == android.view.KeyEvent.KEYCODE_DPAD_DOWN && event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
-                android.view.inputmethod.InputMethodManager keyboard = (android.view.inputmethod.InputMethodManager) activity.getSystemService(Activity.INPUT_METHOD_SERVICE);
-                if (keyboard != null) keyboard.hideSoftInputFromWindow(input.getWindowToken(), 0);
-                next.getButton(AlertDialog.BUTTON_POSITIVE).requestFocus(); return true;
-            }
-            return false;
-        });
-    }
-
     private void showFailure(String text) {
         if (!host.foreground() || destroyed || dialog != null) return;
         show(new AlertDialog.Builder(activity).setTitle("更新未完成").setMessage(text)
@@ -671,8 +638,8 @@ final class AppUpdater {
     private boolean valid(int epoch) { return !destroyed && generation.get() == epoch; }
     private void ensureValid(int epoch) throws IOException { if (!valid(epoch)) throw new IOException("更新操作已取消"); }
     private String friendly(Exception error) {
-        if (error instanceof java.net.SocketTimeoutException) return "连接超时，可重试或更换下载代理";
-        if (error instanceof java.net.UnknownHostException) return "无法连接下载地址，可更换下载代理";
+        if (error instanceof java.net.SocketTimeoutException) return "连接超时，应用会自动尝试其他更新线路";
+        if (error instanceof java.net.UnknownHostException) return "无法连接更新服务，应用会自动尝试其他线路";
         return error.getMessage() == null ? "网络或文件校验失败" : error.getMessage();
     }
 
@@ -682,7 +649,7 @@ final class AppUpdater {
             value.put("supported", !BuildConfig.DEBUG); value.put("current_version", BuildConfig.VERSION_NAME);
             value.put("variant", BuildConfig.VARIANT_ID); value.put("edition", "mpv".equals(BuildConfig.VARIANT_ID) ? "MPV 版" : "标准版");
             value.put("current_code", BuildConfig.VERSION_CODE); value.put("state", state); value.put("message", message);
-            value.put("proxy", proxy); value.put("downloaded", downloaded);
+            value.put("downloaded", downloaded);
             value.put("latest_version", latest == null ? "" : latest.name);
             value.put("latest_code", latest == null ? 0 : latest.code);
             value.put("size", latest == null ? 0 : latest.bytes); snapshot = value.toString();

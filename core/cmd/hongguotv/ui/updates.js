@@ -31,8 +31,7 @@
       if (lastData && !lastData.desktop && lastData.state === 'ready' && typeof options.bridge.install === 'function') options.bridge.install();
       else options.bridge.check();
     }
-    function configure() { if (options.bridge) options.bridge.configure(); }
-    return { refresh: refresh, check: check, activate: activate, configure: configure };
+    return { refresh: refresh, check: check, activate: activate };
   }
   return { create: create };
 }));

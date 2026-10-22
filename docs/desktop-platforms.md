@@ -31,7 +31,7 @@ macOS 为系统 WKWebView，Windows 为 WebView2。桌面端不包含 MPV/Media3
 - Android 保留 TV 数字键盘和扫码输入；默认浏览器预览仍是 TV 模式。
   访问 `http://127.0.0.1:18997/?platform=desktop` 可查看桌面交互布局。
 - 桌面全屏使用 Wails 窗口全屏并同步共享 CSS。视频始终等比例显示。
-- 设置页显示桌面版本及下载页入口，不调用 Android APK 更新器。每天后台检查一次，支持 ghfast 优先/直连回退、手动下载 ZIP、SHA256/ZIP
+- 设置页显示桌面版本及下载页入口，不调用 Android APK 更新器。每天后台检查一次，按 `gh-proxy.com`、`v4.gh-proxy.org`、`gh-proxy.org`、`ghfast.top` 顺序尝试，全部失败后直连；支持手动下载 ZIP、SHA256/ZIP
   校验和打开文件夹；不自动安装或替换程序；发布通道与 Android 双版本清单完全独立。
 
 ## GitHub 构建与测试包

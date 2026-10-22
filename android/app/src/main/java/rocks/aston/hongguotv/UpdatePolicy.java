@@ -18,7 +18,13 @@ final class UpdatePolicy {
                 || minSdk < 23)
             throw new IllegalArgumentException("更新包与当前应用版本类型不匹配");
     }
-    static final String DEFAULT_PROXY = "https://ghfast.top/";
+    /** Ordered public mirrors. The GitHub URL remains the final fallback. */
+    static final String[] BUILTIN_PROXIES = new String[]{
+            "https://gh-proxy.com/",
+            "https://v4.gh-proxy.org/",
+            "https://gh-proxy.org/",
+            "https://ghfast.top/"
+    };
     static final long MAX_APK_BYTES = 100L * 1024 * 1024;
     static final long CHECK_INTERVAL = 24L * 60 * 60 * 1000;
 
@@ -26,19 +32,11 @@ final class UpdatePolicy {
         return lastAttempt <= 0 || lastAttempt > now || now - lastAttempt >= CHECK_INTERVAL;
     }
 
-    static String proxyPrefix(String value) {
-        if (value == null || value.trim().isEmpty()) return "";
-        String text = value.trim();
-        URI uri = URI.create(text);
-        if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null
-                || uri.getRawUserInfo() != null || uri.getRawQuery() != null || uri.getRawFragment() != null)
-            throw new IllegalArgumentException("请输入 HTTPS 代理地址，或留空使用 GitHub 直连");
-        return text.endsWith("/") ? text : text + "/";
-    }
-
-    static String[] sources(String origin, String proxy) {
-        String prefix = proxyPrefix(proxy);
-        return prefix.isEmpty() ? new String[]{origin} : new String[]{prefix + origin, origin};
+    static String[] sources(String origin) {
+        String[] result = new String[BUILTIN_PROXIES.length + 1];
+        for (int i = 0; i < BUILTIN_PROXIES.length; i++) result[i] = BUILTIN_PROXIES[i] + origin;
+        result[BUILTIN_PROXIES.length] = origin;
+        return result;
     }
 
     static void validate(String packageName, int code, String name, int minSdk, long bytes,

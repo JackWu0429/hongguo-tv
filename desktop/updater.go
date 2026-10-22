@@ -21,7 +21,13 @@ import (
 )
 
 const desktopManifestURL = "https://raw.githubusercontent.com/aston314/hongguo-tv-releases/main/desktop-update-v2.json"
-const desktopProxy = "https://ghfast.top/"
+const desktopProxy = "https://gh-proxy.com/"
+var desktopProxies = []string{
+	"https://gh-proxy.com/",
+	"https://v4.gh-proxy.org/",
+	"https://gh-proxy.org/",
+	"https://ghfast.top/",
+}
 const desktopPublicBase = "https://github.com/aston314/hongguo-tv-releases/releases/download/"
 
 // CI stamps a desktop-only channel. Android version codes and APK channels are unrelated.
@@ -199,7 +205,17 @@ func validateDesktopManifest(m desktopManifest) error {
 }
 func (u *desktopUpdater) withResponse(ctx context.Context, url string, read func(*http.Response) error) error {
 	var last error
-	for _, address := range []string{desktopProxy + url, url} {
+	addresses := make([]string, 0, len(desktopProxies)+1)
+	seen := map[string]bool{}
+	for _, proxy := range desktopProxies {
+		address := proxy + url
+		if !seen[address] {
+			seen[address] = true
+			addresses = append(addresses, address)
+		}
+	}
+	addresses = append(addresses, url)
+	for _, address := range addresses {
 		limit := 7 * time.Minute
 		if url == desktopManifestURL {
 			limit = 35 * time.Second

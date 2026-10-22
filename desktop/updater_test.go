@@ -111,7 +111,7 @@ func TestDesktopCheckProxyFallbackVersionCodeAndDailyLimit(t *testing.T) {
 		mu.Lock()
 		calls = append(calls, r.URL.String())
 		mu.Unlock()
-		if r.URL.Host == "ghfast.top" {
+		if r.URL.Host != "raw.githubusercontent.com" {
 			return response(r, 502, []byte("proxy")), nil
 		}
 		return response(r, 200, b), nil
@@ -123,7 +123,7 @@ func TestDesktopCheckProxyFallbackVersionCodeAndDailyLimit(t *testing.T) {
 		t.Fatal(u.snapshot())
 	}
 	mu.Lock()
-	if len(calls) != 2 || !strings.HasPrefix(calls[0], desktopProxy) || calls[1] != desktopManifestURL {
+	if len(calls) != len(desktopProxies)+1 || !strings.HasPrefix(calls[0], desktopProxy) || calls[len(calls)-1] != desktopManifestURL {
 		t.Fatal(calls)
 	}
 	mu.Unlock()
@@ -132,7 +132,7 @@ func TestDesktopCheckProxyFallbackVersionCodeAndDailyLimit(t *testing.T) {
 	mu.Lock()
 	count := len(calls)
 	mu.Unlock()
-	if count != 2 {
+	if count != len(desktopProxies)+1 {
 		t.Fatal("daily check repeated")
 	}
 	u.currentCode = 2
@@ -156,7 +156,7 @@ func TestDesktopDownloadChecksumFallbackPartialCleanupAndSafeReuse(t *testing.T)
 				calls = append(calls, r.URL.String())
 				mu.Unlock()
 				data := b
-				if r.URL.Host == "ghfast.top" {
+				if r.URL.Host != "github.com" {
 					data = bytes.Repeat([]byte("x"), len(b))
 				}
 				return response(r, 200, data), nil
@@ -181,7 +181,7 @@ func TestDesktopDownloadChecksumFallbackPartialCleanupAndSafeReuse(t *testing.T)
 			mu.Lock()
 			n := len(calls)
 			mu.Unlock()
-			if n != 2 {
+			if n != len(desktopProxies)+1 {
 				t.Fatal("verified ZIP downloaded again")
 			}
 			if err := os.WriteFile(s.File, []byte("my existing ZIP"), 0600); err != nil {

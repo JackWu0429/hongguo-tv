@@ -9,10 +9,10 @@ test('playback keeps update prompts disabled and does not cause repeated bridge 
   allowed=true; update.refresh(); assert.deepEqual(calls,[false,true]);
   allowed=false; update.refresh(); assert.deepEqual(calls,[false,true,false]);
 });
-test('manual checks set prompt safety before native check and proxy changes remain native', () => {
+test('manual checks set prompt safety before native check', () => {
   const calls=[];
-  const update=create({bridge:{getStatus:()=>'{"state":"idle"}',setPromptAllowed:x=>calls.push(x),check:()=>calls.push('check'),configure:()=>calls.push('configure')},canPrompt:()=>true,render:()=>{}});
-  update.check(); update.configure(); assert.deepEqual(calls,[true,'check','configure']);
+  const update=create({bridge:{getStatus:()=>'{"state":"idle"}',setPromptAllowed:x=>calls.push(x),check:()=>calls.push('check')},canPrompt:()=>true,render:()=>{}});
+  update.check(); assert.deepEqual(calls,[true,'check']);
 });
 test('the update action installs a verified APK and otherwise checks for updates', () => {
   const calls=[];
@@ -25,7 +25,7 @@ test('the update action installs a verified APK and otherwise checks for updates
 });
 test('missing native bridge and invalid bridge data fail without breaking browsing', () => {
   const renders=[];
-  const browser=create({render:x=>renders.push(x)}); browser.refresh(); browser.check(); browser.configure();
+  const browser=create({render:x=>renders.push(x)}); browser.refresh(); browser.check();
   assert.equal(renders[0].supported,false);
   const broken=create({bridge:{getStatus:()=>'<html>proxy error</html>'},render:x=>renders.push(x),canPrompt:()=>true});
   broken.refresh(); assert.equal(renders[1].state,'error');
