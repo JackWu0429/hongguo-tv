@@ -82,3 +82,28 @@ test('menu hint remains unavailable after it has already been seen', () => {
   vm.runInContext(functionSource('showPlaybackMenuHint', 'notificationAccountKey'), context);
   assert.equal(context.showPlaybackMenuHint({ episode: 1 }), false);
 });
+
+test('recommendation autoplay exposes the playback menu only after a media source exists', () => {
+  const video = { source: '', getAttribute(name) { return name === 'src' ? this.source : null; } };
+  const context = vm.createContext({
+    pageMode: () => 'recommend',
+    activePlayback: null,
+    document: { getElementById(id) { return id === 'hero-video' ? video : null; } }
+  });
+  vm.runInContext(functionSource('playbackCommandMenuAvailable', 'playbackCommandMenuSeasonButton'), context);
+  assert.equal(context.playbackCommandMenuAvailable(), false);
+  context.activePlayback = { vid: 'video-1' };
+  assert.equal(context.playbackCommandMenuAvailable(), false);
+  video.source = '/minireel-proxy/media/video-1.mp4';
+  assert.equal(context.playbackCommandMenuAvailable(), true);
+});
+
+test('dedicated player page keeps the playback menu available during source preparation', () => {
+  const context = vm.createContext({
+    pageMode: () => 'player',
+    activePlayback: null,
+    document: { getElementById() { return null; } }
+  });
+  vm.runInContext(functionSource('playbackCommandMenuAvailable', 'playbackCommandMenuSeasonButton'), context);
+  assert.equal(context.playbackCommandMenuAvailable(), true);
+});

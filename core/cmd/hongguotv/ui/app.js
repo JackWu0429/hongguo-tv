@@ -835,9 +835,20 @@
     return shell && shell.dataset.mode ? shell.dataset.mode : 'recommend';
   }
 
+  // The recommendation page can autoplay a video without switching the
+  // shell into the dedicated player page. Only expose the native menu key
+  // after that autoplay has a real media source, so a plain recommendation
+  // list never consumes the remote's menu button.
+  function playbackCommandMenuAvailable() {
+    if (pageMode() === 'player') return true;
+    if (pageMode() !== 'recommend' || !activePlayback || !activePlayback.vid) return false;
+    var video = document.getElementById('hero-video');
+    return !!(video && video.getAttribute('src'));
+  }
+
   function syncNativePlaybackPageState() {
     if (!androidShell || !window.HongguoTVInput || typeof window.HongguoTVInput.setPlaybackPageActive !== 'function') return;
-    window.HongguoTVInput.setPlaybackPageActive(pageMode() === 'player');
+    window.HongguoTVInput.setPlaybackPageActive(playbackCommandMenuAvailable());
   }
 
   function playbackCommandMenuSeasonButton() {
@@ -845,7 +856,7 @@
   }
 
   function syncPlaybackDrawerLayout() {
-    var open = pageMode() === 'player' && (playbackCommandMenuOpen || detailModalOpen || playbackDetailReturnToMenu);
+    var open = playbackCommandMenuOpen || pageMode() === 'player' && (detailModalOpen || playbackDetailReturnToMenu);
     mainSurface.classList.toggle('has-playback-drawer', open);
     if (!isPlaybackPage()) return;
     syncNativePlayerBounds();
@@ -921,7 +932,7 @@
   }
 
   function openPlaybackCommandMenu(focusAction, preserveReturnFocus) {
-    if (pageMode() !== 'player' || !playbackCommandMenu || detailModalOpen || confirmOpen || discussionOpen || supportModalOpen || rankFilterOpen || detailCastOpen || playerOptionsOpen || scanModalOpen() || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || (endRecommendations && endRecommendations.isOpen())) return false;
+    if (!playbackCommandMenuAvailable() || !playbackCommandMenu || detailModalOpen || confirmOpen || discussionOpen || supportModalOpen || rankFilterOpen || detailCastOpen || playerOptionsOpen || scanModalOpen() || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || (endRecommendations && endRecommendations.isOpen())) return false;
     if (playbackCommandMenuOpen) return true;
     if (!preserveReturnFocus) {
       playbackCommandMenuReturnFocus = remoteFocusTarget() || document.activeElement;
@@ -4597,6 +4608,7 @@
     // but do not queue it twice or make the next source wait for its fsync.
     if (!fastContinuation) saveProgress(true);
     activePlayback = null;
+    if (typeof syncNativePlaybackPageState === 'function') syncNativePlaybackPageState();
     playbackRequest = { index: index, episode: forcedEpisode, position: forcedPosition };
     playbackQuality = '';
     playbackQualities = [];
@@ -4736,6 +4748,7 @@
           if (playbackPreferences.quality && playbackQuality !== playbackPreferences.quality) showNotice(uiText('content.qualityMissing', '本集没有 {quality}，使用 {fallback}', { quality: playbackPreferences.quality, fallback: playbackQuality || uiText('ui.autoQuality', '自动清晰度') }));
           updatePlaybackControls();
           video.classList.add('has-source');
+          if (typeof syncNativePlaybackPageState === 'function') syncNativePlaybackPageState();
           placeholder.classList.add('is-hidden');
           video.load();
           setPlayerStatus(episodeLoadingText(activePlayback.episode));
@@ -4758,6 +4771,7 @@
           clearRangeTransitionHint();
           hero.classList.remove('is-range-transition');
           video.classList.remove('has-source');
+          if (typeof syncNativePlaybackPageState === 'function') syncNativePlaybackPageState();
           setPlayerStatus(uiText('ui.cannotPlayEpisode', '暂时无法播放这集'), true);
         }
       });
@@ -6301,6 +6315,7 @@
     recommendationSession = null;
     episodePrefetch.cancel(); cancelPlaybackPreparation();
     saveProgress(true); activePlayback = null; ++feedGeneration;
+    if (typeof syncNativePlaybackPageState === 'function') syncNativePlaybackPageState();
     document.getElementById('hero-video').pause();
     releasePlaybackAudio();
     document.getElementById('hero-video').removeAttribute('src');
