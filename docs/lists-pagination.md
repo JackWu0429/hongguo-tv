@@ -21,7 +21,7 @@
 
 榜单分类、子榜和筛选由 cell_selector 构造。演员项展示演员，不当作短剧播放。日历日期由 calendar_schema 提供，区分已上线/待上线；待上线不可播放，item_id=0 不可预约。
 
-推荐使用 video_data[].video_detail 和该剧 first_vid 播完整剧，跳过广告、禁播和零集内容。非默认频道首次 tab/v，再用返回的 cell/plan 进入 cell/change，offset 此时可以为 0。因此不能只按 offset 递增判断翻页。关注只读取关注内容 cell（show_type=648），不混入推荐演员（647）。
+推荐使用 video_data[].video_detail 和该剧 first_vid 播完整剧，跳过广告、禁播和零集内容。推荐频道 16 用固定 cell。关注频道 45 首次 tab/v，只读取关注内容 cell（show_type=648），不混入推荐演员（647），再用返回的 cell/plan 进入 cell/change，offset 此时可以为 0。因此不能只按 offset 递增判断翻页。漫剧 36、真人剧 39 的首页不走书城编辑位，改读红果热播榜：漫剧 `comic_series_rank` / `comic_series_hot_play`，真人剧 `human` / `human_hot_play`。这和官网 `/rank/hot-comic-drama`、`/rank/hot-real-drama` 同一顺序。分页仍是榜单自己的 offset 和 session_id。
 
 评论 comment_source=4、server_channel=18、comment_type=4；弹幕分别为 601、1000、20。URL 中必须使用当前集 VID：使用 comment_type 会得到有效但空的列表。保持字符串 ID 精度，不传浮点大整数。
 

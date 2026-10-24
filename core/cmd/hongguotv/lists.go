@@ -198,10 +198,89 @@ func feedDramas(cells []any) []Drama {
 	items, _ := parseFeedDramas(cells)
 	return items
 }
+func mergeDramas(first, more []Drama) []Drama {
+	seen := map[string]bool{}
+	out := make([]Drama, 0, len(first)+len(more))
+	for _, item := range append(append([]Drama{}, first...), more...) {
+		if item.SeriesID == "" || seen[item.SeriesID] {
+			continue
+		}
+		seen[item.SeriesID] = true
+		out = append(out, item)
+	}
+	return out
+}
+
+func (c *passportClient) recommendationCell(ctx context.Context, tab, cell, plan, session, offset, shown string) (ListResult, error) {
+	if !validID(cell) || !validID(plan) || len(cell) > 30 || len(plan) > 30 {
+		return ListResult{}, errors.New("推荐分页标识无效")
+	}
+	params := url.Values{"bottom_tab_type": {"7"}, "client_req_type": {"2"}, "client_template": {"7"}, "change_type": {"0"}, "category_id": {"0"}, "cell_sub_id": {"0"}, "limit": {"0"}, "need_personal_recommend": {"1"}, "video_type_preferences_str": {"[]"}, "cell_id": {cell}, "plan_id": {plan}, "tab_type": {tab}, "offset": {firstNonEmpty(offset, "0")}, "session_id": {session}, "filter_ids": {shown}}
+	p, e := c.cloudJSON(ctx, "/reading/bookapi/bookmall/cell/change/v", http.MethodGet, params, nil)
+	if e != nil {
+		return ListResult{}, e
+	}
+	d, e := dataMap(p)
+	if e != nil {
+		return ListResult{}, e
+	}
+	cv, _ := asMap(d["cell_view"])
+	cells, _ := cv["cell_data"].([]any)
+	out := ListResult{CategoryResult: listCursor(d), FeedCell: cell, FeedPlan: plan}
+	items, diagnostics := parseFeedDramas(cells)
+	out.Items = items
+	out.FeedDiagnostics = &diagnostics
+	stopStalledPage(&out, asInt(offset))
+	return out, nil
+}
+
+// 漫剧 / 真人剧首页跟红果热榜的热播榜走，不走书城编辑位。
+// 顺序与官网 /rank/hot-comic-drama、/rank/hot-real-drama 一致。
+func hotRankSelection(tab string) (string, string, bool) {
+	switch tab {
+	case "36":
+		return "comic_series_rank", "comic_series_hot_play", true
+	case "39":
+		return "human", "human_hot_play", true
+	default:
+		return "", "", false
+	}
+}
+
+func (c *passportClient) categoryHotRank(ctx context.Context, q url.Values, rank, sub string) (ListResult, error) {
+	rq := url.Values{
+		"rank":       {rank},
+		"rank_sub":   {sub},
+		"offset":     {firstNonEmpty(q.Get("offset"), "0")},
+		"session_id": {q.Get("session_id")},
+		"shown":      {q.Get("shown")},
+	}
+	out, err := c.RankList(ctx, rq)
+	if err != nil {
+		return ListResult{}, err
+	}
+	dramas := make([]Drama, 0, len(out.Items))
+	for _, item := range out.Items {
+		if item.ActorID != "" || strings.HasPrefix(item.SeriesID, "actor-") || !validID(item.SeriesID) {
+			continue
+		}
+		dramas = append(dramas, item)
+	}
+	out.Items = dramas
+	out.Ranks = nil
+	out.FeedCell = ""
+	out.FeedPlan = ""
+	out.Source = "hot_rank"
+	return out, nil
+}
+
 func (c *passportClient) Recommendations(ctx context.Context, q url.Values) (ListResult, error) {
 	tab := firstNonEmpty(q.Get("channel"), "16")
 	if tab != "16" && tab != "36" && tab != "39" && tab != "45" {
 		return ListResult{}, errors.New("推荐频道无效")
+	}
+	if rank, sub, ok := hotRankSelection(tab); ok {
+		return c.categoryHotRank(ctx, q, rank, sub)
 	}
 	cell, plan := q.Get("feed_cell"), q.Get("feed_plan")
 	if tab == "16" {
@@ -209,26 +288,7 @@ func (c *passportClient) Recommendations(ctx context.Context, q url.Values) (Lis
 		plan = "7294257258253254693"
 	}
 	if cell != "" && plan != "" {
-		if !validID(cell) || !validID(plan) || len(cell) > 30 || len(plan) > 30 {
-			return ListResult{}, errors.New("推荐分页标识无效")
-		}
-		params := url.Values{"bottom_tab_type": {"7"}, "client_req_type": {"2"}, "client_template": {"7"}, "change_type": {"0"}, "category_id": {"0"}, "cell_sub_id": {"0"}, "limit": {"0"}, "need_personal_recommend": {"1"}, "video_type_preferences_str": {"[]"}, "cell_id": {cell}, "plan_id": {plan}, "tab_type": {tab}, "offset": {firstNonEmpty(q.Get("offset"), "0")}, "session_id": {q.Get("session_id")}, "filter_ids": {q.Get("shown")}}
-		p, e := c.cloudJSON(ctx, "/reading/bookapi/bookmall/cell/change/v", http.MethodGet, params, nil)
-		if e != nil {
-			return ListResult{}, e
-		}
-		d, e := dataMap(p)
-		if e != nil {
-			return ListResult{}, e
-		}
-		cv, _ := asMap(d["cell_view"])
-		cells, _ := cv["cell_data"].([]any)
-		out := ListResult{CategoryResult: listCursor(d), FeedCell: cell, FeedPlan: plan}
-		items, diagnostics := parseFeedDramas(cells)
-		out.Items = items
-		out.FeedDiagnostics = &diagnostics
-		stopStalledPage(&out, asInt(q.Get("offset")))
-		return out, nil
+		return c.recommendationCell(ctx, tab, cell, plan, q.Get("session_id"), firstNonEmpty(q.Get("offset"), "0"), q.Get("shown"))
 	}
 	// Non-default channels start with tab/v. The returned cell/plan then enter
 	// cell/change with offset zero, matching the original feedCursor phase switch.
@@ -250,26 +310,50 @@ func (c *passportClient) Recommendations(ctx context.Context, q url.Values) (Lis
 		cells, _ := t["cell_data"].([]any)
 		items, diagnostics := parseFeedDramas(cells)
 		out := ListResult{CategoryResult: CategoryResult{Items: items, SessionID: asString(t["session_id"])}, FeedPlan: asString(t["bookstore_id"]), FeedDiagnostics: &diagnostics}
+		out.HasMore = asBool(t["bottom_unlimited"])
+		// 关注仍走书城。漫剧和真人剧在进入这里之前已经改去热播榜。
+		// 其它频道如果以后还从 tab/v 进来，短条后面的格子才是长列表。
+		bestCount := len(out.Items)
 		for _, value := range cells {
 			cell, _ := asMap(value)
 			id := firstNonEmpty(asString(cell["cell_id_str"]), asString(cell["cell_id"]))
 			if id == "0" || !validID(id) {
 				continue
 			}
-			// Follow cells are followed content (648), never the suggested actors (647).
 			if tab == "45" && asInt(cell["show_type"]) != 648 {
 				continue
 			}
-			out.FeedCell = id
-			out.HasMore = asBool(t["bottom_unlimited"])
+			if out.FeedCell == "" {
+				out.FeedCell = id
+			}
 			if tab == "45" {
 				out.HasMore = asBool(cell["has_more"])
 				out.NextOffset = asInt(cell["next_offset"])
-				items, diagnostics := parseFeedDramas([]any{cell})
-				out.Items = items
-				out.FeedDiagnostics = &diagnostics
+				followed, followedDiag := parseFeedDramas([]any{cell})
+				out.Items = followed
+				out.FeedDiagnostics = &followedDiag
+				out.FeedCell = id
+				break
 			}
-			break
+			if !out.HasMore {
+				continue
+			}
+			page, err := c.recommendationCell(ctx, tab, id, out.FeedPlan, out.SessionID, "0", "")
+			if err != nil || len(page.Items) <= bestCount {
+				continue
+			}
+			out.Items = mergeDramas(items, page.Items)
+			out.FeedCell = id
+			out.NextOffset = page.NextOffset
+			out.HasMore = page.HasMore
+			out.SessionID = firstNonEmpty(page.SessionID, out.SessionID)
+			if page.FeedDiagnostics != nil {
+				out.FeedDiagnostics = page.FeedDiagnostics
+			}
+			bestCount = len(out.Items)
+			if bestCount >= 18 {
+				break
+			}
 		}
 		return out, nil
 	}

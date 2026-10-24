@@ -8,6 +8,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Build;
 import android.os.SystemClock;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.SurfaceView;
 import android.view.TextureView;
@@ -72,6 +73,21 @@ final class PlayerBridge implements NativePlayerAdapter {
             Session target=session;long duration=player.getDuration(),position=player.getCurrentPosition();
             if(!target.live&&target.clock.observe(position,SystemClock.elapsedRealtime(),player.isPlaying()&&!background))fail(target,"clock",0);
             else{
+                // This decoder does not paint a new clip after STATE_ENDED.
+                // Cut to the queued file while the current one is still playing.
+                if(!target.live&&!background&&player.isPlaying()&&duration>1500&&position>0&&target.queuedMediaId!=null&&!target.gaplessPending){
+                    long remain=duration-position;
+                    int index=player.getCurrentMediaItemIndex();
+                    if(remain>0&&remain<=700&&player.getMediaItemCount()>index+1){
+                        MediaItem queued=player.getMediaItemAt(index+1);
+                        if(queued!=null&&target.queuedMediaId.equals(queued.mediaId)){
+                            Log.i("HGSWITCH","gapless seam remain_ms="+remain);
+                            target.wantsPlay=true;
+                            player.setPlayWhenReady(true);
+                            player.seekTo(index+1,0L);
+                        }
+                    }
+                }
                 updateDiagnostic(target,diagnosticFields.optString("state","playing"));
                 web.evaluateJavascript("window.HongguoNativePlayback&&window.HongguoNativePlayback.progress("+JSONObject.quote(target.id)+","+position+","+Math.max(0,duration)+")",null);
             }
@@ -87,8 +103,10 @@ final class PlayerBridge implements NativePlayerAdapter {
         final boolean pcmAudio;
         final PlaybackClock clock=new PlaybackClock();
         int candidate;
-        boolean wantsPlay = true, firstFrame;
+        boolean wantsPlay = true, firstFrame, gaplessPending, advancedEnded;
         long position;
+        String activeMediaId, queuedMediaId;
+        int queueSerial;
         Session(long generation, String id, List<String> urls, Map<String,String> headers,boolean live,boolean compatibility) {
             this.generation=generation;this.id=id;this.urls=urls;this.headers=headers;this.live=live;this.compatibility=compatibility;
             pcmAudio=PlaybackCodecPolicy.pcmAudio(compatibility,live,Build.VERSION.SDK_INT);
@@ -150,9 +168,69 @@ final class PlayerBridge implements NativePlayerAdapter {
             });
         } catch(Exception ignored){handler.post(()->{if(!destroyed)send(loadId,"error");});}
     }
+    /** Append the already-playing session's next local file. One player, no second decoder. */
+    @JavascriptInterface public void enqueue(String loadId, String payload) {
+        if(loadId==null || !loadId.matches("[A-Za-z0-9_-]{1,80}") || payload==null || payload.length()>65536)return;
+        try {
+            String source=new JSONObject(payload).optString("source", "");
+            if(!MediaUrlPolicy.valid(source))return;
+            handler.post(()->{
+                if(destroyed||player==null||session==null||!session.id.equals(loadId)||session.live)return;
+                if(player.getMediaItemCount()<1||player.getPlaybackState()==Player.STATE_IDLE)return;
+                int index=player.getCurrentMediaItemIndex();
+                while(player.getMediaItemCount()>index+1)player.removeMediaItem(player.getMediaItemCount()-1);
+                String mediaId=session.generation+"#q"+(++session.queueSerial);
+                session.queuedMediaId=mediaId;
+                player.addMediaItem(new MediaItem.Builder().setMediaId(mediaId).setUri(source).setMimeType(MimeTypes.VIDEO_MP4).build());
+            });
+        } catch(Exception ignored){}
+    }
+    /** Seek the current ExoPlayer onto the next local file. No second decoder, no release. */
+    @JavascriptInterface public void cutTo(String loadId, String payload) {
+        if(loadId==null || !loadId.matches("[A-Za-z0-9_-]{1,80}") || payload==null || payload.length()>65536)return;
+        final String source;
+        try { source=new JSONObject(payload).optString("source", ""); }
+        catch(Exception ignored){ handler.post(()->{ if(!destroyed) send(loadId,"cutfail"); }); return; }
+        if(!MediaUrlPolicy.valid(source)){ handler.post(()->{ if(!destroyed) send(loadId,"cutfail"); }); return; }
+        handler.post(()->{
+            if(destroyed)return;
+            if(player==null||session==null||!session.id.equals(loadId)||session.live||player.getMediaItemCount()<1||player.getPlaybackState()==Player.STATE_IDLE){
+                send(loadId,"cutfail"); return;
+            }
+            int index=player.getCurrentMediaItemIndex();
+            MediaItem currentItem=player.getCurrentMediaItem();
+            if(currentItem!=null && source.equals(mediaUri(currentItem))){
+                Log.i("HGSWITCH","gapless cut");
+                session.wantsPlay=true;
+                player.setPlayWhenReady(true);
+                if(session.firstFrame){ send(loadId,"frame"); send(loadId,"playing"); }
+                else session.gaplessPending=true;
+                return;
+            }
+            MediaItem queued=player.getMediaItemCount()>index+1 ? player.getMediaItemAt(index+1) : null;
+            boolean sameQueued=queued!=null && session.queuedMediaId!=null && session.queuedMediaId.equals(queued.mediaId) && source.equals(mediaUri(queued));
+            if(!sameQueued){
+                while(player.getMediaItemCount()>index+1) player.removeMediaItem(player.getMediaItemCount()-1);
+                String mediaId=session.generation+"#q"+(++session.queueSerial);
+                session.queuedMediaId=mediaId;
+                player.addMediaItem(new MediaItem.Builder().setMediaId(mediaId).setUri(source).setMimeType(MimeTypes.VIDEO_MP4).build());
+            }
+            if(player.getMediaItemCount()<=index+1){ send(loadId,"cutfail"); return; }
+            Log.i("HGSWITCH","gapless cut");
+            session.wantsPlay=true;
+            player.setPlayWhenReady(true);
+            player.seekTo(index+1, 0L);
+        });
+    }
+    private static String mediaUri(MediaItem item){
+        if(item==null||item.localConfiguration==null||item.localConfiguration.uri==null)return "";
+        return item.localConfiguration.uri.toString();
+    }
     private void startCandidate(Session target) {
         if(destroyed||session!=target)return;
         target.firstFrame=false;target.clock.reset();videoWidth=videoHeight=0;
+        target.activeMediaId=target.generation+"#"+target.candidate;
+        target.queuedMediaId=null;target.gaplessPending=false;
         if(texture!=null)texture.setTransform(new Matrix());
         else surface.setLayoutParams(new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
         ExoPlayer active=ensurePlayer(target);
@@ -162,7 +240,7 @@ final class PlayerBridge implements NativePlayerAdapter {
         active.clearMediaItems();
         event(target,"buffering");
         MediaItem item=new MediaItem.Builder()
-            .setMediaId(target.generation+"#"+target.candidate)
+            .setMediaId(target.activeMediaId)
             .setUri(target.urls.get(target.candidate))
             .setMimeType(target.live?MimeTypes.APPLICATION_M3U8:MimeTypes.VIDEO_MP4).build();
         active.setMediaItem(item,target.position);
@@ -210,8 +288,20 @@ final class PlayerBridge implements NativePlayerAdapter {
             builder.setLoadControl(new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(3000,10000,750,1500)
                 .setBackBuffer(0,false).build());
+        } else {
+            // Default playback start waits about a second of buffer. The next
+            // episode is already a queued local file, so paint after 200ms.
+            builder.setLoadControl(new DefaultLoadControl.Builder()
+                .setBufferDurationsMs(1000, 20000, 200, 500)
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build());
         }
         ExoPlayer active=builder.build();
+        if(!target.live){
+            // Buffer the start of the already queued next episode on this same
+            // player. Five seconds is a range read, not a full-file download.
+            active.setPreloadConfiguration(new ExoPlayer.PreloadConfiguration(5_000_000L));
+        }
         player=active;playerCompatibility=target.compatibility;playerPcmAudio=target.pcmAudio;playerLive=target.live;playerHeaders=new HashMap<>(target.headers);
         if(surface!=null)active.setVideoSurfaceView(surface);else active.setVideoTextureView(texture);
         active.setPlaybackParameters(PlaybackParameters.DEFAULT);
@@ -231,8 +321,26 @@ final class PlayerBridge implements NativePlayerAdapter {
                 }
             }
             @Override public void onVideoSizeChanged(VideoSize size){if(current()){videoWidth=size.width;videoHeight=size.height;pixelRatio=size.pixelWidthHeightRatio;fit();}}
+            @Override public void onMediaItemTransition(MediaItem item, int reason){
+                Session current=session;
+                if(destroyed||current==null||player!=active||item==null)return;
+                if(reason!=Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && reason!=Player.MEDIA_ITEM_TRANSITION_REASON_SEEK)return;
+                if(current.queuedMediaId==null||!current.queuedMediaId.equals(item.mediaId))return;
+                current.activeMediaId=item.mediaId;
+                current.queuedMediaId=null;
+                current.gaplessPending=true;
+                current.advancedEnded=false;
+                current.position=0;
+                current.firstFrame=false;
+                current.clock.reset();
+                current.wantsPlay=true;
+                Log.i("HGSWITCH", "gapless advance");
+                event(current,"advanced");
+            }
             @Override public void onRenderedFirstFrame(){
-                Session current=session;if(!current())return;current.firstFrame=true;clearTimeout();
+                Session current=session;if(!current())return;
+                if(current.gaplessPending){current.gaplessPending=false;Log.i("HGSWITCH","gapless frame");}
+                current.firstFrame=true;clearTimeout();
                 JSONObject frame = new JSONObject();
                 try { frame.put("width", videoWidth).put("height", videoHeight); } catch (Exception ignored) {}
                 // Keep audio held until the HTML cover has painted. If the
@@ -249,7 +357,19 @@ final class PlayerBridge implements NativePlayerAdapter {
                 Session current=session;
                 if(state==Player.STATE_BUFFERING){current.clock.reset();event(current,"buffering");}
                 if(state==Player.STATE_READY&&current.firstFrame)event(current,current.wantsPlay?"playing":"paused");
-                if(state==Player.STATE_ENDED){event(current,"ended");markInactive();}
+                if(state==Player.STATE_ENDED){
+                    // A queued next episode is the same player advancing. Reporting
+                    // ended here makes the page start a second resolver on top of that cut.
+                    int index=active.getCurrentMediaItemIndex();
+                    if(!current.advancedEnded && active.getMediaItemCount()>index+1){
+                        current.advancedEnded=true;
+                        active.setPlayWhenReady(true);
+                        active.seekTo(index+1, 0L);
+                        return;
+                    }
+                    if(current.gaplessPending) return;
+                    event(current,"ended");markInactive();
+                }
             }
             @Override public void onIsPlayingChanged(boolean playing){Session current=session;if(current()){if(!playing)current.clock.reset();else if(current.firstFrame)event(current,"playing");}}
             @Override public void onPositionDiscontinuity(Player.PositionInfo oldPosition,Player.PositionInfo newPosition,int reason){if(current()){Session current=session;current.clock.reset();}}
@@ -407,7 +527,7 @@ final class PlayerBridge implements NativePlayerAdapter {
     private boolean currentMediaMatches(Session target){
         if(player==null||target==null)return false;
         MediaItem item=player.getCurrentMediaItem();
-        return item!=null&&(target.generation+"#"+target.candidate).equals(item.mediaId);
+        return item!=null&&target.activeMediaId!=null&&target.activeMediaId.equals(item.mediaId);
     }
     private void clearTimeout(){if(timeout!=null){handler.removeCallbacks(timeout);timeout=null;}}
     private void releasePlayer(){clearTimeout();ExoPlayer old=player;player=null;playerHeaders=Collections.emptyMap();playerCompatibility=false;playerPcmAudio=false;playerLive=false;if(old!=null){old.setVolume(0);if(surface!=null)old.clearVideoSurfaceView(surface);else old.clearVideoTextureView(texture);old.release();}}

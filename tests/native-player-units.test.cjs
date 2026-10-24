@@ -49,7 +49,8 @@ function fixture(engine = 'webview_media3') {
     lastId: null,
     lastPayload: null,
     setVolume() {},
-    seekTo() {}
+    seekTo() {},
+    enqueue(id, payload) { this.enqueues = (this.enqueues || 0) + 1; this.enqueueId = id; this.enqueuePayload = JSON.parse(payload); }
   };
   const context = vm.createContext({
     document,
@@ -71,59 +72,108 @@ function activateNative(f) {
   return f.bridge.lastId;
 }
 
-test('WebView remains the default until native fallback is requested', () => {
+test('Media3 bridge plays directly and does not start the HTML video', () => {
   const f = fixture();
   const proxy = f.document.getElementById('hero-video');
   proxy.src = '/media/test.mp4';
   proxy.play();
   assert.equal(proxy.src, '/media/test.mp4');
-  assert.equal(f.bridge.lastId, null);
-  assert.equal(f.rootClassNames.has('native-playback'), false);
+  assert.equal(f.domVideo.src, '');
+  assert.equal(f.bridge.plays, 1);
+  assert.equal(f.bridge.lastPayload.source, 'http://127.0.0.1/media/test.mp4');
+  assert.equal(f.rootClassNames.has('native-playback'), true);
   proxy.pause();
 });
 
-test('WebView media error switches to Media3 once and keeps the playback position', () => {
-  const f = fixture();
-  const proxy = f.document.getElementById('hero-video');
-  proxy.src = '/media/test.mp4';
-  proxy.play();
-  f.domVideo.currentTime = 12.5;
-  f.listeners.error[0]({ type: 'error' });
-  assert.ok(f.bridge.lastId);
-  assert.equal(f.rootClassNames.has('native-playback'), true);
-  assert.equal(f.bridge.lastPayload.start_position, 12.5);
-  assert.equal(proxy.currentTime, 12.5);
-  const nativeId = f.bridge.lastId;
-  f.listeners.error[0]({ type: 'error' });
-  assert.equal(f.bridge.lastId, nativeId);
-});
-
-test('Media3 fallback uses the staged resume position before WebView playback advances', () => {
+test('Media3 uses the staged resume position', () => {
   const f = fixture(), video = f.document.getElementById('hero-video');
   video.src = '/media/history.mp4';
   f.context.window.HongguoNativePlaybackAdapter.setStartPosition(42.5);
   video.load();
   video.play();
-  f.listeners.error[0]({ type: 'error' });
   assert.equal(f.bridge.lastPayload.start_position, 42.5);
+  assert.equal(f.domVideo.src, '');
 });
 
-test('native playback failure restores the visible WebView video layer', () => {
+test('Media3 failure stays on the bridge and ignores the failed session', () => {
   const f = fixture();
   const proxy = f.document.getElementById('hero-video');
-  const events = [];
-  proxy.addEventListener('nativefallbackstart', () => events.push('start'));
-  proxy.addEventListener('nativefallbackend', () => events.push('end'));
   const nativeId = activateNative(f);
+  let errors = 0;
+  proxy.addEventListener('error', () => errors++);
+  f.context.window.HongguoNativePlayback.event(nativeId, 'error', {kind: 'first_frame_timeout'});
+  f.context.window.HongguoNativePlayback.event(nativeId, 'ended');
+  f.context.window.HongguoNativePlayback.progress(nativeId, 30000, 90000);
+  assert.equal(errors, 1);
   assert.equal(f.rootClassNames.has('native-playback'), true);
-  assert.deepEqual(events, ['start']);
-  f.context.window.HongguoNativePlayback.event(nativeId, 'error');
-  assert.equal(f.rootClassNames.has('native-playback'), false);
-  assert.deepEqual(events, ['start', 'end']);
-  assert.equal(proxy.src, '/media/test.mp4');
+  assert.equal(f.domVideo.src, '');
+  assert.equal(proxy.paused, true);
+  assert.equal(proxy.currentTime, 0);
 });
 
-test('a new source leaves a previous native fallback and starts with WebView again', () => {
+test('enqueue keeps the current Media3 session and does not touch the HTML video', () => {
+  const f = fixture();
+  const proxy = f.document.getElementById('hero-video');
+  const id = activateNative(f);
+  const stops = f.bridge.stops;
+  assert.equal(f.context.window.HongguoNativePlaybackAdapter.enqueue('/minireel-proxy/media/abcdefabcdefabcdefabcdef.mp4'), true);
+  assert.equal(f.bridge.enqueues, 1);
+  assert.equal(f.bridge.enqueueId, id);
+  assert.equal(f.bridge.stops, stops);
+  assert.equal(f.domVideo.src, '');
+  assert.equal(proxy.src, '/media/test.mp4');
+  f.context.window.HongguoNativePlaybackAdapter.adoptSource('/media/next.mp4');
+  assert.equal(proxy.src, '/media/next.mp4');
+  assert.equal(f.bridge.stops, stops);
+  assert.equal(f.domVideo.src, '');
+  let advanced = 0, ended = 0;
+  proxy.addEventListener('advanced', () => advanced++);
+  proxy.addEventListener('ended', () => ended++);
+  proxy.currentTime = 40;
+  f.context.window.HongguoNativePlayback.event(id, 'advanced');
+  assert.equal(advanced, 1);
+  assert.equal(ended, 0);
+  assert.equal(proxy.ended, false);
+  assert.equal(proxy.currentTime, 0);
+});
+
+test('cutTo keeps the current Media3 session and reports a failed cut', () => {
+  const f = fixture();
+  const proxy = f.document.getElementById('hero-video');
+  const id = activateNative(f);
+  const stops = f.bridge.stops;
+  const plays = f.bridge.plays;
+  f.bridge.cutTo = (cutId, payload) => {
+    f.bridge.cuts = (f.bridge.cuts || 0) + 1;
+    f.bridge.cutId = cutId;
+    f.bridge.cutPayload = JSON.parse(payload);
+  };
+  assert.equal(f.context.window.HongguoNativePlaybackAdapter.cutTo('/minireel-proxy/media/abcdefabcdefabcdefabcdef.mp4'), true);
+  assert.equal(f.bridge.cuts, 1);
+  assert.equal(f.bridge.cutId, id);
+  assert.equal(f.bridge.cutPayload.source, 'http://127.0.0.1/minireel-proxy/media/abcdefabcdefabcdefabcdef.mp4');
+  assert.equal(f.bridge.stops, stops);
+  assert.equal(f.bridge.plays, plays);
+  assert.equal(f.domVideo.src, '');
+  assert.equal(proxy.src, '/media/test.mp4');
+  let failed = 0;
+  proxy.addEventListener('cutfail', () => failed++);
+  f.context.window.HongguoNativePlayback.event(id, 'cutfail');
+  assert.equal(failed, 1);
+  assert.equal(f.bridge.stops, stops);
+});
+
+test('MPV does not cut inside the Media3 playlist', () => {
+  const f = fixture('mpv');
+  const video = f.document.getElementById('hero-video');
+  video.src = '/media/test.mp4';
+  video.play();
+  f.bridge.cutTo = () => { f.bridge.cuts = 1; };
+  assert.equal(f.context.window.HongguoNativePlaybackAdapter.cutTo('/media/next.mp4'), false);
+  assert.equal(f.bridge.cuts, undefined);
+});
+
+test('the next episode stays on Media3 instead of returning to the HTML video', () => {
   const f = fixture();
   const proxy = f.document.getElementById('hero-video');
   activateNative(f);
@@ -131,7 +181,10 @@ test('a new source leaves a previous native fallback and starts with WebView aga
   proxy.src = '/media/next.mp4';
   proxy.play();
   assert.equal(proxy.src, '/media/next.mp4');
-  assert.equal(f.bridge.lastId, nativeId);
+  assert.equal(f.domVideo.src, '');
+  assert.equal(f.bridge.plays, 2);
+  assert.notEqual(f.bridge.lastId, nativeId);
+  assert.equal(f.bridge.lastPayload.source, 'http://127.0.0.1/media/next.mp4');
   proxy.pause();
 });
 
@@ -186,7 +239,7 @@ test('explicit zero position clears a previously staged native resume position',
 });
 
 test('app stages playback position on source changes and leaves native initial seek to the bridge', () => {
-  assert.equal((appSource.match(/stageNativePlaybackStartPosition\(/g) || []).length - 1, 3);
+  assert.equal((appSource.match(/stageNativePlaybackStartPosition\(/g) || []).length - 1, 4);
   assert.match(appSource, /nativeStartPosition[\s\S]*!nativeStartPosition && position > 0/);
   assert.match(appSource, /function stageNativePlaybackStartPosition\(position\)[\s\S]*adapter\.setStartPosition\(position\)/);
 });
@@ -290,12 +343,14 @@ test('MPV failure stays native, reports error and ignores late success until exp
   await video.play(); assert.equal(f.bridge.plays, 2); assert.notEqual(f.bridge.lastId, old);
 });
 
-test('Media3 callback after returning to WebView cannot emit a stale ended or progress event', () => {
+test('Media3 callback after an error cannot emit a stale ended or progress event', () => {
   const f = fixture(), video = f.document.getElementById('hero-video');
   const id = activateNative(f); let ends = 0, ticks = 0;
   video.addEventListener('ended', () => ends++); video.addEventListener('timeupdate', () => ticks++);
   f.context.window.HongguoNativePlayback.event(id, 'error');
   f.context.window.HongguoNativePlayback.event(id, 'ended');
   f.context.window.HongguoNativePlayback.progress(id, 30000, 90000);
-  assert.equal(ends, 0); assert.equal(ticks, 0); video.pause();
+  assert.equal(ends, 0); assert.equal(ticks, 0);
+  assert.equal(f.rootClassNames.has('native-playback'), true);
+  video.pause();
 });

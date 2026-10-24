@@ -2,8 +2,9 @@
   'use strict';
   root.HongguoLocales = root.HongguoLocales || {};
   root.HongguoLocales['ja-JP'] = {
-  "app.name": "Hongguoショートドラマ",
+  "app.name": "紅果TV短劇",
   "nav.recommend": "おすすめ",
+  "nav.home": "ホーム",
   "nav.search": "ドラマ検索",
   "nav.rank": "ランキング",
   "nav.new": "新作",
@@ -80,6 +81,7 @@
   "search.noMatch": "1致するドラマが見つかりません。別のキーワードをお試しください。",
   "rank.title": "ランキング",
   "rank.official": "Hongguoランキング",
+  "rank.officialBoard": "公式ランキング",
   "rank.view": "ランキング表示",
   "rank.radarView": "ランキングレーダー表示",
   "rank.officialCategory": "公式ランキングの点類",

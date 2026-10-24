@@ -7,8 +7,8 @@ import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
+import android.util.Log;
 import android.graphics.Color;
-import android.graphics.drawable.AnimatedVectorDrawable;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -18,6 +18,7 @@ import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.view.ViewTreeObserver;
 import android.view.inputmethod.InputMethodManager;
+import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -29,7 +30,6 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Button;
-import android.widget.ImageView;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.io.BufferedReader;
@@ -49,16 +49,17 @@ public class MainActivity extends Activity {
     private final SearchNavigationState searchNavigationState = new SearchNavigationState();
     private final SearchInputFocusPolicy searchInputFocusPolicy = new SearchInputFocusPolicy();
     private LinearLayout startupPanel;
+    private StartupSplashView startupSplash;
     private TextView startupMessage;
     private Button startupRetry;
     private Thread startupThread;
+    private boolean startupDismissed;
     private volatile boolean destroyed;
     private boolean pageLoadFailed;
     private volatile boolean pageReady;
     private int routedVerticalKeys;
     private int routedHorizontalKeys;
     private int routedConfirmKeys;
-    private AnimatedVectorDrawable startupAnimation;
     private AppUpdater appUpdater;
     private TvHomeChannelManager homeChannelManager;
     private String pendingHomeProgram;
@@ -163,8 +164,6 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 if (!pageLoadFailed && coreUrl != null && url.startsWith(coreUrl)) {
-                    startupPanel.setVisibility(View.GONE);
-                    startupAnimation.stop();
                     pageReady = true;
                     grantWebViewFocus(false);
                     appUpdater.start();
@@ -174,7 +173,14 @@ public class MainActivity extends Activity {
                         (activityForeground ? "resumeFromBackground()" : "pauseForBackground()"), null);
             }
         });
-        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
+                String message = consoleMessage == null ? null : consoleMessage.message();
+                if (message != null && message.startsWith("HGSWITCH")) Log.i("HGSWITCH", message);
+                return super.onConsoleMessage(consoleMessage);
+            }
+        });
         FrameLayout content = new FrameLayout(this);
         content.setBackgroundColor(Color.BLACK);
         FrameLayout nativeVideoLayer = new FrameLayout(this);
@@ -187,28 +193,26 @@ public class MainActivity extends Activity {
         startupPanel.setGravity(Gravity.CENTER);
         int startupInset = Math.round(24 * getResources().getDisplayMetrics().density);
         startupPanel.setPadding(startupInset, startupInset, startupInset, startupInset);
-        startupPanel.setBackgroundColor(0xFF0C0D12);
-        ImageView startupLogo = new ImageView(this);
-        startupAnimation = (AnimatedVectorDrawable) getDrawable(R.drawable.startup_loading);
-        startupLogo.setImageDrawable(startupAnimation);
-        int logoSize = Math.round(72 * getResources().getDisplayMetrics().density);
-        LinearLayout.LayoutParams logoLayout = new LinearLayout.LayoutParams(logoSize, logoSize);
-        logoLayout.bottomMargin = Math.round(20 * getResources().getDisplayMetrics().density);
-        startupPanel.addView(startupLogo, logoLayout);
+        startupPanel.setBackgroundColor(Color.BLACK);
+        startupSplash = new StartupSplashView(this);
+        int splashHeight = Math.round(150 * getResources().getDisplayMetrics().density);
+        startupPanel.addView(startupSplash, new LinearLayout.LayoutParams(-1, splashHeight));
         startupMessage = new TextView(this);
-        startupMessage.setTextColor(Color.WHITE);
-        startupMessage.setTextSize(22);
+        startupMessage.setTextColor(0xB8F5F5F7);
+        startupMessage.setTextSize(20);
         startupMessage.setGravity(Gravity.CENTER);
         startupPanel.addView(startupMessage, new LinearLayout.LayoutParams(-2, -2));
         TextView versionLabel = new TextView(this);
         versionLabel.setText("版本 " + BuildConfig.VERSION_NAME);
-        versionLabel.setTextColor(0xFFA9A9B3);
-        versionLabel.setTextSize(14);
+        versionLabel.setTextColor(0x73F5F5F7);
+        versionLabel.setTextSize(13);
         versionLabel.setGravity(Gravity.CENTER);
         versionLabel.setPadding(0, 16, 0, 16);
         startupPanel.addView(versionLabel, new LinearLayout.LayoutParams(-2, -2));
         startupRetry = new Button(this);
         startupRetry.setText("重试");
+        startupRetry.setTextColor(Color.WHITE);
+        startupRetry.setBackgroundColor(Color.TRANSPARENT);
         startupRetry.setOnClickListener(view -> { startCoreService(); waitForCore(); });
         startupPanel.addView(startupRetry, new LinearLayout.LayoutParams(-2, -2));
         content.addView(startupPanel, new FrameLayout.LayoutParams(-1, -1));
@@ -225,11 +229,27 @@ public class MainActivity extends Activity {
         waitForCore();
     }
 
+    private void publishStartupProgress(long started) {
+        float elapsed = SystemClock.elapsedRealtime() - started;
+        float shown = Math.min(0.88f, elapsed / 1600f * 0.88f);
+        runOnUiThread(() -> {
+            if (destroyed || startupDismissed || startupSplash == null) return;
+            startupSplash.setProgress(shown);
+        });
+    }
+
+    private void dismissStartup() {
+        if (destroyed || startupDismissed || startupPanel == null) return;
+        startupDismissed = true;
+        startupSplash.setHopping(false);
+        startupPanel.setVisibility(View.GONE);
+    }
+
     private void showStartupFailure() {
         if (destroyed) return;
         startupMessage.setText("本机服务连接失败，请重试");
         pageReady = false;
-        startupAnimation.stop();
+        startupSplash.setHopping(false);
         startupRetry.setVisibility(View.VISIBLE);
         startupPanel.setVisibility(View.VISIBLE);
         startupRetry.requestFocus();
@@ -237,12 +257,14 @@ public class MainActivity extends Activity {
 
     private void waitForCore() {
         if (startupThread != null && startupThread.isAlive()) return;
-        startupMessage.setText("正在启动红果短剧…");
+        startupDismissed = false;
+        startupMessage.setText("正在启动");
         startupRetry.setVisibility(View.GONE);
+        startupSplash.reset();
         startupPanel.setVisibility(View.VISIBLE);
-        if (activityForeground) startupAnimation.start();
         startupThread = new Thread(() -> {
-            long deadline = SystemClock.elapsedRealtime() + 30000;
+            long started = SystemClock.elapsedRealtime();
+            long deadline = started + 30000;
             CoreEndpoint ready = null;
             String failure = "本机服务连接失败，请重试";
             while (!Thread.currentThread().isInterrupted() && SystemClock.elapsedRealtime() < deadline) {
@@ -275,7 +297,15 @@ public class MainActivity extends Activity {
                     if (connection != null) connection.disconnect();
                 }
                 if (ready != null) break;
+                publishStartupProgress(started);
                 try { Thread.sleep(250); } catch (InterruptedException interrupted) { return; }
+            }
+            if (ready != null) {
+                long showUntil = started + 1400;
+                while (!Thread.currentThread().isInterrupted() && SystemClock.elapsedRealtime() < showUntil) {
+                    publishStartupProgress(started);
+                    try { Thread.sleep(200); } catch (InterruptedException interrupted) { return; }
+                }
             }
             final CoreEndpoint coreReady = ready;
             final String failureMessage = failure;
@@ -286,6 +316,7 @@ public class MainActivity extends Activity {
                     coreUrl = coreReady.url;
                     webView.loadUrl(coreUrl);
                     grantWebViewFocus(false);
+                    startupSplash.finish(this::dismissStartup);
                 } else { showStartupFailure(); startupMessage.setText(failureMessage); }
             });
         }, "hongguo-tv-startup");
@@ -623,7 +654,7 @@ public class MainActivity extends Activity {
         searchNavigationState.reset();
         completeAccountEditing();
         completeSearchEditing(true);
-        if (startupAnimation != null) startupAnimation.stop();
+        if (startupSplash != null) startupSplash.setHopping(false);
         if (playerBridge != null) playerBridge.onPause();
         if (webView != null) {
             webView.evaluateJavascript("window.HongguoTV && window.HongguoTV.pauseForBackground()", null);
@@ -636,7 +667,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         activityForeground = true;
-        if (startupAnimation != null && startupPanel.getVisibility() == View.VISIBLE && startupRetry.getVisibility() != View.VISIBLE) startupAnimation.start();
+        if (startupSplash != null && startupPanel.getVisibility() == View.VISIBLE && startupRetry.getVisibility() != View.VISIBLE) startupSplash.setHopping(true);
         applyFullscreen();
         if (webView != null) {
             webView.onResume();
@@ -658,7 +689,7 @@ public class MainActivity extends Activity {
             homeChannelManager.destroy();
             homeChannelManager = null;
         }
-        if (startupAnimation != null) startupAnimation.stop();
+        if (startupSplash != null) startupSplash.setHopping(false);
         if (startupThread != null) startupThread.interrupt();
         View decor = getWindow().getDecorView();
         decor.removeCallbacks(restoreFullscreen);

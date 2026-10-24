@@ -5,8 +5,9 @@
   // without changing the UI or the focus model.
   root.HongguoLocales = root.HongguoLocales || {};
   root.HongguoLocales['zh-CN'] = {
-    'app.name': '红果短剧',
+    'app.name': '红果TV短剧',
     'nav.recommend': '推荐',
+    'nav.home': '首页',
     'nav.search': '找剧',
     'nav.rank': '排行榜',
     'nav.new': '新剧',
@@ -83,6 +84,7 @@
     'search.noMatch': '没有找到匹配的短剧，换个关键词试试。',
     'rank.title': '排行榜',
     'rank.official': '红果榜',
+    'rank.officialBoard': '官方榜',
     'rank.view': '榜单视图',
     'rank.radarView': '榜单雷达视图',
     'rank.officialCategory': '官方榜分类',

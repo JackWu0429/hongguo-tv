@@ -79,32 +79,37 @@ func TestRecommendationFeedParserCountsDirectPlayableAndFilteredRecords(t *testi
 	}
 }
 
-func TestFeedChannelPhaseTransition(t *testing.T) {
+func TestCategoryChannelsUseHotRank(t *testing.T) {
 	c, close := listFixtureClient(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/reading/bookapi/bookmall/tab/v" {
-			if r.URL.Query().Get("tab_type") != "39" {
-				t.Error("channel lost")
-			}
-			ioJSON(w, `{"code":0,"data":{"tab_item":[{"tab_type":39,"bookstore_id":7650476689721409598,"bottom_unlimited":true,"session_id":"tab-session","cell_data":[{"cell_id_str":"7650476176527343678","cell_data":[{"video_data":[{"video_detail":{"series_id":"7690163276214176792","series_title":"首批","episode_cnt":209}}]}]}]}]}}`)
-		} else {
-			q := r.URL.Query()
-			if q.Get("offset") != "0" || q.Get("cell_id") != "7650476176527343678" || q.Get("session_id") != "tab-session" || q.Get("plan_id") != "7650476689721409598" {
-				t.Error("feed phase cursor lost", q)
-			}
-			ioJSON(w, `{"code":0,"data":{"next_offset":6,"has_more":true,"cell_view":{"cell_data":[]}}}`)
+		if r.URL.Path != "/reading/bookapi/bookmall/cell/change/v" {
+			t.Errorf("home category left the hot rank: %s", r.URL.Path)
 		}
+		q := r.URL.Query()
+		if q.Get("cell_id") != "7470092475068071998" {
+			t.Error("not the rank cell", q.Get("cell_id"))
+		}
+		key := q.Get("selected_items") + "/" + q.Get("sub_selected_items")
+		switch key {
+		case "comic_series_rank/comic_series_hot_play":
+			if q.Get("offset") != "0" || q.Get("tab_type") != "26" {
+				t.Error("comic hot rank first page", q)
+			}
+		case "human/human_hot_play":
+			if q.Get("offset") != "10" || q.Get("tab_type") != "18" || q.Get("session_id") != "rank-session" {
+				t.Error("real hot rank next page", q)
+			}
+		default:
+			t.Error("unexpected rank selection", key)
+		}
+		ioJSON(w, `{"code":0,"data":{"has_more":true,"next_offset":10,"session_id":"rank-session","cell_view":{"cell_selector":{"outer_row":{"items":[{"selector_item_id":"human","show_name":"真人剧"}]}},"cell_data":[{"video_data":[{"series_id":"7690163276214176792","series_title":"热榜剧","episode_cnt":12,"vid":"7690223053078268953"}],"ugc_user_data":[{"user_info":{"base_info":{"actor_id_str":"1234567890123456789","user_name":"不该出现的演员"}}}]}]}}}`)
 	})
 	defer close()
-	q := url.Values{"channel": {"39"}}
-	first, e := c.Recommendations(context.Background(), q)
-	if e != nil || first.NextOffset != 0 || !first.HasMore || len(first.Items) != 1 {
+	first, e := c.Recommendations(context.Background(), url.Values{"channel": {"36"}})
+	if e != nil || first.Source != "hot_rank" || first.FeedCell != "" || first.FeedPlan != "" || len(first.Ranks) != 0 || len(first.Items) != 1 || first.Items[0].Title != "热榜剧" || !first.HasMore || first.NextOffset != 10 {
 		t.Fatal(first, e)
 	}
-	q.Set("feed_cell", first.FeedCell)
-	q.Set("feed_plan", first.FeedPlan)
-	q.Set("session_id", first.SessionID)
-	next, e := c.Recommendations(context.Background(), q)
-	if e != nil || next.NextOffset != 6 || !next.HasMore {
+	next, e := c.Recommendations(context.Background(), url.Values{"channel": {"39"}, "offset": {"10"}, "session_id": {"rank-session"}, "feed_cell": {"7650476176527343678"}, "feed_plan": {"7650476689721409598"}})
+	if e != nil || next.Source != "hot_rank" || len(next.Items) != 1 || next.Items[0].SeriesID != "7690163276214176792" {
 		t.Fatal(next, e)
 	}
 }

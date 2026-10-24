@@ -18,6 +18,45 @@ test('starts once after five stable playback seconds, early in a long episode', 
   f.p.maybe(info());f.p.maybe(info({position:90}));await tick();assert.equal(f.calls.length,1);
   const g=fixture();g.p.maybe(info({duration:600,position:2.5}));await tick();assert.equal(g.calls.length,1);
 });
+test('a zero threshold starts when playback has just become stable', async()=>{
+  const f=fixture();
+  f.p.maybe(info({stable_seconds:0,position:0,prefetch_after_seconds:0}));
+  await tick();assert.equal(f.calls.length,1);
+  const blocked=fixture();
+  blocked.p.maybe(info({stable_seconds:0,position:0,prefetch_after_seconds:0,started:false}));
+  await tick();assert.equal(blocked.calls.length,0);
+});
+test('prepared fires once with the path and stays quiet when prepare fails', async()=>{
+  const seen=[];
+  const f=create({
+    lookup: async ()=>target(),
+    prepare: async ()=>({path:'/media/next.mp4', mode:'range'}),
+    prepared: (info, next, data)=>seen.push([info.episode, next.vid, data.path])
+  });
+  f.maybe(info({prefetch_after_seconds:0, stable_seconds:0, position:0}));
+  f.maybe(info({prefetch_after_seconds:0, stable_seconds:0, position:1}));
+  await tick();
+  assert.deepEqual(seen, [[1, '222', '/media/next.mp4']]);
+  const failed=[];
+  const g=create({
+    lookup: async ()=>target(),
+    prepare: async ()=>{ throw new Error('range'); },
+    prepared: ()=>failed.push(1)
+  });
+  g.maybe(info({prefetch_after_seconds:0, stable_seconds:0, position:0}));
+  await tick();
+  assert.deepEqual(failed, []);
+});
+test('a zero threshold does not wait for a duration the decoder has not reported', async()=>{
+  const f=fixture();
+  f.p.maybe(info({duration:NaN,stable_seconds:0,position:0,prefetch_after_seconds:0}));
+  await tick();assert.equal(f.calls.length,1);
+  const blocked=fixture();
+  blocked.p.maybe(info({duration:0,stable_seconds:0,position:0,prefetch_after_seconds:0}));
+  await tick();assert.equal(blocked.calls.length,0);
+  blocked.p.maybe(info({duration:NaN,stable_seconds:0,position:0}));
+  await tick();assert.equal(blocked.calls.length,0);
+});
 test('MPV can request an earlier prefetch threshold without changing the default', async()=>{
   const f=fixture();
   f.p.maybe(info({stable_seconds:.99,prefetch_after_seconds:1}));
@@ -89,6 +128,40 @@ test('cancel prevents late replies from attaching to a new playback context',asy
 });
 test('consume rejects a mismatched VID instead of using the wrong prepared episode',async()=>{
   const f=fixture();f.p.maybe(info());await tick();assert.equal(f.p.consume(target({vid:'999'})),null);assert.equal(f.signals[0].aborted,true);
+});
+test('a next-episode press waits for the one in-flight prepare instead of starting another',async()=>{
+  const reply=deferred();let prepares=0;
+  const seen=[];
+  const p=create({
+    lookup:async()=>target(),
+    prepare:()=>{prepares++;return reply.promise;},
+    prepared:(info,next,data)=>seen.push(data.path)
+  });
+  p.maybe(info({prefetch_after_seconds:0,stable_seconds:0,position:0}));
+  await tick();
+  let delivered=null;
+  assert.equal(p.hold('123',2,'720P',2,'',(next)=>{delivered=next;}),'wait');
+  assert.equal(prepares,1);
+  reply.resolve({path:'/media/next.mp4',mode:'range'});
+  await tick();
+  assert.equal(prepares,1);
+  assert.equal(delivered && delivered.path,'/media/next.mp4');
+  assert.deepEqual(seen,['/media/next.mp4']);
+});
+test('a string episode number still matches the numeric next episode',async()=>{
+  const f=fixture();
+  f.p.maybe(info({episode:'1',prefetch_after_seconds:0,stable_seconds:0,position:0}));
+  await tick();
+  assert.equal(f.calls.length,1);
+  let matched=false;
+  assert.equal(f.p.hold('123',2,'720P',2,'',()=>{matched=true;}),'ready');
+  assert.equal(matched,true);
+});
+test('a failed prepare tells the waiting next-episode press to fall back',async()=>{
+  const p=create({lookup:async()=>target(),prepare:async()=>{throw Error('offline');}});
+  p.maybe(info({prefetch_after_seconds:0,stable_seconds:0,position:0}));
+  await tick();
+  assert.equal(p.hold('123',2,'720P',2,'',()=>{}),false);
 });
 test('a late metadata reply must match the episode adopted by the foreground',async()=>{
   const lookup=deferred();const f=fixture(()=>lookup.promise);f.p.maybe(info());await tick();

@@ -2,8 +2,9 @@
   'use strict';
   root.HongguoLocales = root.HongguoLocales || {};
   root.HongguoLocales['zh-TW'] = {
-  "app.name": "紅果短劇",
+  "app.name": "紅果TV短劇",
   "nav.recommend": "推薦",
+  "nav.home": "首頁",
   "nav.search": "找劇",
   "nav.rank": "排行榜",
   "nav.new": "新劇",
@@ -80,6 +81,7 @@
   "search.noMatch": "沒有找到匹配的短劇，換個關鍵詞試試。",
   "rank.title": "排行榜",
   "rank.official": "紅果榜",
+  "rank.officialBoard": "官方榜",
   "rank.view": "榜單視圖",
   "rank.radarView": "榜單雷達視圖",
   "rank.officialCategory": "官方榜分類",

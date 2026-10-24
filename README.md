@@ -1,4 +1,51 @@
-# 红果短剧 TV
+# 红果TV短剧
+
+版本 1.0.0。Android TV 客户端，给遥控器使用。这一版在海信 VIDAA（32 位）上把界面收成黑底白焦点，并把下一集接到同一个播放器上。
+
+## 致敬
+
+本仓库站在开源项目 [aston314/hongguo-tv](https://github.com/aston314/hongguo-tv) 上。播放、账号、榜单和桌面/webOS 壳都从那里来。1.0.0 只是在那份代码上继续做电视界面和换集衔接。谢谢原作者把这套实现公开出来。
+
+上游说明仍留在本文后面，没有改写成另一套项目。
+
+## 截图
+
+下面这些图来自海信 VIDAA 实机。
+
+| 启动 | 首页读取 | 首页 |
+| --- | --- | --- |
+| ![启动](docs/screenshots/01-startup.png) | ![读取](docs/screenshots/02-home-loading.png) | ![首页](docs/screenshots/03-home.png) |
+
+| 排行榜 | 观看历史 | 全屏播放 |
+| --- | --- | --- |
+| ![排行榜](docs/screenshots/04-rank.png) | ![观看历史](docs/screenshots/05-history.png) | ![全屏](docs/screenshots/06-fullscreen.png) |
+
+## 性能
+
+换集和内存上的实测写在 [性能说明](docs/performance.md)。数字来自这台电视的日志，不是目标口号。
+
+## 下载
+
+[Releases](https://github.com/JackWu0429/hongguo-tv/releases/tag/v1.0.0) 里有两个标准版安装包，签名相同，包名 `tv.hongguo.duanju`，可以和上游包名 `rocks.aston.hongguotv` 同时装。
+
+| 文件 | 设备 |
+| --- | --- |
+| `HongguoTV-1.0.0-32bit-armeabi-v7a.apk` | 32 位，armeabi-v7a。这台海信 VIDAA 用这个。 |
+| `HongguoTV-1.0.0-64bit-arm64-v8a.apk` | 64 位，arm64-v8a。 |
+
+选错位数会装不上或装上不能播。不要覆盖安装上游那份同包名应用，这份签名不同。
+
+## 这一版动过的地方
+
+- 显示名「红果TV短剧」，版本名 1.0.0。
+- 顶部频道、左侧「首页」、排行榜封面墙、播放条全屏、启动时一颗果子沿进度条跳进去。
+- 有 Media3 时不再先走 WebView 解码。下一集提前准备，离结束约 700 毫秒内在同一个播放器里接上。
+
+播放倍速、试看时长和清晰度策略没有改。
+
+---
+
+# 上游项目说明原文
 
 独立 Android TV 客户端项目，采用 Android 壳与 Go 核心的实现方式。
 

@@ -154,6 +154,7 @@
     if (state) state.textContent = uiText('settings.currentLanguage', '当前：{language}', { language: current === 'zh-TW' ? uiText('settings.languageChineseTraditional', '繁體中文') : current === 'ja-JP' ? uiText('settings.languageJapanese', '日本語') : uiText('settings.languageChineseSimplified', '简体中文') });
   }
   var androidShell = /HongguoTV-Android/.test(navigator.userAgent);
+  if (androidShell) document.documentElement.classList.add('apple-tv');
   var webosShell = !!window.HongguoWebOS;
   // Explicit Wails configuration or ?platform=desktop; TV browser previews
   // retain the Android interaction model but do not expose native settings.
@@ -383,6 +384,7 @@
   var playbackRequest = null;
   var playbackInfoRequest = null;
   var playbackPrefetchHandoff = null;
+  var gaplessAdvanceAt = 0;
   var playbackAudioHold = null;
   var playbackTiming = [];
   var playbackRecovery = HongguoPlaybackRecovery.create({ maxAttempts: 1 });
@@ -391,13 +393,42 @@
   var episodePrefetch = HongguoEpisodePrefetch.create({
     lookup: function (info, signal) {
       return getDetail(info.item, signal).then(function (detail) {
-        var candidates = HongguoEpisodePrefetch.nextUnlockedEpisodes(detail, info.episode, 4);
-        var next = candidates.length && candidates[0].episode === info.episode + 1 ? candidates[0] : null;
-        return next ? { series_id: info.series_id, vid: next.vid, quality: info.quality || '', fallback: '1', mode: info.mode || '' } : null;
+        var episode = Number(info.episode) || 0;
+        var candidates = HongguoEpisodePrefetch.nextUnlockedEpisodes(detail, episode, 4);
+        var next = candidates.length && candidates[0].episode === episode + 1 ? candidates[0] : null;
+        if (!next) {
+          var videos = detail && detail.vid_list || [];
+          var row = detail && detail.episodes && detail.episodes[episode];
+          var immediate = row && row.video_id || videos[episode];
+          if (immediate && /^[0-9]{1,32}$/.test(String(immediate))) {
+            try { console.info('HGSWITCH prefetch warm episode=' + (episode + 1) + ' locked=' + (row ? row.locked : 'none')); } catch (ignoredWarm) {}
+            return { series_id: info.series_id, vid: String(immediate), episode: episode + 1, quality: info.quality || '', fallback: '1', mode: info.mode || '' };
+          }
+          try { console.info('HGSWITCH prefetch skip episode=' + episode + ' vids=' + videos.length + ' candidate=' + (candidates[0] ? candidates[0].episode : 0) + ' locked=' + (row ? row.locked : 'none')); } catch (ignoredSkip) {}
+          return null;
+        }
+        return { series_id: info.series_id, vid: next.vid, episode: next.episode, quality: info.quality || '', fallback: '1', mode: info.mode || '' };
       });
     },
     prepare: function (target, signal) {
-      return fetchData('/api/v1/play/info?' + new URLSearchParams(Object.assign({}, target, { prefetch: '1' })), signal ? { signal: signal } : {});
+      return fetchData('/api/v1/play/info?' + new URLSearchParams(Object.assign({}, target, { prefetch: '1' })), signal ? { signal: signal } : {}).then(function (data) {
+        try { console.info('HGSWITCH prefetch ok episode=' + target.episode + ' mode=' + (data && data.mode)); } catch (ignoredPrefetchOk) {}
+        return data;
+      }, function (error) {
+        try { console.info('HGSWITCH prefetch fail episode=' + target.episode + ' ' + (error && error.message ? error.message : 'error')); } catch (ignoredPrefetchFail) {}
+        throw error;
+      });
+    },
+    prepared: function (info, target, data) {
+      if (!data || !data.path || data.mode === 'full') return;
+      var playback = activePlayback;
+      if (!playback || playback.generation !== info.generation || playback.owner !== info.owner) return;
+      if (String(playback.vid) !== String(info.vid) || Number(playback.episode) !== Number(info.episode)) return;
+      if (applicationInBackground || applicationHidden() || !isNativeMedia3PlaybackActive()) return;
+      if (!target || Number(target.episode) !== info.episode + 1) return;
+      playback.gaplessNext = { episode: target.episode, vid: String(target.vid), path: data.path, series_id: info.series_id };
+      var adapter = window.HongguoNativePlaybackAdapter;
+      if (adapter && typeof adapter.enqueue === 'function') adapter.enqueue(data.path);
     }
   });
   var applicationInBackground = false;
@@ -538,11 +569,14 @@
   var calendarPager = createListPager('/api/v1/lists/calendar', calendarList, '.calendar-row', 'calendar-pagination', function (items, append) { renderPublications(items, append, false); }, function (data) { renderCalendarDays(data.calendar); });
   var reservationPager = createListPager('/api/v1/lists/reservations', document.getElementById('reservation-list'), '.reservation-row', 'reservation-pagination', function (items, append) { renderPublications(items, append, true); }, reservationMetadata);
   var libraryPager = createListPager('', document.getElementById('library-grid'), '.library-card', 'library-pagination', function () { renderLibrary(true); });
-  var feedPager = createListPager('/api/v1/lists/recommend', null, '.hero-feed-focus', '', function (items, append) {
+  var feedPager = createListPager('/api/v1/lists/recommend', null, '.home-poster', '', function (items, append) {
     if (!append) renderFeed(items);
     else if (feedIndex < 0 && items.length) renderFeed(items);
-    else { feedItems = feedItems.concat(items); updateFeedCounter(); syncHomeChannel(feedItems); }
-  }, null, 1);
+    else {
+      feedItems = feedItems.concat(items); updateFeedCounter(); syncHomeChannel(feedItems);
+      if (pageMode() === 'recommend' && !activePlayback) renderHomeMosaic(feedItems);
+    }
+  }, null, 2);
   var discussionPager = HongguoPagination.create({
     key: function (item) { return item.comment_id; },
     cursor: function (data) { return data.next_cursor ? { cursor: data.next_cursor } : {}; },
@@ -963,14 +997,22 @@
       if (!repeat && current && typeof current.click === 'function') current.click();
       return true;
     }
-    var direction = ({ ArrowUp: 'up', ArrowDown: 'down' })[key];
-    if (key === 'ArrowLeft' || key === 'ArrowRight') return true;
-    if (direction && !repeat) {
-      var target = moveWithinZone('playbackCommandMenu', current, direction);
-      if (target) goFocus(target);
+    if (key === 'ArrowRight' || key === 'ArrowDown') {
+      if (!repeat) {
+        var next = moveWithinZone('playbackCommandMenu', current, 'down');
+        if (next) goFocus(next);
+      }
       return true;
     }
-    return !!direction;
+    if (key === 'ArrowLeft' || key === 'ArrowUp') {
+      if (!repeat) {
+        var previous = moveWithinZone('playbackCommandMenu', current, 'up');
+        if (previous) goFocus(previous);
+        else if (key === 'ArrowLeft') closePlaybackCommandMenu(true);
+      }
+      return true;
+    }
+    return false;
   }
 
   function scanModalOpen() { return searchScanOpen || danmakuScanOpen; }
@@ -1006,6 +1048,11 @@
 
   function firstVisible(selector) {
     return focusables(selector)[0] || null;
+  }
+
+  function lastVisible(selector) {
+    var items = focusables(selector);
+    return items.length ? items[items.length - 1] : null;
   }
 
   function markFocus(element) {
@@ -1167,7 +1214,7 @@
     if (pageMode() === 'player') return document.querySelector('.hero-feed-focus');
     // Restored recommendations are already visible; enter the channel bar
     // explicitly instead of relying on the loading placeholder.
-    if (pageMode() === 'recommend') return activeChannel();
+    if (pageMode() === 'recommend') return firstVisible('.home-poster') || activeChannel();
     // The rank page has a two-level entry bar. Always enter that bar first;
     // restoring a previously focused data row would hide the view switch on
     // TV remotes and make the Radar view appear unreachable.
@@ -1222,6 +1269,27 @@
 
   function firstRankTab() { return firstVisible('.rank-tab'); }
   function firstRankView() { return firstVisible('.rank-view-tab'); }
+  function rankChromeItems() {
+    if (rankView === 'radar') return focusables('.rank-view-tab, .radar-view-tab, .radar-filter[data-radar-official], .radar-filter[data-radar-metric], .radar-filter[data-radar-type], #radar-refresh');
+    return focusables('.rank-view-tab, #rank-filter-open, .rank-tab');
+  }
+  function moveRankChrome(current, direction) {
+    var items = rankChromeItems();
+    var index = items.indexOf(current);
+    if (index < 0) return direction === 'left' ? activeSidebar() : (items[0] || null);
+    index += direction === 'left' ? -1 : 1;
+    if (index < 0) return activeSidebar();
+    return items[index] || null;
+  }
+  function syncRadarOptionVisibility() {
+    var growth = radarView === 'growth';
+    var officialTabs = document.getElementById('radar-official-tabs');
+    var growthMetrics = document.getElementById('radar-growth-metrics');
+    var growthTypes = document.getElementById('radar-growth-types');
+    if (officialTabs) officialTabs.classList.toggle('is-hidden', growth);
+    if (growthMetrics) growthMetrics.classList.toggle('is-hidden', !growth);
+    if (growthTypes) growthTypes.classList.toggle('is-hidden', !growth);
+  }
   function firstRadarViewTab() { return firstVisible('.radar-view-tab'); }
   function firstRadarOfficialTab() { return firstVisible('.radar-filter[data-radar-official]'); }
   function firstRadarGrowthMetric() { return firstVisible('.radar-filter[data-radar-metric]'); }
@@ -1248,9 +1316,9 @@
 
   function moveSearchFilter(current, direction) {
     if (current && current.id === 'filter-toggle') {
-      if (direction === 'up') return firstSearchAction() || searchInput;
-      if (direction === 'down') return document.getElementById('filter-panel').classList.contains('is-collapsed') ? firstSearchResult() : firstVisible('.search-filter');
-      if (direction === 'left') return activeSidebar();
+      if (direction === 'up') return activeSidebar();
+      if (direction === 'down') return document.getElementById('filter-panel').classList.contains('is-collapsed') ? (firstVisible('.search-history-action') || firstSearchResult()) : firstVisible('.search-filter');
+      if (direction === 'left') return firstVisible('#search-scan') || firstVisible('.search-submit') || searchInput;
       return null;
     }
     var row = current && current.closest ? current.closest('.filter-row') : null;
@@ -1287,6 +1355,33 @@
     if (direction === 'up' || direction === 'left') index -= 1;
     if (direction === 'down' || direction === 'right') index += 1;
     return items[index] || null;
+  }
+
+  function moveMosaic(current, direction) {
+    var currentRect = current && current.getBoundingClientRect ? current.getBoundingClientRect() : null;
+    if (!currentRect) return null;
+    var currentX = currentRect.left + currentRect.width / 2;
+    var currentY = currentRect.top + currentRect.height / 2;
+    var best = null;
+    var bestScore = Infinity;
+    focusables('.home-poster').forEach(function (node) {
+      if (node === current) return;
+      var rect = node.getBoundingClientRect();
+      var x = rect.left + rect.width / 2;
+      var y = rect.top + rect.height / 2;
+      var dx = x - currentX;
+      var dy = y - currentY;
+      if (direction === 'left' && dx >= -8) return;
+      if (direction === 'right' && dx <= 8) return;
+      if (direction === 'up' && dy >= -8) return;
+      if (direction === 'down' && dy <= 8) return;
+      var primary = direction === 'left' || direction === 'right' ? Math.abs(dx) : Math.abs(dy);
+      var secondary = direction === 'left' || direction === 'right' ? Math.abs(dy) : Math.abs(dx);
+      if (secondary > primary * 1.6 && secondary > 120) return;
+      var score = primary + secondary * 0.35;
+      if (score < bestScore) { bestScore = score; best = node; }
+    });
+    return best;
   }
 
   function moveGrid(selector, current, direction) {
@@ -1417,7 +1512,17 @@
       if (current.id === 'player-compose-scan') return direction === 'up' || direction === 'left' ? document.getElementById('player-compose-input') : direction === 'right' || direction === 'down' ? document.getElementById('player-compose-send') : null;
       if (current.id === 'player-compose-send') return direction === 'up' ? firstVisible('#player-compose-scan') || document.getElementById('player-compose-input') : direction === 'left' ? firstVisible('#player-compose-scan') || document.getElementById('player-compose-input') : null;
       if (current.id === 'player-options-close') return direction === 'down' ? firstVisible('#player-compose-input') || document.querySelector('.player-option.is-selected') || firstVisible('#player-options-list .player-option') : null;
-      return moveGrid('#player-options-list .player-option', current, direction) || (direction === 'up' ? document.getElementById('player-options-close') : null);
+      var qualityOptions = focusables('#player-options-list .player-option');
+      var qualityIndex = qualityOptions.indexOf(current);
+      if (qualityIndex < 0) {
+        var qualityMarked = document.querySelector('#player-options-list .player-option.is-focused') || document.querySelector('#player-options-list .player-option.is-selected') || qualityOptions[0];
+        qualityIndex = Math.max(0, qualityOptions.indexOf(qualityMarked));
+      }
+      var qualityStep = direction === 'right' ? 1 : direction === 'left' ? -1 : direction === 'down' ? 2 : -2;
+      var qualityNext = qualityIndex + qualityStep;
+      if (direction === 'up' && qualityNext < 0) return document.getElementById('player-options-close');
+      if (qualityNext >= 0 && qualityNext < qualityOptions.length) return qualityOptions[qualityNext];
+      return qualityOptions[qualityIndex] || null;
     }
     if (detailModalOpen) { detailFocusPending = false; return moveModalFrom(current, direction); }
     if (discussionOpen) {
@@ -1442,7 +1547,11 @@
         var channelTarget = moveWithinZone(zone, current, direction);
         return channelTarget || (direction === 'left' ? activeSidebar() : null);
       }
-      if (direction === 'down') return firstVisible('.hero-feed-focus') || firstCatalog() || firstVisible('.primary-action');
+      if (direction === 'down') {
+        if (pageMode() === 'rank') return firstRankRow() || firstVisible('.rank-subtab.is-active') || firstVisible('.rank-view-tab.is-active');
+        if (pageMode() === 'history') return firstVisible('.history-filter.is-active') || firstVisible('.library-card') || firstVisible('.library-toolbar-button');
+        return firstVisible('.home-poster') || firstVisible('.hero-feed-focus') || firstCatalog() || firstVisible('.primary-action');
+      }
       if (direction === 'up') return activeSidebar();
       return null;
     }
@@ -1466,6 +1575,13 @@
       return null;
     }
     if (zone === 'catalog') {
+      var mosaicTarget = current.classList.contains('home-poster') ? moveMosaic(current, direction) : null;
+      if (current.classList.contains('home-poster')) {
+        if (mosaicTarget) return mosaicTarget;
+        if (direction === 'left') return activeSidebar();
+        if (direction === 'up') return activeChannel();
+        return null;
+      }
       if (direction === 'left' || direction === 'right') {
         var cardTarget = moveWithinZone(zone, current, direction);
         return cardTarget || (direction === 'left' ? activeSidebar() : null);
@@ -1474,26 +1590,35 @@
       if (direction === 'down') return firstVisible('.playback-buttons .control-button');
       return null;
     }
+    if (zone === 'actions' && (shell.classList.contains('is-player') || shell.classList.contains('is-cinema'))) {
+      if (direction === 'left') return moveWithinZone(zone, current, 'left') || lastVisible('.playback-buttons .control-button') || firstVisible('.hero-feed-focus');
+      if (direction === 'right') return moveWithinZone(zone, current, 'right');
+      if (direction === 'up') return firstVisible('#control-progress') || firstVisible('.hero-feed-focus');
+      if (direction === 'down') return firstVisible('.hero-feed-focus');
+      return null;
+    }
     if (zone === 'actions') {
       if (direction === 'up' || direction === 'down') return moveWithinZone(zone, current, direction) || (direction === 'down' ? firstVisible('.playback-buttons [data-action="fullscreen"]') : null);
       if (direction === 'left') return firstVisible('.hero-feed-focus') || firstVisible('.primary-action') || firstCatalog();
       return null;
     }
     if (zone === 'controls') {
+      var watchingChrome = shell.classList.contains('is-player') || shell.classList.contains('is-cinema');
       if (direction === 'left' || direction === 'right') {
         var controlTarget = moveWithinZone(zone, current, direction);
-        return controlTarget || (direction === 'left' ? activeSidebar() : null);
+        if (controlTarget) return controlTarget;
+        if (watchingChrome && direction === 'right') return firstVisible('.round-action');
+        if (watchingChrome && direction === 'left') return firstVisible('.hero-feed-focus');
+        return direction === 'left' ? activeSidebar() : null;
       }
-      if (direction === 'up') {
-        if (current.dataset.action === 'fullscreen') return firstVisible('#control-progress');
-        return firstVisible('#control-progress') || firstVisible('.hero-feed-focus') || firstCatalog() || firstVisible('.primary-action');
-      }
+      if (direction === 'up') return firstVisible('#control-progress') || firstVisible('.hero-feed-focus') || firstCatalog() || firstVisible('.primary-action');
+      if (watchingChrome && direction === 'down') return firstVisible('.hero-feed-focus');
       return null;
     }
     if (zone === 'searchInput') {
       if (direction === 'up') return activeSidebar();
-      // Left/right edit text; Down first enters live suggestions when present.
-      if (direction === 'down') return searchSuggestionOpen ? firstVisible('.search-suggestion') : firstSearchAction();
+      // Left/right edit text. Down leaves the option row for suggestions or results.
+      if (direction === 'down') return searchSuggestionOpen ? firstVisible('.search-suggestion') : firstVisible('.search-history-action') || firstSearchResult();
       if (direction === 'right') return firstSearchAction();
       return null;
     }
@@ -1504,9 +1629,9 @@
       return null;
     }
     if (zone === 'searchActions') {
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? searchInput : null);
-      if (direction === 'up') return searchInput;
-      if (direction === 'down') return firstVisible('.search-history-action') || firstSearchFilter() || firstSearchResult();
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? searchInput : firstVisible('#filter-toggle'));
+      if (direction === 'up') return activeSidebar();
+      if (direction === 'down') return firstVisible('.search-history-action') || firstSearchResult() || (document.getElementById('filter-panel').classList.contains('is-collapsed') ? null : firstVisible('.search-filter'));
       return null;
     }
     if (zone === 'searchHistory') {
@@ -1571,27 +1696,27 @@
     }
     if (zone === 'libraryActions') {
       if (current.dataset.action === 'library-discover' && direction === 'up') return firstVisible('.history-filter.is-active') || firstVisible('.library-tab.is-active') || activeSidebar();
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? firstVisible('.library-tab.is-active') || activeSidebar() : null);
-      if (direction === 'down') return firstVisible('.history-filter.is-active') || firstVisible('.library-type-filter.is-active') || firstVisible('.library-card') || firstVisible('[data-action="library-discover"]');
-      if (direction === 'up') return firstVisible('.history-filter.is-active') || firstVisible('.library-tab.is-active') || firstVisible('.library-card') || activeSidebar();
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? firstVisible('.history-filter.is-active') || firstVisible('.library-type-filter.is-active') || firstVisible('.library-tab.is-active') || activeSidebar() : null);
+      if (direction === 'down') return firstVisible('.library-card') || firstVisible('[data-action="library-discover"]');
+      if (direction === 'up') return pageMode() === 'history' ? (document.querySelector('.channel-tab[data-page="history"]') || activeSidebar()) : activeSidebar();
       return null;
     }
     if (zone === 'historyFilters') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : firstVisible('#library-manage'));
-      if (direction === 'up') return firstVisible('#library-manage') || firstVisible('.library-tab.is-active') || activeSidebar();
+      if (direction === 'up') return document.querySelector('.channel-tab[data-page="history"]') || activeSidebar();
       if (direction === 'down') return firstVisible('.library-card') || firstVisible('[data-action="library-discover"]');
       return null;
     }
     if (zone === 'libraryTypeFilters') {
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstVisible('.library-tab.is-active') || firstVisible('#library-manage') || activeSidebar();
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? firstVisible('.library-tab.is-active') || activeSidebar() : firstVisible('#library-manage'));
+      if (direction === 'up') return activeSidebar();
       if (direction === 'down') return firstVisible('.library-card') || firstVisible('[data-action="library-discover"]');
       return null;
     }
     if (zone === 'followActions') {
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? firstVisible('.follow-tab.is-active') || activeSidebar() : null);
-      if (direction === 'up') return firstVisible('.follow-tab.is-active') || activeSidebar();
-      if (direction === 'down') return followView === 'reservations' ? firstVisible('.reservation-tab.is-active') : followNotificationViewOpen ? firstVisible('.follow-notification-row') || firstVisible('#follow-notifications-back') : firstVisible('.follow-card') || firstVisible('#follow-pagination .list-retry');
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? firstVisible('.reservation-tab.is-active') || firstVisible('.follow-tab.is-active') || activeSidebar() : null);
+      if (direction === 'up') return activeSidebar();
+      if (direction === 'down') return followNotificationViewOpen ? firstVisible('.follow-notification-row') || firstVisible('#follow-notifications-back') : firstVisible('.follow-card') || firstVisible('#follow-pagination .list-retry');
       return null;
     }
     if (zone === 'followNotifications') {
@@ -1677,46 +1802,13 @@
       if (direction === 'left' || direction === 'right') return moveGrid('.library-remove', current, direction) || (direction === 'left' ? activeSidebar() : null);
       return null;
     }
-    if (zone === 'rankTabs') {
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstRankView() || activeSidebar();
-      if (direction === 'down') return firstVisible('.rank-subtab.is-active') || firstRankSubtab() || firstRankRow();
-      return null;
-    }
-    if (zone === 'rankViews') {
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return activeSidebar();
-      if (direction === 'down') return rankView === 'radar' ? firstRadarViewTab() : (firstVisible('.rank-subtab.is-active') || firstRankSubtab() || firstRankRow());
-      return null;
-    }
-    if (zone === 'radarViewTabs') {
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstRankView();
-      if (direction === 'down') return radarView === 'growth' ? firstRadarGrowthMetric() : firstRadarOfficialTab();
-      return null;
-    }
-    if (zone === 'radarRefresh') {
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstRankView();
-      if (direction === 'down') return firstRadarOfficialTab();
-      return null;
-    }
-    if (zone === 'radarOfficialTabs') {
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstRadarViewTab() || firstRankView();
-      if (direction === 'down') return firstRadarOfficialRow() || firstRadarGrowthMetric();
-      return null;
-    }
-    if (zone === 'radarGrowthMetrics') {
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstRadarViewTab() || firstRankView();
-      if (direction === 'down') return firstRadarGrowthType() || firstRadarGrowthRow();
-      return null;
-    }
-    if (zone === 'radarGrowthTypes') {
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
-      if (direction === 'up') return firstRadarGrowthMetric();
-      if (direction === 'down') return firstRadarGrowthRow();
+    if (zone === 'rankTabs' || zone === 'rankViews' || zone === 'radarViewTabs' || zone === 'radarRefresh' || zone === 'radarOfficialTabs' || zone === 'radarGrowthMetrics' || zone === 'radarGrowthTypes') {
+      if (direction === 'left' || direction === 'right') return moveRankChrome(current, direction);
+      if (direction === 'up') return document.querySelector('.channel-tab[data-page="rank"]') || activeSidebar();
+      if (direction === 'down') {
+        if (rankView === 'radar') return radarView === 'growth' ? (firstRadarGrowthRow() || firstRadarOfficialRow()) : (firstRadarOfficialRow() || firstRadarGrowthRow());
+        return firstRankRow() || firstVisible('.rank-subtab.is-active') || firstRankSubtab();
+      }
       return null;
     }
     if (zone === 'radarOfficialItems') {
@@ -1739,17 +1831,17 @@
       return null;
     }
     if (zone === 'rankSubnav') {
-      if (direction === 'up') return moveWithinZone(zone, current, direction) || firstVisible('.rank-tab.is-active');
-      if (direction === 'down') return moveWithinZone(zone, current, direction);
-      if (direction === 'left') return activeSidebar();
-      if (direction === 'right') return firstRankFilterToggle() || firstVisible('.rank-panel.is-active') || firstVisible('.rank-panel') || firstRankRow();
-      return moveWithinZone(zone, current, direction);
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : null);
+      if (direction === 'down') return firstRankRow() || current;
+      if (direction === 'up') return firstVisible('.rank-tab.is-active') || document.querySelector('.channel-tab[data-page="rank"]') || activeSidebar();
+      return null;
     }
     if (zone === 'rankItems') {
-      if (direction === 'up') return moveWithinZone(zone, current, direction) || firstRankFilterEntry();
-      if (direction === 'down') return moveWithinZone(zone, current, direction) || listBoundary(rankPager, current, direction);
-      if (direction === 'left') return firstVisible('.rank-subtab.is-active');
-      if (direction === 'right') return current.querySelector('.rank-row-play, .rank-row-actor');
+      var rankCard = moveGrid('.rank-row', current, direction);
+      if (rankCard) return rankCard;
+      if (direction === 'up') return firstVisible('.rank-subtab.is-active') || firstVisible('.rank-tab.is-active') || document.querySelector('.channel-tab[data-page="rank"]');
+      if (direction === 'down') return listBoundary(rankPager, current, direction);
+      if (direction === 'left') return activeSidebar();
       return null;
     }
     if (zone === 'rankActions') {
@@ -1763,12 +1855,12 @@
     if (zone === 'newTabs') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : firstNewFilter());
       if (direction === 'up') return activeSidebar();
-      if (direction === 'down') return firstNewFilter() || (newMode === 'calendar' ? firstCalendarDay() : firstNewCard());
+      if (direction === 'down') return newMode === 'calendar' ? firstCalendarDay() : firstNewCard();
       return null;
     }
     if (zone === 'newFilters') {
       if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? firstVisible('.new-tab.is-active') : null);
-      if (direction === 'up') return firstNewTab();
+      if (direction === 'up') return activeSidebar();
       if (direction === 'down') return newMode === 'calendar' ? firstCalendarDay() : firstNewCard();
       return null;
     }
@@ -1793,20 +1885,20 @@
     }
     if (zone === 'reservationTabs') {
       if (direction === 'down') return firstVisible('.reservation-row') || firstVisible('#reservations-view .publication-action') || firstVisible('#reservation-pagination .list-retry');
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? firstVisible('.follow-tab.is-active') || activeSidebar() : null);
-      if (direction === 'up') return firstVisible('.follow-tab.is-active') || activeSidebar();
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? firstVisible('.follow-tab.is-active') || activeSidebar() : firstVisible('#follow-notifications-open'));
+      if (direction === 'up') return activeSidebar();
       return null;
     }
     if (zone === 'libraryTabs') {
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : firstVisible('#library-manage'));
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : firstVisible('.library-type-filter.is-active') || firstVisible('#library-manage'));
       if (direction === 'up') return activeSidebar();
-      if (direction === 'down') return firstVisible('.library-type-filter.is-active') || firstVisible('.library-card') || firstVisible('.library-toolbar-button');
+      if (direction === 'down') return firstVisible('.library-card') || firstVisible('[data-action="library-discover"]');
       return null;
     }
     if (zone === 'followTabs') {
-      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : firstVisible('#follow-notifications-open'));
+      if (direction === 'left' || direction === 'right') return moveWithinZone(zone, current, direction) || (direction === 'left' ? activeSidebar() : firstVisible('.reservation-tab.is-active') || firstVisible('#follow-notifications-open'));
       if (direction === 'up') return activeSidebar();
-      if (direction === 'down') return followView === 'reservations' ? firstVisible('.reservation-tab.is-active') : firstVisible('.follow-action') || firstVisible('.follow-card') || firstVisible('#follow-pagination .list-retry');
+      if (direction === 'down') return followView === 'reservations' ? (firstVisible('.reservation-row') || firstVisible('#reservations-view .publication-action')) : firstVisible('.follow-card') || firstVisible('#follow-pagination .list-retry');
       return null;
     }
     return direction === 'right' ? firstContentFocus() : activeSidebar();
@@ -1952,8 +2044,14 @@
 
     if (key === 'Enter') {
       if (event.repeat) { event.preventDefault(); return; }
+      if (playerOptionsOpen && !document.getElementById('player-options').classList.contains('is-diagnostics') && !document.getElementById('player-options').classList.contains('is-composer')) {
+        var picked = current && current.closest && current.closest('#player-options-list') ? current : document.querySelector('#player-options-list .player-option.is-focused') || document.querySelector('#player-options-list .player-option.is-selected');
+        if (picked && typeof picked.click === 'function') picked.click();
+        event.preventDefault(); event.stopPropagation(); return;
+      }
       if (zoneOf(current) === 'feed' && shell.classList.contains('is-controls-hidden')) {
-        revealControls(); goFocus(firstVisible('.playback-buttons .control-button'));
+        if (playbackSurface()) toggleVideo();
+        else { revealControls(); goFocus(firstVisible('.playback-buttons .control-button')); }
         event.preventDefault(); event.stopPropagation(); return;
       }
       if (current && current.id === 'control-progress') {
@@ -1986,33 +2084,39 @@
       else goFocus(direction === 'up' ? document.getElementById('hero-feed-focus') : lastPlaybackControl || firstVisible('.playback-buttons .control-button'));
       event.preventDefault(); event.stopPropagation(); return;
     }
-    if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && pageMode() === 'recommend' && zoneOf(current) === 'feed' &&
-      shell.classList.contains('is-cinema') && (direction === 'up' || direction === 'down')) {
-      if (!event.repeat) switchPlayerEpisode(direction === 'up' ? -1 : 1);
-      event.preventDefault(); event.stopPropagation(); return;
+    if (direction === 'up' || direction === 'down') {
+      var onPoster = current && current.classList && current.classList.contains('home-poster');
+      var focusZone = zoneOf(current);
+      var browsingShows = pageMode() === 'recommend' && !shell.classList.contains('is-cinema') && (onPoster || focusZone === 'feed');
+      var inPlaybackChrome = focusZone === 'controls' || focusZone === 'actions' || focusZone === 'timeline';
+      var watching = !onPoster && !inPlaybackChrome && focusZone !== 'sidebar' && (pageMode() === 'player' || pageMode() === 'recommend' && shell.classList.contains('is-cinema') && activePlayback);
+      if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && watching) {
+        if (!event.repeat) switchPlayerEpisode(direction === 'up' ? -1 : 1);
+        event.preventDefault(); event.stopPropagation(); return;
+      }
+      if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && browsingShows && zoneOf(current) === 'feed') {
+        if (!event.repeat) switchRecommendation(direction === 'up' ? -1 : 1);
+        event.preventDefault(); event.stopPropagation(); return;
+      }
     }
-    if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && pageMode() === 'recommend' && zoneOf(current) === 'feed' && (direction === 'up' || direction === 'down')) {
-      if (!event.repeat) switchRecommendation(direction === 'up' ? -1 : 1);
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-    if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && zoneOf(current) === 'feed' && pageMode() === 'player' && (direction === 'up' || direction === 'down')) {
-      if (!event.repeat) switchPlayerEpisode(direction === 'up' ? -1 : 1);
-      event.preventDefault(); event.stopPropagation(); return;
-    }
-    if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen &&
-      (pageMode() === 'player' || pageMode() === 'recommend' && shell.classList.contains('is-cinema')) &&
-      zoneOf(current) === 'feed' && (direction === 'left' || direction === 'right') &&
-      (shell.classList.contains('is-cinema') || shell.classList.contains('is-controls-hidden'))) {
-      var seeked = seekBy(direction === 'left' ? -10 : 10, false);
-      if (!seeked) showNotice(uiText('ui.videoReadySeek', '视频准备好后才能快进或后退'));
-      event.preventDefault(); event.stopPropagation(); return;
+    if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && playbackSurface() &&
+      (direction === 'left' || direction === 'right')) {
+      var barZone = zoneOf(current);
+      if (barZone === 'feed' || barZone === 'controls' || barZone === 'actions') {
+        var playbackVideo = document.getElementById('hero-video');
+        var playbackPaused = !playbackVideo || playbackVideo.paused || playbackVideo.ended || !playbackVideo.src;
+        if (!playbackPaused) {
+          var seeked = seekBy(direction === 'left' ? -10 : 10, false);
+          if (!seeked) showNotice(uiText('ui.videoReadySeek', '视频准备好后才能快进或后退'));
+        } else movePausedPlaybackBar(current, direction);
+        event.preventDefault(); event.stopPropagation(); return;
+      }
     }
     if (isPlaybackPage() && !detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && (direction !== 'left' || shell.classList.contains('is-cinema') || zoneOf(current) !== 'feed')) revealControls();
     var target = moveFrom(current, direction);
     if (target) {
       goFocus(target);
+      scheduleRailActivate(target);
     }
     // Consume boundary keys too; WebView must not scroll the page or perform
     // its own focus search when the remote reaches the end of a zone.
@@ -2030,8 +2134,9 @@
   function switchPlayerEpisode(step, fromWheel) {
     var playerMode = pageMode() === 'player';
     var fullscreenRecommendation = pageMode() === 'recommend' && shell.classList.contains('is-cinema');
-    if ((!playerMode && !fullscreenRecommendation) || (!fromWheel && zoneOf(document.activeElement) !== 'feed') ||
+    if ((!playerMode && !fullscreenRecommendation) ||
       detailModalOpen || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || playerOptionsOpen || confirmOpen || discussionOpen) return false;
+    if (!fromWheel && zoneOf(document.activeElement) === 'sidebar') return false;
     step = Number(step);
     if (step !== -1 && step !== 1) return false;
 
@@ -2058,6 +2163,16 @@
 
     // Keep the video area focused while playFeedItem cancels the old request,
     // resolves the new episode, and restores the existing transition/loading UI.
+    try { console.info('HGSWITCH request from=' + current + ' to=' + target + ' step=' + step); } catch (ignoredSwitchRequest) {}
+    if (playback) playback.switchKeyAt = Date.now();
+    if (step === 1) {
+      var playingVideo = document.getElementById('hero-video');
+      if (playingVideo && !playingVideo.ended) maybePrefetchNextEpisode(playingVideo);
+      if (cutQueuedEpisode(playback) || holdNextCut(playback)) {
+        goFocus(document.getElementById('hero-feed-focus'));
+        return true;
+      }
+    }
     playFeedItem(feedIndex, target, 0);
     goFocus(document.getElementById('hero-feed-focus'));
     return true;
@@ -2762,10 +2877,12 @@
     if (shell.classList.contains('is-cinema')) exitCinema();
     else {
       setCinema(true);
-      // Android already fills the display. Keep the CSS layout if the browser
-      // Fullscreen API is unavailable; never fullscreen the video alone.
+      // Android already fills the display. The native surface follows the
+      // hero box, so cinema mode only hides the rail and widens that box.
+      // requestFullscreen on this WebView does not resize it, and a failed
+      // fullscreenchange would drop the cinema class again.
       if (desktopShell && window.go && window.go.main) window.go.main.desktopApp.SetFullscreen(true);
-      else if (shell.requestFullscreen) Promise.resolve(shell.requestFullscreen()).catch(function () {});
+      else if (!androidShell && shell.requestFullscreen) Promise.resolve(shell.requestFullscreen()).catch(function () {});
     }
     revealControls();
   }
@@ -3508,6 +3625,7 @@
 
   function setCover(image, item) {
     image.alt = item.title || '';
+    image.decoding = 'async';
     var source = item.cover_fallback || item.cover || '';
     if (image.getAttribute('src') === source && image.complete && image.naturalWidth) return;
     var generation = image.__coverGeneration = (image.__coverGeneration || 0) + 1;
@@ -3601,7 +3719,7 @@
   }
 
   function recommendationChannel() {
-    var channel = activeChannel();
+    var channel = document.querySelector('.channel-tab.is-catalog') || document.querySelector('.channel-tab.is-active:not([data-page])');
     return ({ 'channel-follow': '45', 'channel-comic': '36', 'channel-real': '39', 'channel-recommend': '16' })[channel && channel.dataset.focus] || '16';
   }
 
@@ -3652,11 +3770,19 @@
 
   function restoreRecommendation() {
     var session = recommendationSession;
-    if (!session || session.owner !== accountEpoch || session.channel !== recommendationChannel() || !session.items[session.index] || !feedPager.loaded) return false;
+    if (!session || session.owner !== accountEpoch || session.channel !== recommendationChannel() || !session.items.length || !feedPager.loaded) return false;
     feedItems = session.items.slice();
-    feedIndex = session.index;
+    feedIndex = session.index >= 0 && session.index < feedItems.length ? session.index : 0;
     setCatalogHeading(activeChannel().textContent);
-    playFeedItem(feedIndex, undefined, undefined, null, session.checkpoint);
+    // The home page is a poster wall. Restoring it must not start Media3,
+    // or the covers come back while the previous episode keeps playing.
+    var hero = document.getElementById('hero');
+    hero.classList.add('is-feed');
+    hero.classList.remove('is-catalog-loading', 'is-preparing-video', 'is-starting-video', 'is-episode-transition', 'is-native-media3-episode-transition');
+    document.getElementById('hero-placeholder').classList.add('is-hidden');
+    setPlayerStatus('');
+    renderHomeMosaic(feedItems);
+    if (feedItems[0]) setFeatured(feedItems[0]);
     return true;
   }
 
@@ -3960,12 +4086,49 @@
     return true;
   }
 
+  function cutQueuedEpisode(playback) {
+    var next = playback && playback.gaplessNext;
+    var adapter = window.HongguoNativePlaybackAdapter;
+    if (!playback || playback !== activePlayback || playback.generation !== feedGeneration || !next || !next.path) return false;
+    if (next.series_id !== playback.item.series_id || Number(next.episode) !== Number(playback.episode) + 1) return false;
+    if (!adapter || typeof adapter.cutTo !== 'function' || !adapter.cutTo(next.path)) return false;
+    playback.cutArmed = false;
+    return true;
+  }
+
+  function holdNextCut(playback) {
+    if (!playback || !playback.item || !episodePrefetch || typeof episodePrefetch.hold !== 'function') return false;
+    if (playback.cutArmed) return true;
+    var mode = (typeof rangePlaybackEnabled === 'function' && rangePlaybackEnabled()) ? 'range' : '';
+    var held = episodePrefetch.hold(playback.item.series_id, Number(playback.episode) + 1, playbackPreferences.quality || '', accountEpoch, mode, function (next) {
+      playback.cutArmed = false;
+      if (activePlayback !== playback || playback.generation !== feedGeneration) return;
+      if (!next || !next.path || !next.target) {
+        playFeedItem(feedIndex, Number(playback.episode) + 1, 0);
+        return;
+      }
+      if (!playback.gaplessNext || !playback.gaplessNext.path) {
+        playback.gaplessNext = { episode: next.target.episode, vid: String(next.target.vid), path: next.path, series_id: next.target.series_id };
+      }
+      if (!cutQueuedEpisode(playback)) playFeedItem(feedIndex, Number(playback.episode) + 1, 0);
+    });
+    if (held === 'wait') {
+      playback.cutArmed = true;
+      setPlayerStatus(episodeLoadingText(Number(playback.episode) + 1));
+      return true;
+    }
+    return held === 'ready';
+  }
+
   function continueAfterEpisode(playback) {
     if (!canContinuePlayback(playback)) { deferContinuation(playback); return; }
     if (playback.continuationPending) { playback.endedPending = true; return; }
     // A user-initiated season switch owns this transition. Do not let an
     // episode boundary race it and start a different source underneath.
     if (seasonSwitchRequest) return;
+    playback.switchKeyAt = Date.now();
+    if (cutQueuedEpisode(playback)) return;
+    if (holdNextCut(playback)) return;
     // Android 6 WebViews can support Promise without Promise.finally.
     function finishContinuation() {
       playback.continuationPending = false;
@@ -4213,16 +4376,32 @@
     episodePrefetch.maybe({ item: playback.item, series_id: playback.item.series_id, vid: playback.vid,
       episode: playback.episode, quality: playbackPreferences.quality, generation: playback.generation, owner: accountEpoch,
       mode: (typeof rangePlaybackEnabled === 'function' && rangePlaybackEnabled()) ? 'range' : '',
-      prefetch_after_seconds: playbackEngineName() === 'mpv' ? 1 : 5,
+      // Waiting, pause and seeking clear stableSince, so a five-second gate
+      // rarely opens on a stuttering TV. Zero starts the single next-episode
+      // prefetch as soon as this episode is playing. A locked next episode
+      // still gets the same range address the switch would request. The
+      // preview limit stays on that stream, and a full-file result is not queued.
+      prefetch_after_seconds: playbackEngineName() === 'mpv' ? 1 : 0,
       duration: Number(video.duration), position: Number(video.currentTime), paused: video.paused, ended: video.ended,
       stable_seconds: playback.stableSince ? Math.max(0, Date.now() - playback.stableSince) / 1000 : 0,
       started: playback.started, active: playback.generation === feedGeneration && isPlaybackPage() && !applicationInBackground && !applicationHidden() && !qualityPrevious });
   }
+  function syncPlaybackAudioIntent(muted) {
+    var real = document.querySelector('#hero-video');
+    if (!real || !real.setAttribute) return;
+    real.setAttribute('data-playback-audio-intent', muted ? '1' : '0');
+  }
   function holdPlaybackAudio(generation) {
     var video = document.getElementById('hero-video');
-    if (!playbackAudioHold) playbackAudioHold = { muted: video.muted, generation: generation };
+    // The cover sets the real element muted. Sampling video.muted after a
+    // channel change records that cover mute as the user's choice, so the
+    // next drama stays silent. The volume preference is the only user intent.
+    if (!playbackAudioHold) playbackAudioHold = { muted: playbackPreferences.volume === 0, generation: generation };
     playbackAudioHold.generation = generation;
-    video.muted = true;
+    syncPlaybackAudioIntent(!!playbackAudioHold.muted);
+    var real = document.querySelector('#hero-video');
+    if (real) real.muted = true;
+    if (video && video !== real) video.muted = true;
   }
   function hasLastPlaybackFrame(item) {
     var canvas = document.getElementById('hero-last-frame');
@@ -4343,13 +4522,18 @@
   }
   function setPlaybackMuted(muted) {
     if (playbackAudioHold) playbackAudioHold.muted = !!muted;
+    syncPlaybackAudioIntent(!!muted);
     document.getElementById('hero-video').muted = playbackAudioHold ? true : !!muted;
   }
   function releasePlaybackAudio(playback) {
     if (!playbackAudioHold || playback && playbackAudioHold.generation !== playback.generation) return;
-    var muted = playbackAudioHold.muted;
+    var muted = !!playbackAudioHold.muted;
     playbackAudioHold = null;
-    document.getElementById('hero-video').muted = muted;
+    syncPlaybackAudioIntent(muted);
+    var real = document.querySelector('#hero-video');
+    if (real) real.muted = muted;
+    var video = document.getElementById('hero-video');
+    if (video && video !== real) video.muted = muted;
   }
   function bindPlaybackPresentation(playback, source) {
     playback.presentation = { source: source, position: Number(playback.position) || 0, epoch: 0, pending: false, waiting: false,
@@ -4454,6 +4638,10 @@
         releasePresentedAudio(playback, presentation, video);
         finishAutoCinema(playback);
       }
+      if (playback.timing && playback.timing.gapless && presentation.rendered) {
+        complete();
+        return;
+      }
       var hasHeldFrame = document.getElementById('hero').classList.contains('is-episode-cover') ||
         document.getElementById('hero-last-frame').classList.contains('is-visible');
       if (isNativeMedia3PlaybackActive() && playback.preserveNativeTransition && hasHeldFrame && !presentation.progressed) {
@@ -4470,6 +4658,7 @@
     });
   }
   function markPlaybackStarted(playback) {
+    if (!playback || playback.deferStart) return;
     var video = document.getElementById('hero-video');
     var presentation = playback && playback.presentation;
     if (applicationInBackground || applicationHidden()) { video.pause(); return; }
@@ -4502,12 +4691,26 @@
         native_stop_fence_ms: nativeStopFenceMs,
         video_start_ms: Math.max(0, Date.now() - timing.ready_at), total_ms: Math.max(0, Date.now() - timing.started_at) });
       if (playbackTiming.length > 20) playbackTiming.shift();
+      try {
+        console.info('HGSWITCH started episode=' + timing.episode
+          + ' auto=' + (timing.automatic_next ? 1 : 0)
+          + ' prefetch_ms=' + timing.prefetch_ms
+          + ' handoff_wait_ms=' + timing.handoff_wait_ms
+          + ' foreground_resolve_ms=' + timing.foreground_resolve_ms
+          + ' prepared=' + (timing.prepared_before_switch ? 1 : 0)
+          + ' gapless=' + (timing.gapless ? 1 : 0)
+          + ' source_ready_ms=' + timing.source_ready_ms
+          + ' video_start_ms=' + timing.video_start_ms
+          + ' total_ms=' + timing.total_ms);
+      } catch (ignoredSwitchLog) {}
     }
     updatePlaybackControls(); scheduleControlsHide(); saveProgress(true);
     if (typeof showPlaybackMenuHint === 'function') showPlaybackMenuHint(playback);
+    maybePrefetchNextEpisode(video);
   }
   function checkPlaybackProgress(video) {
     var playback = activePlayback, presentation = playback && playback.presentation;
+    if (!playback || playback.deferStart) return;
     if (!currentPlaybackPresentation(playback, presentation, video)) return;
     var position = Number(video.currentTime) || 0;
     var advancing = position > presentation.position + .001 && !video.seeking && !video.paused && !video.ended && video.readyState >= 2;
@@ -4607,6 +4810,11 @@
     // ended has already queued the completed episode. Keep that write alive,
     // but do not queue it twice or make the next source wait for its fsync.
     if (!fastContinuation) saveProgress(true);
+    var switchKeyAt = activePlayback && activePlayback.switchKeyAt || 0;
+    var previousEpisode = activePlayback && activePlayback.owner === accountEpoch && activePlayback.item && activePlayback.item.series_id === item.series_id ? Number(activePlayback.episode) || 0 : 0;
+    var keepPlayer = !!(sameSeries && nativeAtSwitch && playbackEngineName() !== 'mpv' && forcedPosition === 0 && previousEpisode > 0 && Number(forcedEpisode) === previousEpisode + 1);
+    if (keepPlayer) releasePlaybackAudio(activePlayback);
+    if (activePlayback) activePlayback.gaplessNext = null;
     activePlayback = null;
     if (typeof syncNativePlaybackPageState === 'function') syncNativePlaybackPageState();
     playbackRequest = { index: index, episode: forcedEpisode, position: forcedPosition };
@@ -4630,7 +4838,7 @@
     var keepEpisodeCover = playbackEngineName() === 'mpv' || !sameSeries || nativeAtSwitch || !capturedLastFrame;
     var generation = ++feedGeneration;
     if (autoCinemaCandidate && autoCinemaGeneration && generation !== autoCinemaGeneration) cancelPendingAutoCinema();
-    holdPlaybackAudio(generation);
+    if (!keepPlayer) holdPlaybackAudio(generation);
     clearTimeout(controlsTimer);
     hero.classList.add('is-feed', 'is-preparing-video');
     hero.classList.remove('is-catalog-loading', 'is-starting-video', 'is-range-source-reset');
@@ -4653,8 +4861,8 @@
     }
     // Keep the cover painted during native source reset. CSS visibility alone
     // did not prevent a grey hardware-video flash on the user's Android 6 TV.
-    if (!keepRangeFrame) video.classList.remove('has-source');
-    var coveredReset = waitForPlaybackPaint(generation, request.signal).then(function (painted) {
+    if (!keepRangeFrame && !keepPlayer) video.classList.remove('has-source');
+    var coveredReset = keepPlayer ? Promise.resolve(true) : waitForPlaybackPaint(generation, request.signal).then(function (painted) {
       if (!painted) return false;
       video.pause();
       if (keepRangeFrame) {
@@ -4686,6 +4894,9 @@
         activePlayback = { item: playing, episode: episode, vid: vid, position: position, generation: generation, owner: accountEpoch, started: false, stableSince: 0, lastWrite: 0, completed: false,
           episodeCoverAllowed: keepEpisodeCover,
           preserveNativeTransition: sameSeries,
+          deferStart: keepPlayer,
+          switchKeyAt: switchKeyAt,
+          cutPath: '',
           endedPending: false,
           mode: '', rangeFallback: '', rangeFallbackAttempted: false,
           recoveryAttempts: recovery && recovery.recoveryAttempts || 0,
@@ -4737,6 +4948,29 @@
         if (!data.path) throw new Error(uiText('content.noSource', '播放服务没有返回地址'));
         function attachPreparedSource() {
           if (generation !== feedGeneration || request.signal.aborted || !activePlayback) return;
+          var adapter = window.HongguoNativePlaybackAdapter;
+          var canCut = !!(keepPlayer && data.mode !== 'full' && adapter && typeof adapter.cutTo === 'function' && adapter.cutTo(data.path));
+          if (canCut) {
+            activePlayback.cutPath = data.path;
+            activePlayback.timing.ready_at = Date.now();
+            activePlayback.timing.gapless = 1;
+            activePlayback.mode = data.mode || '';
+            activePlayback.rangeFallback = data.range_fallback || '';
+            bindPlaybackPresentation(activePlayback, data.path);
+            if (typeof adapter.adoptSource === 'function') adapter.adoptSource(data.path);
+            playbackQuality = data.quality || '';
+            playbackQualities = data.qualities || [];
+            video.classList.add('has-source');
+            if (typeof syncNativePlaybackPageState === 'function') syncNativePlaybackPageState();
+            placeholder.classList.add('is-hidden');
+            hero.classList.remove('is-preparing-video');
+            setPlayerStatus('');
+            updatePlaybackControls();
+            try { console.info('HGSWITCH cut episode=' + activePlayback.episode); } catch (ignoredCut) {}
+            return;
+          }
+          activePlayback.deferStart = false;
+          activePlayback.cutPath = '';
           activePlayback.timing.ready_at = Date.now();
           activePlayback.mode = data.mode || 'full';
           activePlayback.rangeFallback = data.range_fallback || '';
@@ -4786,6 +5020,49 @@
     try { bridge.syncRecommendations(JSON.stringify(programs)); } catch (error) { /* Browser previews have no native TV provider. */ }
   }
 
+  function revealHomePoster(card) {
+    var board = card && card.closest ? card.closest('#home-mosaic') : null;
+    if (!board || !card.getBoundingClientRect) return;
+    var boardRect = board.getBoundingClientRect();
+    var cardRect = card.getBoundingClientRect();
+    var pad = 20;
+    if (cardRect.bottom > boardRect.bottom - pad) board.scrollTop += cardRect.bottom - (boardRect.bottom - pad);
+    else if (cardRect.top < boardRect.top + pad) board.scrollTop -= (boardRect.top + pad) - cardRect.top;
+  }
+
+  function renderHomeMosaic(items) {
+    var board = document.getElementById('home-mosaic');
+    if (!board) return;
+    var focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.focus : '';
+    board.innerHTML = '';
+    (items || []).slice(0, 24).forEach(function (item) {
+      if (!item || !item.series_id) return;
+      var card = document.createElement('button');
+      card.className = 'home-poster catalog-card';
+      card.dataset.seriesId = item.series_id;
+      card.dataset.focus = 'home-poster-' + item.series_id;
+      var image = document.createElement('img');
+      image.alt = '';
+      setCover(image, item);
+      var frame = document.createElement('span');
+      frame.className = 'home-poster-frame';
+      frame.appendChild(image);
+      var title = document.createElement('span');
+      title.className = 'home-poster-title';
+      title.textContent = item.title || uiText('ui.unnamedDrama', '未命名短剧');
+      card.appendChild(frame);
+      card.appendChild(title);
+      card.addEventListener('click', function () { startPlayer(item, card); });
+      card.addEventListener('focus', function () { setFeatured(item); revealHomePoster(card); });
+      board.appendChild(card);
+    });
+
+    if (focused) {
+      var again = board.querySelector('[data-focus="' + focused.replace(/"/g, '') + '"]');
+      if (again && document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('home-poster')) goFocus(again);
+    }
+  }
+
   function renderFeed(items) {
     feedItems = (items || []).filter(function (item) { return item && item.series_id; });
     syncHomeChannel(feedItems);
@@ -4794,7 +5071,18 @@
     if (!feedItems.length) {
       featuredItem = null;
       updateSeasonControl(null);
+      renderHomeMosaic([]);
       showRecommendationPlaceholder(feedPager.hasMore() ? uiText('ui.readingRecommendations', '正在读取推荐') : uiText('ui.noRecommendations', '暂时没有推荐内容'));
+      return;
+    }
+    if (pageMode() === 'recommend') {
+      var hero = document.getElementById('hero');
+      hero.classList.add('is-feed');
+      hero.classList.remove('is-catalog-loading', 'is-preparing-video');
+      document.getElementById('hero-placeholder').classList.add('is-hidden');
+      setPlayerStatus('');
+      renderHomeMosaic(feedItems);
+      setFeatured(feedItems[0]);
       return;
     }
     armPlaybackMenuHint();
@@ -5815,6 +6103,7 @@
     officialRows.innerHTML = ''; growthRows.innerHTML = '';
     officialSection.classList.toggle('is-hidden', radarView !== 'official');
     growthSection.classList.toggle('is-hidden', radarView !== 'growth');
+    syncRadarOptionVisibility();
     var official = radarBucket(radarOfficialKind);
     var growth = radarGrowthItems();
     if (!official || !official.items || !official.items.length) renderMessage(officialRows, 'rank-empty', radarData ? uiText('ui.radarOfficialEmpty', '官方榜暂无数据。') : uiText('ui.radarLoading', '正在读取榜单雷达…'));
@@ -5862,6 +6151,9 @@
     rankView = view === 'radar' ? 'radar' : 'official';
     var radar = rankView === 'radar';
     document.getElementById('rank-official-controls').classList.toggle('is-hidden', radar);
+    var radarBar = document.getElementById('radar-option-bar');
+    if (radarBar) radarBar.classList.toggle('is-hidden', !radar);
+    syncRadarOptionVisibility();
     document.querySelector('#rank-page .rank-layout').classList.toggle('is-hidden', radar);
     document.getElementById('rank-radar-view').classList.toggle('is-hidden', !radar);
     document.querySelectorAll('.rank-view-tab').forEach(function (node) { var active = node.dataset.rankView === rankView; node.classList.toggle('is-active', active); node.setAttribute('aria-pressed', String(active)); });
@@ -6231,6 +6523,8 @@
       tab.setAttribute('aria-selected', String(selected));
     });
     var showNotifications = !reservations && followNotificationViewOpen;
+    var reservationTabs = document.querySelector('.reservation-tabs');
+    if (reservationTabs) reservationTabs.classList.toggle('is-hidden', !reservations);
     followListView.classList.toggle('is-hidden', reservations || showNotifications);
     followNotificationView.classList.toggle('is-hidden', !showNotifications);
     if (followActions) followActions.classList.toggle('is-hidden', reservations || showNotifications);
@@ -6360,6 +6654,7 @@
     resetEndRecommendations();
     recommendationSession = null;
     episodePrefetch.cancel(); cancelPlaybackPreparation();
+    if (activePlayback) activePlayback.gaplessNext = null;
     saveProgress(true); activePlayback = null; ++feedGeneration;
     if (typeof syncNativePlaybackPageState === 'function') syncNativePlaybackPageState();
     document.getElementById('hero-video').pause();
@@ -6844,16 +7139,114 @@
     startPlayer(item, returnFocus);
   }
 
+  function playbackSurface() {
+    return pageMode() === 'player' || pageMode() === 'recommend' && shell.classList.contains('is-cinema');
+  }
+
+  function pauseButton() {
+    return document.querySelector('.playback-buttons [data-action="pause"]');
+  }
+
+  function parkOnPauseButton() {
+    if (!playbackSurface()) return;
+    revealControls();
+    var button = pauseButton();
+    if (button) goFocus(button);
+  }
+
+  function playbackBarItems() {
+    return focusables('.playback-buttons .control-button, .playback-buttons .round-action');
+  }
+
+  function movePausedPlaybackBar(current, direction) {
+    var items = playbackBarItems();
+    var pause = pauseButton();
+    if (!items.length) return;
+    revealControls();
+    var index = items.indexOf(current);
+    if (index < 0) {
+      var pauseIndex = items.indexOf(pause);
+      var start = pauseIndex < 0 ? 0 : pauseIndex;
+      goFocus(direction === 'right' ? items[start + 1] || items[start] : items[start]);
+      return;
+    }
+    var next = index + (direction === 'right' ? 1 : -1);
+    if (next >= 0 && next < items.length) goFocus(items[next]);
+  }
+
   function toggleVideo() {
     var video = document.getElementById('hero-video');
     if (!video.src) { showNotice(uiText('content.noOpenDrama', '请先打开一部短剧并选择集数。')); return; }
-    if (video.paused) playMedia(video).catch(function () { showNotice(uiText('content.playerBlocked', '播放被设备阻止，请再次确认。')); });
-    else video.pause();
+    if (video.paused || video.ended) {
+      playMedia(video).then(parkOnPauseButton).catch(function () { showNotice(uiText('content.playerBlocked', '播放被设备阻止，请再次确认。')); });
+    } else {
+      video.pause();
+      parkOnPauseButton();
+    }
   }
 
-  function activatePage(item, restoring) {
+  var railActivateTimer = 0;
+  function scheduleRailActivate(element) {
+    clearTimeout(railActivateTimer);
+    if (!element) return;
+    var side = element.classList && element.classList.contains('side-item');
+    var channel = element.classList && element.classList.contains('channel-tab') && element.id !== 'recommend-refresh';
+    var rankChip = element.classList && (element.classList.contains('rank-view-tab') || element.classList.contains('rank-tab') || element.classList.contains('rank-subtab') || element.classList.contains('radar-view-tab') || element.classList.contains('radar-filter'));
+    if (!side && !channel && !rankChip) return;
+    railActivateTimer = setTimeout(function () {
+      railActivateTimer = 0;
+      if (!element.classList.contains('is-focused') && document.activeElement !== element) return;
+      if (element.classList.contains('is-active') && !side) return;
+      if (side) {
+        if (element.classList.contains('is-active') && pageMode() === (element.dataset.page || 'recommend')) return;
+        activatePage(element, false, true);
+        return;
+      }
+      if (rankChip) {
+        if (element.classList.contains('rank-view-tab')) { setRankView(element.dataset.rankView, false); goFocus(element); return; }
+        if (element.classList.contains('radar-view-tab')) { setRadarView(element.dataset.radarView, false); goFocus(element); return; }
+        if (element.dataset.radarOfficial) { setRadarOfficial(element.dataset.radarOfficial); return; }
+        if (element.dataset.radarMetric) { setRadarGrowthMetric(element.dataset.radarMetric); return; }
+        if (element.dataset.radarType) { setRadarGrowthType(element.dataset.radarType); return; }
+        element.click();
+        return;
+      }
+      openTopTab(element);
+    }, 160);
+  }
+
+  function markTopTab(element, catalog) {
+    document.querySelectorAll('.channel-tab').forEach(function (node) {
+      if (node.id === 'recommend-refresh') return;
+      node.classList.toggle('is-active', node === element);
+      if (catalog) node.classList.toggle('is-catalog', node === element);
+    });
+  }
+
+  function openTopTab(element) {
+    var page = element.dataset.page;
+    if (page === 'rank' || page === 'history') {
+      if (pageMode() === page && element.classList.contains('is-active')) return;
+      markTopTab(element, false);
+      activatePage(element, false, true);
+      goFocus(element);
+      return;
+    }
+    var sameHome = pageMode() === 'recommend' && element.classList.contains('is-catalog');
+    markTopTab(element, true);
+    if (sameHome) return;
+    if (pageMode() !== 'recommend') {
+      var home = document.querySelector('.side-item[data-page="recommend"]');
+      if (home) activatePage(home, false, true);
+      goFocus(element);
+      return;
+    }
+    loadCatalog(element.textContent);
+  }
+
+  function activatePage(item, restoring, keepFocus) {
     if (item.dataset.page === 'recommend' && pageMode() === 'recommend') {
-      if (!restoring) { revealControls(); goFocus(firstContentFocus()); }
+      if (!restoring && !keepFocus) { revealControls(); goFocus(firstContentFocus()); }
       return;
     }
     if (typeof closePlaybackCommandMenu === 'function') closePlaybackCommandMenu(false);
@@ -6871,10 +7264,14 @@
     allPagers.forEach(function (pager) { pager.cancel(); });
     activePlayback = null;
     ++feedGeneration;
-    document.getElementById('hero-video').pause();
+    var leavingVideo = document.getElementById('hero-video');
+    leavingVideo.pause();
+    // pause() only suspends ExoPlayer. Dropping the source releases it, so a
+    // return to the poster home cannot keep the previous episode's audio.
+    leavingVideo.removeAttribute('src');
     resetPlayerUI();
     document.querySelectorAll('.side-item').forEach(function (node) { node.classList.toggle('is-active', node === item); });
-    var label = item.querySelector('span:last-child');
+    var label = item.querySelector('span:last-child') || item;
     shell.dataset.mode = item.dataset.page || 'recommend';
     if (typeof syncNativePlaybackPageState === 'function') syncNativePlaybackPageState();
     document.getElementById('page-context').textContent = label ? label.textContent : uiText('ui.page', '页面');
@@ -6889,7 +7286,8 @@
       mainSurface.classList.remove('has-placeholder');
       pagePlaceholder.classList.add('is-hidden');
       document.getElementById('hero').classList.add('is-feed');
-      var active = document.querySelector('.channel-tab.is-active');
+      var active = document.querySelector('.channel-tab.is-catalog') || document.querySelector('.channel-tab.is-active:not([data-page])');
+      if (active) markTopTab(active, true);
     if (!restoreRecommendation()) loadCatalog(active ? active.textContent : uiText('nav.recommend', '推荐'));
     } else if (item.dataset.page === 'search') {
       mainSurface.classList.remove('has-placeholder');
@@ -6936,7 +7334,10 @@
     document.getElementById('page-placeholder-copy').textContent = uiText('ui.pageNotReady', '这个页面的数据和交互正在接入。');
     showNotice(uiText('ui.pageEntered', '{page}页面已进入，下一步接入对应数据。', { page: label ? label.textContent : uiText('ui.page', '页面') }));
     }
-    if (!restoring) goFocus(firstContentFocus());
+    var shownPage = document.querySelector('.page-workspace:not(.is-hidden), .search-page:not(.is-hidden)');
+    if (shownPage) shownPage.scrollTop = 0;
+    if (!restoring && !keepFocus) goFocus(firstContentFocus());
+    else if (keepFocus) goFocus(item);
   }
 
   if (desktopShell && window.HongguoDesktopUI && window.HongguoDesktopUI.createPointerFocus) {
@@ -7085,9 +7486,13 @@
 
   document.querySelectorAll('.channel-tab').forEach(function (item) {
     item.addEventListener('click', function () {
-      if (item.id === 'recommend-refresh') { loadCatalog(activeChannel().textContent); return; }
-      document.querySelectorAll('.channel-tab').forEach(function (node) { node.classList.toggle('is-active', node === item); });
-      loadCatalog(item.textContent);
+      if (item.id === 'recommend-refresh') {
+        if (pageMode() !== 'recommend') return;
+        var catalog = document.querySelector('.channel-tab.is-catalog') || activeChannel();
+        loadCatalog(catalog ? catalog.textContent : item.textContent);
+        return;
+      }
+      openTopTab(item);
     });
   });
   document.querySelectorAll('.new-tab').forEach(function (item) {
@@ -7421,7 +7826,70 @@
     document.getElementById('danmaku-layer').classList.remove('is-paused'); tickDanmaku();
     markPlaybackStarted(activePlayback);
   });
+  media.addEventListener('advanced', function () {
+    var playback = activePlayback;
+    var next = playback && playback.gaplessNext;
+    if (!playback || playback.generation !== feedGeneration || !next || next.series_id !== playback.item.series_id) return;
+    saveProgress(true, true);
+    playback.completed = false;
+    playback.episode = next.episode;
+    playback.vid = next.vid;
+    playback.position = 0;
+    playback.gaplessNext = null;
+    playback.item = Object.assign({}, playback.item, { start_episode: next.episode, vid: next.vid });
+    var adapter = window.HongguoNativePlaybackAdapter;
+    if (adapter && typeof adapter.adoptSource === 'function') adapter.adoptSource(next.path);
+    if (playback.presentation) {
+      playback.presentation.source = next.path;
+      playback.presentation.position = 0;
+      playback.presentation.rendered = false;
+      playback.presentation.waiting = false;
+      playback.presentation.failed = false;
+      playback.presentation.progressed = false;
+    }
+    playback.timing = { episode: next.episode, automatic_next: true, gapless: 1, started_at: Date.now(), ready_at: Date.now(), reported: false,
+      prefetch_ms: null, handoff_wait_ms: 0, foreground_resolve_ms: null, prepared_before_switch: true };
+    playback.started = true;
+    playback.stableSince = 0;
+    gaplessAdvanceAt = Date.now();
+    if (playback.presentation) playback.presentation.frame_at = 0;
+    var stuckEpisode = next.episode;
+    var stuckGeneration = playback.generation;
+    var stuckIndex = feedIndex;
+    var stuckMark = gaplessAdvanceAt;
+    setTimeout(function () {
+      if (activePlayback !== playback || playback.generation !== stuckGeneration) return;
+      if (Number(playback.episode) !== Number(stuckEpisode)) return;
+      var frameAt = playback.presentation && Number(playback.presentation.frame_at) || 0;
+      if (frameAt >= stuckMark) return;
+      try { console.info('HGSWITCH gapless stuck episode=' + stuckEpisode); } catch (ignoredStuck) {}
+      playFeedItem(stuckIndex, stuckEpisode, 0);
+    }, 2500);
+    setFeatured(playback.item);
+    updateDetailProgress();
+    updatePlaybackControls();
+    try { console.info('HGSWITCH gapless episode=' + next.episode); } catch (ignoredGapless) {}
+  });
+  media.addEventListener('cutfail', function () {
+    var playback = activePlayback;
+    if (!playback || playback.generation !== feedGeneration || !playback.deferStart || !playback.cutPath) return;
+    var path = playback.cutPath;
+    playback.deferStart = false;
+    playback.cutPath = '';
+    playback.timing.gapless = 0;
+    var video = document.getElementById('hero-video');
+    video.src = path;
+    stageNativePlaybackStartPosition(playback.position || 0);
+    video.classList.add('has-source');
+    video.load();
+    if (!applicationHidden() && !applicationInBackground) playMedia(video).catch(function () { setPlayerStatus(''); });
+  });
   media.addEventListener('nativeframe', function () {
+    if (activePlayback && activePlayback.switchKeyAt) {
+      try { console.info('HGSWITCH key_to_frame_ms=' + (Date.now() - activePlayback.switchKeyAt)); } catch (ignoredKeyFrame) {}
+      activePlayback.switchKeyAt = 0;
+    }
+    if (activePlayback && activePlayback.deferStart) activePlayback.deferStart = false;
     // Media3 can report a rendered frame before WebView's `playing` callback.
     // Reveal that real frame without treating the episode as started for
     // history/progress purposes.
@@ -7503,6 +7971,7 @@
     setPlayerStatus(uiText('ui.playbackFailed', '这集未能正常播放'), true);
   });
   media.addEventListener('ended', function () {
+    if (gaplessAdvanceAt && Date.now() - gaplessAdvanceAt < 1500) return;
     clearRangeStallTimer();
     var playback = activePlayback;
     if (!playback || playback.generation !== feedGeneration) return;
@@ -7792,5 +8261,5 @@
         if (pendingHomeProgram) initialHomeProgram = JSON.parse(pendingHomeProgram);
       }
     } catch (error) { initialHomeProgram = null; }
-    if (!initialHomeProgram || !window.HongguoTV.openHomeProgram(initialHomeProgram)) loadCatalog(uiText('nav.recommend', '推荐'));
+    if (!initialHomeProgram || !window.HongguoTV.openHomeProgram(initialHomeProgram)) loadCatalog(activeChannel().textContent);
 }());
