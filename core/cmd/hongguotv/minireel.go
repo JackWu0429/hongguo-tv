@@ -1,10 +1,11 @@
 package main
 
 // Embedded playback resolver, adapted from the validated MiniReel protocol.
-// The signed video_model endpoint supplies a short-lived MP4 URL and spade_a
-// content key. This service prepares the selected episode, decrypts its CENC
-// AES-CTR samples in place, and exposes an MP4 URL with Range support. The
-// Android WebView owns playback and its controls; media is not transcoded.
+// The registered-device multi_video_model endpoint supplies a short-lived MP4
+// URL and spade_a content key. This service prepares the selected episode,
+// decrypts its CENC AES-CTR samples in place, and exposes an MP4 URL with Range
+// support. The Android WebView owns playback and its controls; media is not
+// transcoded.
 
 import (
 	"bytes"
@@ -37,8 +38,13 @@ import (
 const (
 	miniReelMaxJSONBytes       = 5 * 1024 * 1024
 	miniReelAPIBase            = "https://api5-normal-sinfonlineb.fqnovel.com"
-	miniReelAPIPath            = "/novel/player/video_model/v1/"
+	miniReelAPIPath            = "/novel/player/multi_video_model/v1/"
 	miniReelAppUA              = "com.phoenix.read/73532 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
+	miniReelPlaybackUA         = "com.phoenix.read/71532 (Linux; U; Android 9; SM-N9860; Build/PQ3A.190705.10241111;tt-ok/3.12.13.20)"
+	miniReelFallbackUA         = "com.phoenix.read/71332 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
+	miniReelDeviceTimeout      = 8 * time.Second
+	miniReelFallbackTimeout    = 15 * time.Second
+	miniReelFallbackMaxHops    = 3
 	miniReelTTL                = 2 * time.Hour
 	miniReelRangeTTL           = 15 * time.Minute
 	miniReelMaxBytes           = 512 << 20
@@ -84,8 +90,8 @@ var miniReelState = struct {
 	lastRootCleanup time.Time
 }{jobs: make(map[string]*miniReelMediaJob)}
 
-// plan/v is a metadata endpoint and keeps its existing process identity. This
-// must not be reused for video_model, whose device identity is one-shot.
+// plan/v keeps its existing process identity. Playback uses a separately
+// registered anonymous identity shared by play, download, and prefetch.
 var miniReelSeasonIdentity = struct {
 	sync.Once
 	deviceID  string
@@ -94,12 +100,61 @@ var miniReelSeasonIdentity = struct {
 
 var errMiniReelVideoModelEmpty = errors.New("MiniReel video_model response is empty")
 
-// A video_model request consumes its device identity at the upstream. Keep the
-// static app profile stable, but never reuse these per-request identifiers.
 type miniReelDevice struct {
 	deviceID  string
 	installID string
+	cdid      string
 }
+
+type miniReelPlaybackDeviceCache struct {
+	mu       sync.Mutex
+	register func() (miniReelDevice, error)
+	device   miniReelDevice
+	ready    bool
+	pending  *miniReelPlaybackDeviceRegistration
+}
+
+type miniReelPlaybackDeviceRegistration struct {
+	done   chan struct{}
+	device miniReelDevice
+	err    error
+}
+
+func newMiniReelPlaybackDeviceCache(register func() (miniReelDevice, error)) *miniReelPlaybackDeviceCache {
+	return &miniReelPlaybackDeviceCache{register: register}
+}
+
+func (c *miniReelPlaybackDeviceCache) get() (miniReelDevice, error) {
+	c.mu.Lock()
+	if c.ready {
+		device := c.device
+		c.mu.Unlock()
+		return device, nil
+	}
+	if pending := c.pending; pending != nil {
+		c.mu.Unlock()
+		<-pending.done
+		return pending.device, pending.err
+	}
+	pending := &miniReelPlaybackDeviceRegistration{done: make(chan struct{})}
+	c.pending = pending
+	c.mu.Unlock()
+
+	pending.device, pending.err = c.register()
+	c.mu.Lock()
+	if pending.err == nil {
+		c.device = pending.device
+		c.ready = true
+	}
+	if c.pending == pending {
+		c.pending = nil
+	}
+	close(pending.done)
+	c.mu.Unlock()
+	return pending.device, pending.err
+}
+
+var miniReelPlaybackIdentity = newMiniReelPlaybackDeviceCache(registerMiniReelPlaybackDevice)
 
 func handleMiniReelResolve(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -632,9 +687,39 @@ func miniReelNativeOptions(ctx context.Context, vid string) ([]miniReelOption, e
 }
 
 func miniReelNativeOptionsEndpoint(ctx context.Context, vid, endpoint string) ([]miniReelOption, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	device, err := miniReelPlaybackIdentity.get()
+	if err != nil {
+		return nil, fmt.Errorf("匿名播放设备注册失败，请点击重试再次尝试: %w", err)
+	}
+	return miniReelNativeOptionsEndpointWithDevice(ctx, vid, endpoint, device)
+}
+
+func registerMiniReelPlaybackDevice() (miniReelDevice, error) {
+	return registerMiniReelPlaybackDeviceAt(passportDeviceAPI)
+}
+
+func registerMiniReelPlaybackDeviceAt(deviceBase string) (miniReelDevice, error) {
+	device, err := newPassportDevice()
+	if err != nil {
+		return miniReelDevice{}, err
+	}
+	client := newPassportClient(accountSession{Device: device, Cookies: map[string]string{}})
+	client.deviceBase = deviceBase
+	ctx, cancel := context.WithTimeout(context.Background(), miniReelDeviceTimeout)
+	defer cancel()
+	if err := client.registerDevice(ctx); err != nil {
+		return miniReelDevice{}, err
+	}
+	return miniReelDevice{deviceID: client.session.DeviceID, installID: client.session.InstallID, cdid: device.CDID}, nil
+}
+
+func miniReelNativeOptionsEndpointWithDevice(ctx context.Context, vid, endpoint string, device miniReelDevice) ([]miniReelOption, error) {
 	var lastErr error
 	for attempt := 0; attempt < miniReelVideoModelAttempts; attempt++ {
-		options, err := miniReelNativeOptionsAttempt(ctx, vid, endpoint, miniReelFreshDevice())
+		options, err := miniReelNativeOptionsAttempt(ctx, vid, endpoint, device)
 		if err == nil {
 			return options, nil
 		}
@@ -646,44 +731,39 @@ func miniReelNativeOptionsEndpoint(ctx context.Context, vid, endpoint string) ([
 			return nil, err
 		}
 	}
-	return nil, fmt.Errorf("MiniReel video_model empty after %d fresh device attempts: %w", miniReelVideoModelAttempts, lastErr)
+	return nil, fmt.Errorf("MiniReel multi_video_model empty after %d attempts: %w", miniReelVideoModelAttempts, lastErr)
 }
 
 func miniReelNativeOptionsAttempt(ctx context.Context, vid, endpoint string, device miniReelDevice) ([]miniReelOption, error) {
+	return miniReelNativeOptionsAttemptWithClient(ctx, vid, endpoint, device, nil)
+}
+
+func miniReelNativeOptionsAttemptWithClient(ctx context.Context, vid, endpoint string, device miniReelDevice, client *http.Client) ([]miniReelOption, error) {
 	stamp := time.Now().UnixMilli()
 	params := url.Values{
-		"_rticket": {strconv.FormatInt(stamp, 10)}, "ac": {"wifi"}, "aid": {"8662"},
-		"channel": {"update_64"}, "device_brand": {"Redmi"}, "device_id": {device.deviceID},
+		"_rticket": {strconv.FormatInt(stamp, 10)}, "ac": {"wifi"}, "aid": {"8662"}, "app_name": {"novelread"},
+		"channel": {"update_64"}, "cdid": {device.cdid}, "device_brand": {"Redmi"}, "device_id": {device.deviceID},
 		"device_platform": {"android"}, "device_type": {"25053RT47C"}, "dpi": {"520"},
-		"iid": {device.installID}, "language": {"zh"}, "manifest_version_code": {"73532"},
-		"os": {"android"}, "os_api": {"36"}, "os_version": {"16"}, "resolution": {"1280*2772"},
-		"ssmix": {"a"}, "update_version_code": {"73532"}, "version_code": {"73532"},
-		"version_name": {"7.3.5.32"}, "app_name": {"novelread"},
+		"dragon_device_type": {"phone"}, "host_abi": {"arm64-v8a"}, "iid": {device.installID}, "is_android_pad_screen": {"0"}, "language": {"zh"}, "manifest_version_code": {"71332"},
+		"need_personal_recommend": {"1"},
+		"os":                      {"android"}, "os_api": {"36"}, "os_version": {"16"}, "resolution": {"1280*2772"},
+		"player_so_load": {"1"}, "pv_player": {"71332"}, "ssmix": {"a"}, "update_version_code": {"71332"}, "version_code": {"71332"},
+		"version_name": {"7.1.3.32"}, "compliance_status": {"0"},
 	}
 	query := params.Encode()
 	bodyBytes, _ := json.Marshal(map[string]any{
-		"video_id": vid, "content_type": 1,
-		"biz_param": map[string]any{"need_all_video_definition": true, "video_platform": 3},
+		"biz_param":          map[string]any{"detail_page_version": 0, "device_level": 3, "disable_digg_stat": false, "need_all_video_definition": true, "need_mp4_align": false, "use_os_player": false, "use_server_dns": false, "video_platform": 1024},
+		"mixed_video_id_map": map[string][]string{"1004": {vid}},
 	})
-	query, signedHeaders, err := signPassportRequest(params, bodyBytes, stamp, device.deviceID)
-	if err != nil {
-		return nil, fmt.Errorf("MiniReel request signing failed: %w", err)
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"?"+query, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
-	req.Header = signedHeaders
-	req.Header.Set("User-Agent", miniReelAppUA)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	req.Header.Set("X-XS-From-Web", "0")
-	req.Header.Set("Sdk-Version", "2")
-	req.Header.Set("X-SS-DP", "8662")
-	req.Header.Set("X-Tt-Store-Region", "cn")
-	req.Header.Set("X-Tt-Store-Region-Src", "did")
-	client := &http.Client{Timeout: 35 * time.Second}
-	resp, err := client.Do(req)
+	req.Header.Set("User-Agent", miniReelPlaybackUA)
+	req.Header.Set("Accept", "application/json; charset=utf-8,application/x-protobuf")
+	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+	apiClient := miniReelNoRedirectClient(client, 35*time.Second)
+	resp, err := apiClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -696,14 +776,22 @@ func miniReelNativeOptionsAttempt(ctx context.Context, vid, endpoint string, dev
 		return nil, err
 	}
 	if len(bytes.TrimSpace(data)) == 0 {
-		log.Printf("[minireel] video_model empty response status=%d content_length=%d tt_logid=%q device_digits=%d iid_digits=%d", resp.StatusCode, resp.ContentLength, resp.Header.Get("X-Tt-Logid"), len(device.deviceID), len(device.installID))
+		log.Printf("[minireel] multi_video_model empty response status=%d content_length=%d tt_logid=%q", resp.StatusCode, resp.ContentLength, resp.Header.Get("X-Tt-Logid"))
 		return nil, errMiniReelVideoModelEmpty
 	}
 	var envelope map[string]any
-	if err := json.Unmarshal(data, &envelope); err != nil {
-		return nil, err
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&envelope); err != nil || envelope == nil {
+		return nil, errors.New("MiniReel multi_video_model response is invalid JSON")
 	}
-	modelValue := nestedMiniReelValue(envelope, "data", "video_model")
+	if code := firstNonEmpty(asString(envelope["code"]), asString(envelope["Code"])); code != "" && code != "0" {
+		return nil, fmt.Errorf("MiniReel multi_video_model rejected request (code %s)", code)
+	}
+	modelValue := nestedMiniReelValue(envelope, "data", vid, "video_model")
+	if modelValue == nil {
+		modelValue = nestedMiniReelValue(envelope, "data", "video_model")
+	}
 	if text := miniReelToString(modelValue); strings.HasPrefix(strings.TrimSpace(text), "{") {
 		var decoded any
 		if err := json.Unmarshal([]byte(text), &decoded); err == nil {
@@ -714,15 +802,41 @@ func miniReelNativeOptionsAttempt(ctx context.Context, vid, endpoint string, dev
 	if !ok {
 		return nil, errors.New("MiniReel response has no video_model")
 	}
-	rows := miniReelMapsFromAny(model["video_list"])
+	optionModel := model
+	rows := miniReelMapsFromAny(optionModel["video_list"])
+	if len(rows) == 0 {
+		fallbackAPI := miniReelFallbackAPI(model["fallback_api"])
+		if fallbackAPI != "" {
+			optionModel, err = miniReelFetchFallbackModelWithClient(ctx, fallbackAPI, client)
+			if err != nil {
+				return nil, fmt.Errorf("MiniReel fallback_api failed: %w", err)
+			}
+			rows = miniReelMapsFromAny(optionModel["video_list"])
+		}
+	}
 	options := make([]miniReelOption, 0, len(rows))
 	for _, row := range rows {
 		meta, _ := row["video_meta"].(map[string]any)
 		encryption, _ := row["encrypt_info"].(map[string]any)
-		if strings.EqualFold(miniReelToString(meta["codec_type"]), "bytevc2") {
+		codec := firstNonEmpty(miniReelToString(row["codec_type"]), miniReelToString(meta["codec_type"]))
+		if strings.EqualFold(codec, "bytevc2") {
 			continue
 		}
-		rawURL := miniReelToString(row["main_url"])
+		rawURL := firstNonEmpty(miniReelToString(row["main_url"]), miniReelToString(row["backup_url"]))
+		if rawURL == "" {
+			switch backups := row["backup_url_list"].(type) {
+			case []any:
+				for _, backup := range backups {
+					if rawURL = miniReelToString(backup); rawURL != "" {
+						break
+					}
+				}
+			case []string:
+				if len(backups) > 0 {
+					rawURL = backups[0]
+				}
+			}
+		}
 		mediaURL := rawURL
 		if !strings.HasPrefix(mediaURL, "http") {
 			decoded, decodeErr := base64.StdEncoding.DecodeString(rawURL)
@@ -744,17 +858,145 @@ func miniReelNativeOptionsAttempt(ctx context.Context, vid, endpoint string, dev
 				continue
 			}
 		}
-		height := miniReelIntFromAny(meta["vheight"])
-		if match := miniReelDefinitionRE.FindStringSubmatch(miniReelToString(meta["definition"])); len(match) > 1 {
+		height := miniReelIntFromAny(row["vheight"])
+		if height == 0 {
+			height = miniReelIntFromAny(row["height"])
+		}
+		if height == 0 {
+			height = miniReelIntFromAny(meta["vheight"])
+		}
+		if height == 0 {
+			height = miniReelIntFromAny(meta["height"])
+		}
+		definition := firstNonEmpty(miniReelToString(row["quality_desc"]), miniReelToString(row["definition"]), miniReelToString(meta["definition"]))
+		if match := miniReelDefinitionRE.FindStringSubmatch(definition); len(match) > 1 {
 			height, _ = strconv.Atoi(match[1])
 		}
 		quality := ""
 		if height > 0 {
 			quality = strconv.Itoa(height) + "P"
 		}
-		options = append(options, miniReelOption{URL: mediaURL, Key: key, Height: height, Quality: quality, Duration: miniReelIntFromAny(model["video_duration"])})
+		options = append(options, miniReelOption{URL: mediaURL, Key: key, Height: height, Quality: quality, Duration: miniReelIntFromAny(optionModel["video_duration"])})
 	}
 	return options, nil
+}
+
+func miniReelNoRedirectClient(client *http.Client, timeout time.Duration) *http.Client {
+	copy := &http.Client{Timeout: timeout}
+	if client != nil {
+		*copy = *client
+		if copy.Timeout == 0 {
+			copy.Timeout = timeout
+		}
+	}
+	copy.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return copy
+}
+
+func miniReelFallbackAPI(value any) string {
+	switch typed := value.(type) {
+	case string:
+		text := strings.TrimSpace(typed)
+		var decoded any
+		if json.Unmarshal([]byte(text), &decoded) == nil {
+			if nested, ok := decoded.(map[string]any); ok {
+				if fallback := miniReelFallbackAPI(nested["fallback_api"]); fallback != "" {
+					return fallback
+				}
+			} else if list, ok := decoded.([]any); ok && len(list) > 0 {
+				return miniReelFallbackAPI(list[0])
+			}
+		}
+		return text
+	case []any:
+		if len(typed) > 0 {
+			return miniReelFallbackAPI(typed[0])
+		}
+	case map[string]any:
+		return miniReelFallbackAPI(typed["fallback_api"])
+	}
+	return ""
+}
+
+func miniReelValidateFallbackURL(raw string) (*url.URL, error) {
+	target, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || target.Scheme != "https" || target.Host == "" || target.User != nil || target.Opaque != "" || target.Fragment != "" {
+		return nil, errors.New("fallback_api URL is not an allowed HTTPS URL")
+	}
+	if port := target.Port(); port != "" && port != "443" {
+		return nil, errors.New("fallback_api URL uses an unsupported port")
+	}
+	host := strings.ToLower(target.Hostname())
+	if host != "fqnovel.com" && !strings.HasSuffix(host, ".fqnovel.com") &&
+		host != "snssdk.com" && !strings.HasSuffix(host, ".snssdk.com") {
+		return nil, errors.New("fallback_api URL host is not trusted")
+	}
+	return target, nil
+}
+
+func miniReelFetchFallbackModelWithClient(ctx context.Context, raw string, client *http.Client) (map[string]any, error) {
+	target, err := miniReelValidateFallbackURL(raw)
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		client = &http.Client{}
+	}
+	requestClient := *client
+	previousRedirectCheck := requestClient.CheckRedirect
+	requestClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) > miniReelFallbackMaxHops {
+			return errors.New("fallback_api exceeded the redirect limit")
+		}
+		if _, err := miniReelValidateFallbackURL(req.URL.String()); err != nil {
+			return err
+		}
+		if previousRedirectCheck != nil {
+			return previousRedirectCheck(req, via)
+		}
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, miniReelFallbackTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	if err != nil {
+		return nil, errors.New("fallback_api request could not be created")
+	}
+	req.Header.Set("User-Agent", miniReelFallbackUA)
+	req.Header.Set("Accept", "application/json; charset=utf-8,application/x-protobuf")
+	resp, err := requestClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fallback_api request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fallback_api HTTP %d", resp.StatusCode)
+	}
+	data, err := miniReelReadLimited(resp.Body, miniReelMaxJSONBytes)
+	if err != nil {
+		return nil, err
+	}
+	var envelope map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&envelope); err != nil || envelope == nil {
+		return nil, errors.New("fallback_api response is invalid JSON")
+	}
+	if code := firstNonEmpty(miniReelToString(envelope["Code"]), miniReelToString(envelope["code"])); code != "" && code != "0" {
+		return nil, fmt.Errorf("fallback_api rejected request (code %s)", code)
+	}
+	videoInfo, ok := envelope["video_info"].(map[string]any)
+	if !ok {
+		return nil, errors.New("fallback_api response has no video_info")
+	}
+	if code := firstNonEmpty(miniReelToString(videoInfo["Code"]), miniReelToString(videoInfo["code"])); code != "" && code != "0" {
+		return nil, fmt.Errorf("fallback_api video_info rejected request (code %s)", code)
+	}
+	model, ok := videoInfo["data"].(map[string]any)
+	if !ok {
+		return nil, errors.New("fallback_api response has no video model")
+	}
+	return model, nil
 }
 
 func miniReelRandomID() string {
@@ -1423,17 +1665,26 @@ func miniReelReadLimited(reader io.Reader, maxBytes int64) ([]byte, error) {
 }
 
 func miniReelMapsFromAny(value any) []map[string]any {
-	list, ok := value.([]any)
-	if !ok {
+	switch typed := value.(type) {
+	case []any:
+		results := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			if mapped, ok := item.(map[string]any); ok {
+				results = append(results, mapped)
+			}
+		}
+		return results
+	case map[string]any:
+		results := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			if mapped, ok := item.(map[string]any); ok {
+				results = append(results, mapped)
+			}
+		}
+		return results
+	default:
 		return nil
 	}
-	results := make([]map[string]any, 0, len(list))
-	for _, item := range list {
-		if mapped, ok := item.(map[string]any); ok {
-			results = append(results, mapped)
-		}
-	}
-	return results
 }
 
 func miniReelIntFromAny(value any) int {

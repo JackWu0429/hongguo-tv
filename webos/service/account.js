@@ -474,5 +474,12 @@
     this.saveLibrary(data); this.libraryRevision++; if (imported) setTimeout(function () { self.sync().catch(function () {}); }, 0);
     return Promise.resolve({ status: this.status(), import_history: { imported: imported, remaining: remaining } });
   };
-  module.exports = function (options) { return new Account(options); };
+  function createAccount(options) { return new Account(options); }
+  createAccount.registerPlaybackDevice = function (sendRequest) {
+    var s = { device_id: '', install_id: '', device: device(), cookies: {} };
+    return register(s, sendRequest || requestBuffer).then(function () {
+      return { deviceID: s.device_id, installID: s.install_id, cdid: s.device.cdid };
+    });
+  };
+  module.exports = createAccount;
 }());
