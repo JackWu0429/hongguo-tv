@@ -1,7 +1,7 @@
 package rocks.aston.hongguotv;
 
 import android.app.Activity;
-import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Intent;
 import android.graphics.Rect;
 import android.os.Build;
@@ -9,6 +9,8 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.Log;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -43,7 +45,7 @@ public class MainActivity extends Activity {
     private boolean backPending;
     private volatile boolean activityForeground;
     private volatile boolean playbackPageActive;
-    private AlertDialog exitDialog;
+    private Dialog exitDialog;
     private boolean keyboardVisible;
     private final InputEditingState inputEditingState = new InputEditingState();
     private final SearchNavigationState searchNavigationState = new SearchNavigationState();
@@ -634,14 +636,85 @@ public class MainActivity extends Activity {
     }
 
     private void showExitConfirmation() {
-        exitDialog = new AlertDialog.Builder(this)
-                .setTitle("退出红果短剧？")
-                .setNegativeButton("取消", (dialog, which) -> dialog.dismiss())
-                .setPositiveButton("退出", (dialog, which) -> finish())
-                .create();
-        exitDialog.setOnShowListener(dialog -> exitDialog.getButton(AlertDialog.BUTTON_NEGATIVE).requestFocus());
-        exitDialog.setOnDismissListener(dialog -> scheduleFullscreen());
-        exitDialog.show();
+        float density = getResources().getDisplayMetrics().density;
+        Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setGravity(Gravity.CENTER);
+        root.setBackgroundColor(0xB3000000);
+        root.setPadding(Math.round(48 * density), Math.round(48 * density), Math.round(48 * density), Math.round(48 * density));
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        int pad = Math.round(32 * density);
+        card.setPadding(pad, pad, pad, Math.round(24 * density));
+        GradientDrawable panel = new GradientDrawable();
+        panel.setColor(Color.BLACK);
+        panel.setCornerRadius(20 * density);
+        panel.setStroke(Math.round(density), 0x29FFFFFF);
+        card.setBackground(panel);
+        TextView title = new TextView(this);
+        title.setText("退出红果TV短剧？");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(28);
+        title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
+        TextView copy = new TextView(this);
+        copy.setText("观看记录还留在这台电视上。");
+        copy.setTextColor(0x9EF5F5F7);
+        copy.setTextSize(18);
+        LinearLayout.LayoutParams copyLayout = new LinearLayout.LayoutParams(-1, -2);
+        copyLayout.topMargin = Math.round(12 * density);
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams actionsLayout = new LinearLayout.LayoutParams(-1, -2);
+        actionsLayout.topMargin = Math.round(28 * density);
+        Button cancel = exitChoice("取消", density);
+        Button leave = exitChoice("退出", density);
+        LinearLayout.LayoutParams buttonLayout = new LinearLayout.LayoutParams(-2, Math.round(48 * density));
+        buttonLayout.rightMargin = Math.round(12 * density);
+        cancel.setOnClickListener(view -> dialog.dismiss());
+        leave.setOnClickListener(view -> {
+            dialog.dismiss();
+            finish();
+        });
+        actions.addView(cancel, buttonLayout);
+        actions.addView(leave, buttonLayout);
+        card.addView(title);
+        card.addView(copy, copyLayout);
+        card.addView(actions, actionsLayout);
+        LinearLayout.LayoutParams cardLayout = new LinearLayout.LayoutParams(Math.round(560 * density), -2);
+        root.addView(card, cardLayout);
+        dialog.setContentView(root);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            dialog.getWindow().setLayout(-1, -1);
+        }
+        dialog.setOnDismissListener(unused -> scheduleFullscreen());
+        exitDialog = dialog;
+        dialog.setOnShowListener(unused -> cancel.requestFocus());
+        dialog.show();
+    }
+
+    private Button exitChoice(String label, float density) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setTextSize(18);
+        button.setAllCaps(false);
+        button.setMinWidth(Math.round(96 * density));
+        button.setPadding(Math.round(22 * density), 0, Math.round(22 * density), 0);
+        GradientDrawable idle = new GradientDrawable();
+        idle.setColor(Color.TRANSPARENT);
+        idle.setCornerRadius(24 * density);
+        GradientDrawable focused = new GradientDrawable();
+        focused.setColor(Color.WHITE);
+        focused.setCornerRadius(24 * density);
+        button.setBackground(idle);
+        button.setTextColor(Color.WHITE);
+        button.setOnFocusChangeListener((view, hasFocus) -> {
+            view.setBackground(hasFocus ? focused : idle);
+            ((Button) view).setTextColor(hasFocus ? Color.BLACK : Color.WHITE);
+        });
+        return button;
     }
 
     @Override

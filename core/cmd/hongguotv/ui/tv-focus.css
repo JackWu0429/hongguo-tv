@@ -2350,6 +2350,276 @@ html.apple-tv .app-shell.is-cinema.sidebar-icons .main-surface {
 }
 html.apple-tv .app-shell.is-cinema .top-bar { visibility: hidden; }
 
+/* Account and settings: one quiet column. Focus is a white pill.
+   Pink primary buttons and gray cards stay behind these rules. */
+html.apple-tv #account-page,
+html.apple-tv #settings-page {
+  top: 0;
+  padding: 28px 64px 72px;
+  background: #000;
+}
+html.apple-tv .account-heading h1,
+html.apple-tv .settings-heading h1 {
+  display: block;
+  margin: 0 0 8px;
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 52px;
+  letter-spacing: 0;
+  color: #fff;
+}
+html.apple-tv .account-heading p {
+  margin: 0;
+  max-width: 720px;
+  font-size: 18px;
+  line-height: 28px;
+  letter-spacing: 0;
+  color: rgba(245,245,247,.55);
+}
+html.apple-tv .account-layout {
+  display: flex;
+  flex-direction: column;
+  max-width: 880px;
+  margin-top: 28px;
+}
+html.apple-tv .account-card,
+html.apple-tv .settings-page .settings-card {
+  display: block;
+  width: auto;
+  max-width: 880px;
+  margin: 0 0 8px;
+  padding: 22px 0 18px;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid rgba(255,255,255,.12);
+  background: transparent;
+  box-shadow: none;
+}
+html.apple-tv .account-card h2,
+html.apple-tv .settings-page .settings-card h2 {
+  display: block;
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 32px;
+  letter-spacing: 0;
+  color: #fff;
+  white-space: normal;
+}
+html.apple-tv .account-card p,
+html.apple-tv .account-card label,
+html.apple-tv .settings-page .settings-card > p,
+html.apple-tv .account-input-help,
+html.apple-tv .account-footnote {
+  display: block;
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  letter-spacing: 0;
+  color: rgba(245,245,247,.5);
+  white-space: normal;
+  overflow: visible;
+}
+html.apple-tv .account-phone-row {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  margin: 8px 0 0;
+}
+html.apple-tv .account-country-button,
+html.apple-tv .account-input,
+html.apple-tv .account-phone-row .account-input {
+  min-height: 56px;
+  margin: 0 12px 12px 0;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 16px;
+  background: rgba(255,255,255,.08);
+  box-shadow: none;
+  color: #fff;
+  font-size: 20px;
+  letter-spacing: 0;
+}
+html.apple-tv .account-country-button { flex: 0 0 auto; }
+html.apple-tv .account-phone-row .account-input { flex: 1 1 auto; margin-right: 0; }
+html.apple-tv .account-input.is-empty { color: rgba(245,245,247,.4); }
+html.apple-tv .account-country-button.is-focused,
+html.apple-tv .account-country-button:focus,
+html.apple-tv .account-input.is-focused,
+html.apple-tv .account-input:focus,
+html.apple-tv .account-action.is-focused,
+html.apple-tv .account-action:focus,
+html.apple-tv .settings-page .account-action.is-focused,
+html.apple-tv .settings-page .account-action:focus {
+  background: #fff;
+  color: #000;
+  border-color: #fff;
+  box-shadow: none;
+}
+html.apple-tv .account-action,
+html.apple-tv .account-primary,
+html.apple-tv .settings-page .account-action {
+  min-height: 48px;
+  margin: 12px 12px 0 0;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 24px;
+  background: transparent;
+  color: rgba(245,245,247,.72);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0;
+  box-shadow: none;
+}
+html.apple-tv .account-action[aria-pressed="true"]:not(.is-focused) {
+  color: #fff;
+  box-shadow: inset 0 -2px 0 #fff;
+  border-radius: 0;
+}
+html.apple-tv .account-form-actions,
+html.apple-tv .settings-page .app-update-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+html.apple-tv .account-sync-state { color: #fff; font-size: 18px; }
+html.apple-tv .account-message { color: rgba(245,245,247,.72); }
+html.apple-tv .account-keypad-dialog,
+html.apple-tv .account-country-dialog,
+html.apple-tv .confirm-dialog {
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 20px;
+  background: #000;
+  box-shadow: none;
+}
+html.apple-tv .account-keypad-key,
+html.apple-tv .account-keypad-key[data-key="done"] {
+  border: 0;
+  border-radius: 14px;
+  background: rgba(255,255,255,.08);
+  color: #fff;
+}
+html.apple-tv .account-keypad-key.is-focused,
+html.apple-tv .account-keypad-key:focus,
+html.apple-tv .account-country-item.is-focused,
+html.apple-tv .account-country-item:focus,
+html.apple-tv .confirm-button.is-focused,
+html.apple-tv .confirm-button:focus {
+  background: #fff;
+  color: #000;
+  border-color: #fff;
+  box-shadow: none;
+}
+html.apple-tv .account-country-item.is-selected,
+html.apple-tv .account-country-item.is-selected .account-country-item-code {
+  background: transparent;
+  color: #fff;
+}
+html.apple-tv .confirm-modal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.72);
+}
+html.apple-tv .confirm-dialog { width: 560px; max-width: 86%; padding: 32px 32px 28px; }
+html.apple-tv .confirm-dialog h2 {
+  margin: 0 0 12px;
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 42px;
+  letter-spacing: 0;
+  color: #fff;
+}
+html.apple-tv .confirm-dialog p {
+  margin: 0;
+  font-size: 18px;
+  line-height: 28px;
+  letter-spacing: 0;
+  color: rgba(245,245,247,.62);
+}
+html.apple-tv .confirm-actions { display: flex; flex-direction: row; margin-top: 24px; }
+html.apple-tv .confirm-button,
+html.apple-tv .confirm-danger {
+  min-height: 48px;
+  margin: 0 12px 0 0;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 24px;
+  background: transparent;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+}
+html.apple-tv .side-item.is-active,
+html.apple-tv .page-placeholder-mark,
+html.apple-tv .placeholder-kicker,
+html.apple-tv .library-empty svg,
+html.apple-tv .account-message,
+html.apple-tv .series-row.is-current .series-status,
+html.apple-tv .round-action.is-saved,
+html.apple-tv .discussion-like[aria-pressed="true"] {
+  color: #fff;
+  background: transparent;
+}
+html.apple-tv .player-failure-retry,
+html.apple-tv #discussion-send,
+html.apple-tv #player-compose-send,
+html.apple-tv .search-submit,
+html.apple-tv .publication-action,
+html.apple-tv .rank-row-play,
+html.apple-tv .rank-row-actor,
+html.apple-tv .rank-filter-apply,
+html.apple-tv .confirm-reserve,
+html.apple-tv .account-primary,
+html.apple-tv .list-retry,
+html.apple-tv .modal-action {
+  background: transparent;
+  color: #fff;
+  border-color: transparent;
+  box-shadow: none;
+}
+html.apple-tv .search-input.is-focused,
+html.apple-tv .search-input:focus,
+html.apple-tv .search-browse.is-focused,
+html.apple-tv .search-browse:focus,
+html.apple-tv .list-retry.is-focused,
+html.apple-tv .list-retry:focus,
+html.apple-tv .library-toolbar-button.is-focused,
+html.apple-tv .library-toolbar-button:focus,
+html.apple-tv .modal-action.is-focused,
+html.apple-tv .modal-action:focus,
+html.apple-tv .player-failure-retry.is-focused,
+html.apple-tv .player-failure-retry:focus,
+html.apple-tv #discussion-send.is-focused,
+html.apple-tv #discussion-send:focus,
+html.apple-tv #player-compose-send.is-focused,
+html.apple-tv #player-compose-send:focus {
+  background: #fff;
+  color: #000;
+  border-color: #fff;
+  box-shadow: none;
+}
+html.apple-tv .history-filter.is-active,
+html.apple-tv .library-type-filter.is-active,
+html.apple-tv .search-filter.is-active,
+html.apple-tv .rank-subtab.is-active,
+html.apple-tv .rank-view-tab.is-active,
+html.apple-tv .radar-view-tab.is-active,
+html.apple-tv .radar-filter.is-active,
+html.apple-tv .detail-tab.is-active,
+html.apple-tv .new-filter.is-active,
+html.apple-tv .library-tab.is-active,
+html.apple-tv .follow-tab.is-active {
+  color: #fff;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: inset 0 -2px 0 #fff;
+}
+html.apple-tv .support-method-wechat,
+html.apple-tv .support-method-alipay { background: #fff; }
+
 /* Must beat the apple-tv shell fill above. A black html/body/app-shell
    paints over the Media3 surface and leaves sound without a picture. */
 html.native-playback.apple-tv,
